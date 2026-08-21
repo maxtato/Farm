@@ -2949,7 +2949,8 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
       }
       if (hauler.hop <= .2){ sfx('cash'); save(); toast('Benne vidée au silo', 'good'); }
     }
-    if (hauler.g.userData.fill) hauler.g.userData.fill.scale.y = .02 + hauler.hop/TRCAP*.98;
+    const rf = hauler.g.userData.fill;                  // benne ouverte : vide, on doit voir le fond
+    if (rf){ rf.visible = hauler.hop > .5; rf.scale.y = .01 + hauler.hop/TRCAP*.99; }
   }
 
   // le joueur est prévenu une seule fois par remplissage
