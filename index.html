@@ -1668,7 +1668,7 @@ function driveManual(v, dt){
     let d = wantH - v.heading;
     while(d >  Math.PI) d -= 6.28318;
     while(d < -Math.PI) d += 6.28318;
-    const grip = .25 + .75*Math.max(0, Math.cos(d));           // presque un pivot sur place
+    const grip = .38 + .62*Math.max(0, Math.cos(d));           // il garde un peu d'élan dans le virage
     step(v, dt, wantH, push*MAXSPD*mudK*grip, turning);
   } else {                                                     // parcours dessiné
     const t = pathState === 'route' ? PATH.target() : null;
@@ -1686,12 +1686,18 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
     while(diff> Math.PI) diff -= 6.28318;
     while(diff<-Math.PI) diff += 6.28318;
     const rate = Math.min(TURNCAP, v.speed/RMIN + TURNFLOOR);  // dθ/dt = v/R, plus un pivot de base
-    const turn = Math.max(-rate*dt, Math.min(rate*dt, diff));
+    // la vitesse angulaire s'établit au lieu de sauter à son maximum : le virage s'amorce
+    // et se referme en douceur, sans l'à-coup d'un braquage instantané
+    const want = Math.max(-rate, Math.min(rate, diff/Math.max(dt,1e-4)));
+    if (v.wRate === undefined) v.wRate = 0;
+    v.wRate += (want - v.wRate)*Math.min(1, dt*11);
+    let turn = v.wRate*dt;
+    if (Math.abs(turn) > Math.abs(diff)) turn = diff;          // sans jamais dépasser la consigne
     v.heading += turn; v.turnRate = turn/Math.max(dt,1e-4);
-    v.steerA += (Math.max(-.6,Math.min(.6,diff*1.4)) - v.steerA)*Math.min(1,dt*14);
+    v.steerA += (Math.max(-.6,Math.min(.6,diff*1.4)) - v.steerA)*Math.min(1,dt*10);
   } else {
     v.steerA += (0 - v.steerA)*Math.min(1,dt*6);
-    v.turnRate *= .9;
+    v.turnRate *= .9; v.wRate = (v.wRate || 0)*.88;
   }
   v.speed += (wantSpeed - v.speed)*Math.min(1, dt*ACC);   // reprise beaucoup plus vive
   v.pos.x += Math.sin(v.heading)*v.speed*dt;
@@ -1752,11 +1758,11 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
   }
 }
 // valeurs d'usine, puis valeurs courantes modulées par les améliorations et par la météo
-const MAXSPD0 = 7.6, RMIN0 = 1.5;   // vitesse de base ; rayon de braquage mini
+const MAXSPD0 = 7.6, RMIN0 = 1.7;   // vitesse de base ; rayon de braquage mini
 // Le braquage tenait de l'engin de chantier : plafonné à 1,9 rad/s sur un rayon de 2,8 m,
 // il fallait un virage large pour se retourner. On resserre le rayon, on relève le plafond,
 // et on ajoute un pivot minimal pour que l'engin réponde au manche même en roulant doucement.
-const TURNCAP = 7.0, TURNFLOOR = 3.0;
+const TURNCAP = 5.4, TURNFLOOR = 2.2;
 let MAXSPD = MAXSPD0, RMIN = RMIN0, ACC = 10, GROWK = 1, PRICEK = 1, mudK = 1;
 function driveTo(v, target, dt, stop){
   const want = Math.atan2(target.x-v.pos.x, target.z-v.pos.z);
