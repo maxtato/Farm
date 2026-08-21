@@ -491,60 +491,18 @@ const pinching = () => _touches.size >= 2;
 const hemi = new THREE.HemisphereLight('#fffaf0','#7d8b58',.95);   // lumière plate, papier
 scene.add(hemi);
 const sun = new THREE.DirectionalLight('#fdf3e0',.42);
+const sunAt = new THREE.Vector3(0,0,0);      // le point que le soleil suit, en douceur
 sun.castShadow = true; sun.shadow.mapSize.set(1024,1024);
 Object.assign(sun.shadow.camera,{left:-30,right:30,top:30,bottom:-30,near:1,far:110});
 scene.add(sun, sun.target);
 
 // ---------- matériaux ----------
-// ---------- la touche du feutre ----------
-// Dans le modèle rien n'est en aplat : la couleur est plus dense là où l'outil a repassé,
-// plus claire ailleurs, avec le grain du papier par-dessus. On l'obtient en modulant la
-// couleur diffuse par un bruit doux — deux octaves larges pour les passages, une fine pour
-// le grain — plus des dépôts sombres là où le pigment s'accumule.
-const GOU_FN = `
-  varying vec2 vGouP;
-  float gouH(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453123); }
-  float gouN(vec2 p){
-    vec2 i = floor(p), f = fract(p);
-    vec2 u = f*f*(3.0-2.0*f);
-    return mix(mix(gouH(i), gouH(i+vec2(1.0,0.0)), u.x),
-               mix(gouH(i+vec2(0.0,1.0)), gouH(i+vec2(1.0,1.0)), u.x), u.y);
-  }`;
+// Un patch de shader peut en cacher un autre : on les enchaîne au lieu de les écraser.
 function chainCompile(m, fn){
   const prev = m.onBeforeCompile;
   m.onBeforeCompile = s => { if (prev) prev(s); fn(s); };
   m.needsUpdate = true;
   return m;
-}
-// monde : le motif est fixé au terrain, il ne glisse pas quand la caméra bouge.
-// objet : le motif est peint sur la pièce, il la suit — c'est ce qu'il faut pour un engin.
-function gouache(m, force, monde){
-  const a = (force === undefined ? 1 : force).toFixed(3);
-  const src = monde
-    ? `#ifdef USE_INSTANCING
-         vec4 gouW = modelMatrix * instanceMatrix * vec4(transformed, 1.0);
-       #else
-         vec4 gouW = modelMatrix * vec4(transformed, 1.0);
-       #endif
-       vGouP = gouW.xz + gouW.y*vec2(0.63,-0.47);`
-    : `vGouP = position.xz + position.y*vec2(0.71,-0.53);`;
-  return chainCompile(m, sh => {
-    sh.vertexShader = 'varying vec2 vGouP;\n' + sh.vertexShader.replace(
-      '#include <begin_vertex>', '#include <begin_vertex>\n' + src);
-    sh.fragmentShader = GOU_FN + '\n' + sh.fragmentShader.replace(
-      '#include <color_fragment>',
-      `#include <color_fragment>
-       {
-         vec2 gp = vGouP * 1.15;
-         float gl1 = gouN(gp*0.42), gl2 = gouN(gp*1.35), gl3 = gouN(gp*6.5);
-         float lav = (gl1*0.5 + gl2*0.34 + gl3*0.16) - 0.5;
-         diffuseColor.rgb *= 1.0 + lav * 0.52 * ${a};
-         float dep = smoothstep(0.58, 0.94, gouN(gp*0.72 + 11.3));
-         diffuseColor.rgb *= 1.0 - dep * 0.17 * ${a};
-         float bord = smoothstep(0.72, 0.99, gouN(gp*2.1 + 47.7));
-         diffuseColor.rgb += bord * 0.055 * ${a};
-       }`);
-  });
 }
 const matS = {}, matJ = {}, geoC = {};
 const UJ = { bend:{value:new THREE.Vector3()}, h:{value:4.5} };
@@ -566,8 +524,7 @@ function mat(c){
   const T = JELLY ? matJ : matS;
   if (T[c]) return T[c];
   const m = new THREE.MeshLambertMaterial({color:c});
-  if (JELLY) jelly(m);
-  return T[c] = gouache(m, 1);      // peinte sur la pièce : le motif suit l'engin
+  return T[c] = JELLY ? jelly(m) : m;
 }
 function rrShape(w,h,r){
   const s = new THREE.Shape(), x=-w/2, y=-h/2;
@@ -980,10 +937,9 @@ function fillCells(s2){ cell.fill(s2); for(let k=0;k<4;k++) cellN[k] = k===s2 ? 
   const t = new THREE.CanvasTexture(c);
   t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(20,20);
   t.center.set(.5,.5); t.rotation = Math.PI/4.2;
-  const g = new THREE.Mesh(new THREE.PlaneGeometry(400,400),
-                           gouache(new THREE.MeshLambertMaterial({map:t}), .75, true));
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(400,400), new THREE.MeshLambertMaterial({map:t}));
   g.rotation.x = -Math.PI/2; g.receiveShadow = true; g.renderOrder = -13; scene.add(g);
-  const y = new THREE.Mesh(new THREE.PlaneGeometry(80,16), gouache(new THREE.MeshLambertMaterial({color:'#c3bd97'}), .8, true));
+  const y = new THREE.Mesh(new THREE.PlaneGeometry(80,16), new THREE.MeshLambertMaterial({color:'#c3bd97'}));
   y.rotation.x = -Math.PI/2; y.position.set(0,.01,YARD+4); y.receiveShadow = true; y.renderOrder = -12; scene.add(y);
 })();
 
@@ -1103,7 +1059,6 @@ function soilTex(){
   geo.computeVertexNormals();
   const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
     map:soilTex(), vertexColors:true, side:THREE.DoubleSide }));
-  gouache(m.material, .8, true);
   m.receiveShadow = true; m.renderOrder = -11; scene.add(m);
 })();
 // mottes : de petits volumes posés sur la terre, plus denses près des bords
@@ -1132,7 +1087,6 @@ function semerMottes(){
 // contour réel qui le découpe, au pixel près, dans le fragment shader.
 function clipToParcel(m){
   const L = X0.toFixed(3), Rr = (X0+P).toFixed(3), B = Z0.toFixed(3), T = (Z0+P).toFixed(3);
-  gouache(m, .8, true);
   chainCompile(m, sh => {
     sh.vertexShader = 'varying vec3 vWP;\n' + sh.vertexShader.replace(
       '#include <fog_vertex>',
@@ -1349,7 +1303,6 @@ function tuftE(head, stemCol){
 const UW = { t:{value:0}, amp:{value:.1}, h:{value:2.1} };
 function windMat(){
   const m = new THREE.MeshLambertMaterial({ vertexColors:true });
-  gouache(m, .55, true);
   chainCompile(m, s => {
     s.uniforms.uTime = UW.t; s.uniforms.uAmp = UW.amp; s.uniforms.uH = UW.h;
     s.vertexShader = 'uniform float uTime;uniform float uAmp;uniform float uH;\n' + s.vertexShader
@@ -1472,7 +1425,7 @@ chunks.forEach(c => {
   c.young = new THREE.InstancedMesh(cropGeo(CROPS[0])._y, windMat(), Math.max(1,c.list.length));
   c.ripe  = new THREE.InstancedMesh(cropGeo(CROPS[0])._r, windMat(), Math.max(1,c.list.length));
   c.straw = new THREE.InstancedMesh(geoStraw,
-    gouache(new THREE.MeshLambertMaterial({ vertexColors:true }), .5, true), Math.max(1,c.list.length));
+    new THREE.MeshLambertMaterial({ vertexColors:true }), Math.max(1,c.list.length));
   c.straw.position.set(c.cx,0,c.cz); c.straw.receiveShadow = true;
   c.straw.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(c.straw);
   [c.young,c.ripe].forEach(m => {
@@ -2071,10 +2024,12 @@ function refreshNow(){
   if (typeof drawCropBtn === 'function') drawCropBtn();
   if (typeof drawVeh === 'function') drawVeh();
 }
-function startStage(skipSeed){
+// Ne fait plus que remettre l'affichage et les rangs à jour. Effacer la parcelle et payer
+// la semence appartiennent au cycle, pas au choix d'un engin : tant qu'ils étaient ici,
+// reprendre la déchaumeuse remettait tout le champ à nu d'un coup, et reprendre le semoir
+// repayait la semence.
+function startStage(){
   const s = STAGES[stage];
-  if (stage === 0) SWATH.reset();     // nouveau cycle : la parcelle repart du sol nu
-  if (s.k === 'sow' && !skipSeed) paySeed();   // la semence se règle au moment de la mettre en terre
   document.querySelectorAll('#steps .step').forEach((e,i) => {
     e.classList.toggle('on', i === stage);
     e.classList.toggle('done', i < stage);
@@ -2102,7 +2057,8 @@ function nextStage(){
   const fini = STAGES[stage];
   const suivait = driven === fini.k;   // on conduisait celui qui vient de finir : on suit le chantier
   stage = (stage+1) % STAGES.length;
-  if (stage === 0) harvests++;      // on vient de boucler un cycle entier
+  if (stage === 0){ harvests++; SWATH.reset(); }   // cycle bouclé : la parcelle repart à nu
+  if (STAGES[stage].k === 'sow') paySeed();        // la semence se règle en entrant au semis
   startStage(); sfx('stage'); save();
   if (fleet[fini.k]) fleet[fini.k].done = true;
   if (suivait){
@@ -3061,7 +3017,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   const had = restore();
   applyCrop();
   if (had && stage > 0) primeField(stage);   // on reprend la parcelle telle que l'étape la suppose
-  startStage(!!had);                         // à la reprise, la semence a déjà été payée
+  startStage();                              // ni remise à nu ni semence : c'est l'affaire du cycle
   if (fleet[STAGES[stage].k]) driven = STAGES[stage].k;
   syncFleet(); drawVeh(); camFollow();
   { const v = pilote(); if (v) camLook.set(v.pos.x, 1, v.pos.z); }
@@ -3252,8 +3208,12 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   // la caméra reste où on l'a posée : plus aucun recadrage automatique
   camera.position.copy(camLook).add(camOff);
   camera.lookAt(camLook);
-  sun.position.set(camLook.x+12, 32, camLook.z+18);
-  sun.target.position.copy(camLook); sun.target.updateMatrixWorld();
+  // Le soleil est accroché au point visé pour que l'ombre porte là où on regarde. S'il y
+  // saute, tout l'éclairage change d'un coup : on l'y amène en douceur.
+  sunAt.x += (camLook.x - sunAt.x)*Math.min(1, raw*1.6);
+  sunAt.z += (camLook.z - sunAt.z)*Math.min(1, raw*1.6);
+  sun.position.set(sunAt.x+12, 32, sunAt.z+18);
+  sun.target.position.set(sunAt.x, 0, sunAt.z); sun.target.updateMatrixWorld();
 
   const shownCoins = Math.floor(coins);
   if (shownCoins !== lastCoins){
