@@ -122,6 +122,10 @@
 
   #acts { display:flex; flex-direction:column; gap:6px; }
   .actrow { display:flex; gap:6px; }
+  #vehrow { display:none; }
+  #vehrow.on { display:flex; }
+  #vehBtn { background:linear-gradient(180deg,#ffdd77,var(--gold));
+            box-shadow:0 4px 0 var(--goldD), 0 6px 8px rgba(0,0,0,.28); }
 
   /* ---------- boutons épais ---------- */
   .btn { flex:1 1 0; min-width:0; background:var(--cream); color:var(--ink); border:none;
@@ -287,6 +291,7 @@
       <div id="gauge"><i></i><span id="gval">0 %</span></div>
     </div>
     <div id="acts"></div>
+    <div id="vehrow"><button class="btn wide" id="vehBtn"><i>🚜</i><span>Passer à la benne</span></button></div>
     <div id="pad">
       <div id="padStick"><div id="stick"><div id="knob"></div></div></div>
       <div id="padPath">
@@ -561,6 +566,8 @@ function fillBox(w,h,d,x,y,z,p){
   wrap.scale.y = .02; return wrap;
 }
 
+const AUG_FOLD = 2.25, AUG_OPEN = 0;      // vis rangée le long du corps / déployée sur le côté
+
 // ---------- engins : formes d'origine ----------
 function tractorBase(g, col){
   const dk = col===C.green ? C.greenDark : C.blueDark;
@@ -688,7 +695,12 @@ function build(kind){
     rbox(2.1,.2,.36, C.dark, 0,3.92,1.42, g, .06);          // barre d'éclairage sur le toit
     for(let i=0;i<5;i++) rbox(.3,.2,.12, C.lamp, -.8+i*.4,3.92,1.6, g, .04);
     lamps(2.2,3.5,1.78,g);
-    cyl(.24,.24,4.2,8, C.metal, 2,3.3,-1.2, g).rotation.z = -Math.PI/2.6;   // du côté où la benne se range
+    // vis de déchargement : rangée le long du corps pendant la coupe, déployée à trémie pleine
+    const augPiv = new THREE.Group(); augPiv.position.set(.7,3.5,-1.3); augPiv.rotation.y = AUG_FOLD; g.add(augPiv);
+    cyl(.26,.26,4.4,8, C.metal, 2.2,0,0, augPiv).rotation.z = Math.PI/2;
+    rbox(.34,.5,.34, C.steel, .5,-.3,0, augPiv, .06);
+    rbox(.66,.62,.66, C.metal, 4.3,-.3,0, augPiv, .12);                      // la goulotte
+    const spout = new THREE.Object3D(); spout.position.set(4.3,-.72,0); augPiv.add(spout);
     rbox(6,.7,1.3, C.metal, 0,1,3.1, g, .14);
     rbox(6,.34,.5, C.dark, 0,.6,3.6, g, .08);
     const r = reel(5.7,.72,5, 0,1.8,3.4, g, C.gold);
@@ -696,7 +708,7 @@ function build(kind){
     const w = [ wheel(1.12,.68,1.86,1.12,1.1,g), wheel(1.12,.68,-1.86,1.12,1.1,g),
                 wheel(.62,.42,1.73,.62,-2.1,g), wheel(.62,.42,-1.73,.62,-2.1,g) ];
     d = { wheels:w, steer:[{w:w[2],k:-1},{w:w[3],k:-1}], spinners:[{spin:r,rate:1.1}],
-          fill:fw, tool:{ obj:mkH, W:6.0, near:-.35, far:.4 } };
+          fill:fw, auger:augPiv, spout:spout, tool:{ obj:mkH, W:6.0, near:-.35, far:.4 } };
   }
   else {                                          // benne de transfert
     const t = tractorBase(g, C.blue);
@@ -707,12 +719,81 @@ function build(kind){
     const fw = new THREE.Group(); fw.position.set(0,1.1,-2.4); h.add(fw);
     const fg = new THREE.BoxGeometry(2.3,1.25,3.8); fg.translate(0,.62,0);
     fw.add(new THREE.Mesh(fg, mat(C.gold))); fw.scale.y = .02;
+    // couvercle articulé : il ne s'ouvre que sous la goulotte
+    const lid = new THREE.Group(); lid.position.set(-1.32,2.28,-2.4); h.add(lid);
+    rbox(2.64,.14,4.24, C.redDark, 1.32,0,0, lid, .06);
+    rbox(.5,.16,.5, C.metal, 2.4,.06,1.5, lid, .05);
     const w = [ wheel(.7,.5,1.67,.7,-2.6,h), wheel(.7,.5,-1.67,.7,-2.6,h) ];
-    d = { wheels:t.wheels.concat(w), steer:t.steer, spinners:[], hitch:t.hitch, fill:fw, tool:null };
+    d = { wheels:t.wheels.concat(w), steer:t.steer, spinners:[], hitch:t.hitch,
+          fill:fw, bin:fw, lid:lid, tool:null };
   }
   JELLY = false;
   g.userData = d;
   return g;
+}
+
+// ---------- outils de dessin des motifs de sol ----------
+// Tirage reproductible : le motif posé au sol est exactement celui validé au nuancier.
+const TS = 256;
+function rng(seed){
+  return function(){
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function cv(){
+  const c = document.createElement('canvas'); c.width = c.height = TS;
+  return [c, c.getContext('2d')];
+}
+// Tout se répète sur les bords : le motif se raccorde sans couture d'une tuile à l'autre.
+function wrapDraw(x, px, py, r, fn){
+  for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++){
+    const ax = px + dx*TS, ay = py + dy*TS;
+    if (ax < -r || ax > TS+r || ay < -r || ay > TS+r) continue;
+    fn(ax, ay);
+  }
+}
+function blob(x,px,py,r,col){
+  x.fillStyle = col;
+  wrapDraw(x,px,py,r,(ax,ay)=>{ x.beginPath(); x.arc(ax,ay,r,0,6.3); x.fill(); });
+}
+function glow(x,px,py,r,c0,c1){
+  wrapDraw(x,px,py,r,(ax,ay)=>{
+    const g = x.createRadialGradient(ax,ay,0,ax,ay,r);
+    g.addColorStop(0,c0); g.addColorStop(1,c1);
+    x.fillStyle = g; x.beginPath(); x.arc(ax,ay,r,0,6.3); x.fill();
+  });
+}
+function bands(x, a){                                  // trace de rouleau, commune à tous les états
+  a = a === undefined ? .05 : a;
+  x.fillStyle = 'rgba(255,255,255,'+a+')'; x.fillRect(0,0,TS/2,TS);
+  x.fillStyle = 'rgba(0,0,0,'+(a+.012)+')'; x.fillRect(TS/2,0,TS/2,TS);
+}
+// sillon ondulé, périodique sur la hauteur pour se raccorder
+function furrow(x, px, col, w, amp, k, ph){
+  x.strokeStyle = col; x.lineWidth = w; x.lineCap = 'round';
+  for(const dx of [-TS,0,TS]){
+    x.beginPath();
+    for(let y=0;y<=TS;y+=6){
+      const o = Math.sin(y/TS*6.28318*k + ph)*amp + Math.sin(y/TS*6.28318*k*2.4 + ph*1.7)*amp*.35;
+      x.lineTo(px + dx + o, y);
+    }
+    x.stroke();
+  }
+}
+function speck(x, R, n, cols, rmin, rmax){
+  for(let i=0;i<n;i++)
+    blob(x, R()*TS, R()*TS, rmin + R()*(rmax-rmin), cols[(R()*cols.length)|0]);
+}
+// brin couché : retracé aux neuf décalages pour ne pas être coupé au bord
+function straw(x, R, px, py, a, L, w, col){
+  x.strokeStyle = col; x.lineWidth = w; x.lineCap = 'round';
+  for(const dx of [-TS,0,TS]) for(const dy of [-TS,0,TS]){
+    x.beginPath(); x.moveTo(px+dx,py+dy);
+    x.lineTo(px+dx+Math.cos(a)*L, py+dy+Math.sin(a)*L); x.stroke();
+  }
 }
 
 // ---------- terrain ----------
@@ -804,14 +885,25 @@ function parcelY(x,z){
   const k = Math.min(1, d/1.15), sm = k*k*(3-2*k);
   return (LIP + soilBump(x,z)) * sm;
 }
+// R2 « Terre craquelée » : le fond de parcelle, jamais travaillé.
+// Les fentes sont larges à dessein — à 29 px la tuile, un trait fin disparaît.
 function soilTex(){
-  const c = document.createElement('canvas'); c.width = c.height = 128;
-  const x = c.getContext('2d');
-  x.fillStyle = '#a8965f'; x.fillRect(0,0,128,128);
-  for(let i=0;i<340;i++){
-    x.fillStyle = Math.random()>.5 ? 'rgba(214,198,146,.5)' : 'rgba(126,110,66,.4)';
-    x.beginPath(); x.arc(Math.random()*128, Math.random()*128, .8+Math.random()*2, 0, 6.3); x.fill();
+  const [c,x] = cv(), R = rng(754087);
+  x.fillStyle = '#ab9862'; x.fillRect(0,0,TS,TS);
+  speck(x, R,200,['rgba(214,198,146,.42)','rgba(126,110,66,.3)'],1.6,5);
+  x.lineCap = 'round';
+  for(let i=0;i<24;i++){
+    const pts = []; let px = R()*TS, py = R()*TS, a = R()*6.28;
+    pts.push([px,py]);
+    for(let k=0;k<7;k++){ a += (R()-.5)*1.5; px += Math.cos(a)*13; py += Math.sin(a)*13; pts.push([px,py]); }
+    x.strokeStyle = 'rgba(96,80,46,.55)'; x.lineWidth = 2.6 + R()*2.6;
+    for(const dx of [-TS,0,TS]) for(const dy of [-TS,0,TS]){
+      x.beginPath();
+      pts.forEach((q,k) => k ? x.lineTo(q[0]+dx,q[1]+dy) : x.moveTo(q[0]+dx,q[1]+dy));
+      x.stroke();
+    }
   }
+  speck(x, R,70,['rgba(238,226,188,.34)'],1.4,3.4);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
@@ -879,116 +971,104 @@ function semerMottes(){
 // ---------- traînées de passage : un ruban continu, pas des rectangles bout à bout ----------
 // (des quads successifs faisaient un bord en dents de scie dans les courbes : ici les sommets
 //  sont partagés d'un échantillon au suivant, le bord est une polyligne lisse)
+// Le ruban de travail était rogné sur un rectangle droit : au bout de chaque passage il
+// s'arrêtait donc net, alors que la terre, elle, ondule. On le laisse déborder et c'est le
+// contour réel qui le découpe, au pixel près, dans le fragment shader.
+function clipToParcel(m){
+  const L = X0.toFixed(3), Rr = (X0+P).toFixed(3), B = Z0.toFixed(3), T = (Z0+P).toFixed(3);
+  m.onBeforeCompile = sh => {
+    sh.vertexShader = 'varying vec3 vWP;\n' + sh.vertexShader.replace(
+      '#include <fog_vertex>',
+      '#include <fog_vertex>\n  vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = ('varying vec3 vWP;\n' +
+      'float ewob(float t, float sd){\n' +
+      '  return sin(t*.29 + sd)*.30 + sin(t*.73 - sd*1.7)*.17 + sin(t*1.61 + sd*2.1)*.085\n' +
+      '       + sin(t*3.37 - sd*.9)*.042 + sin(t*6.9 + sd*3.1)*.018;\n}\n' +
+      sh.fragmentShader).replace(
+      '#include <clipping_planes_fragment>',
+      '#include <clipping_planes_fragment>\n' +
+      '  float _l = vWP.x - (' + L + ' - ewob(vWP.z, 0.7));\n' +
+      '  float _r = (' + Rr + ' + ewob(vWP.z, 2.9)) - vWP.x;\n' +
+      '  float _b = vWP.z - (' + B + ' - ewob(vWP.x, 4.1));\n' +
+      '  float _t = (' + T + ' + ewob(vWP.x, 5.7)) - vWP.z;\n' +
+      '  if (min(min(_l,_r), min(_b,_t)) <= 0.0) discard;');
+  };
+  return m;
+}
+
 const SWATH = (function(){
   // Une texture par état, dessinée pour être franchement distincte des autres.
   // (principe repris de Mow & Go : un motif fin déposé le long du passage, pas un aplat)
-  const TS = 256;
-  // Tirage reproductible : le motif posé au sol est exactement celui validé au nuancier.
-  function rng(seed){
-    return function(){
-      seed |= 0; seed = seed + 0x6D2B79F5 | 0;
-      let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
-      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
-      return ((t ^ t >>> 14) >>> 0) / 4294967296;
-    };
-  }
-  function cv(){
-    const c = document.createElement('canvas'); c.width = c.height = TS;
-    return [c, c.getContext('2d')];
-  }
+  // Les motifs se lisent à 29 px la tuile : tout est dessiné gros, sinon rien ne se voit au sol.
   function finish(c){
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     if (renderer.capabilities) t.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return t;
   }
-  // Tout se dessine en se répétant sur les bords : le motif se raccorde sans couture,
-  // ce qui n'était pas le cas avant — les taches coupées au bord se voyaient au raccord.
-  function wrapDraw(x, px, py, r, fn){
-    for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++){
-      const ax = px + dx*TS, ay = py + dy*TS;
-      if (ax < -r || ax > TS+r || ay < -r || ay > TS+r) continue;
-      fn(ax, ay);
-    }
-  }
-  function blob(x,px,py,r,col){
-    x.fillStyle = col;
-    wrapDraw(x,px,py,r,(ax,ay)=>{ x.beginPath(); x.arc(ax,ay,r,0,6.3); x.fill(); });
-  }
-  function glow(x,px,py,r,c0,c1){
-    wrapDraw(x,px,py,r,(ax,ay)=>{
-      const g = x.createRadialGradient(ax,ay,0,ax,ay,r);
-      g.addColorStop(0,c0); g.addColorStop(1,c1);
-      x.fillStyle = g; x.beginPath(); x.arc(ax,ay,r,0,6.3); x.fill();
-    });
-  }
-  function bands(x, a){                                // trace de rouleau, commune à tous les états
-    a = a === undefined ? .05 : a;
-    x.fillStyle = 'rgba(255,255,255,'+a+')'; x.fillRect(0,0,TS/2,TS);
-    x.fillStyle = 'rgba(0,0,0,'+(a+.012)+')'; x.fillRect(TS/2,0,TS/2,TS);
-  }
-  // sillon ondulé, périodique sur la hauteur pour se raccorder d'une tuile à l'autre
-  function furrow(x, px, col, w, amp, k, ph){
-    x.strokeStyle = col; x.lineWidth = w; x.lineCap = 'round';
-    for(const dx of [-TS,0,TS]){
-      x.beginPath();
-      for(let y=0;y<=TS;y+=6){
-        const o = Math.sin(y/TS*6.28318*k + ph)*amp + Math.sin(y/TS*6.28318*k*2.4 + ph*1.7)*amp*.35;
-        x.lineTo(px + dx + o, y);
-      }
-      x.stroke();
-    }
-  }
-  function grains(x, R, n, cols, rmin, rmax){
-    for(let i=0;i<n;i++)
-      blob(x, R()*TS, R()*TS, rmin + R()*(rmax-rmin), cols[(R()*cols.length)|0]);
-  }
 
-  // 1. déchaumé — « Sillons souples » (L1)
+  // 1. déchaumé — « Sillons souples » (L1), mottes franchement grossies
   function texTilled(){
     const [c,x] = cv(), R = rng(601844);
     x.fillStyle='#7d6039'; x.fillRect(0,0,TS,TS); bands(x);
-    x.globalAlpha=.6;
-    for(let i=0;i<8;i++) furrow(x,(i+.5)*32,'#4e3a20',3,2.6,1,i);
+    x.globalAlpha=.62;
+    for(let i=0;i<6;i++) furrow(x,(i+.5)*(TS/6),'#4a3620',7,4,1,i);
     x.globalAlpha=1;
-    grains(x,R,300,['rgba(163,134,86,.55)','rgba(58,42,23,.5)'],1,4.4);
+    for(let i=0;i<95;i++){                              // grosses mottes, avec leur ombre
+      const px=R()*TS, py=R()*TS, r=3.4+R()*6.6;
+      blob(x,px+r*.3,py+r*.32,r,'rgba(52,37,19,.5)');
+      blob(x,px,py,r*.88,'#9d7d4d');
+      blob(x,px-r*.24,py-r*.28,r*.36,'rgba(226,205,160,.4)');
+    }
+    speck(x, R,140,['rgba(163,134,86,.5)','rgba(58,42,23,.45)'],1.6,4.6);
     return finish(c);
   }
-  // 2. semé — « Rangs ondulés » (S2) : les rangs suivent le relief, pas le cordeau
-  function texSown(){
-    const [c,x] = cv(), R = rng(762006);
+  // le dessin du semis, réutilisé tel quel par l'engrais
+  function drawSown(x, R){
     x.fillStyle='#7d5e39'; x.fillRect(0,0,TS,TS); bands(x,.045);
-    grains(x,R,320,['rgba(58,42,23,.38)','rgba(166,138,90,.35)'],1,3);
-    for(let i=0;i<8;i++){
-      const px=(i+.5)*32, ph=i*1.4;
-      furrow(x,px,'rgba(48,34,18,.5)',6,3.2,1,ph);
-      furrow(x,px-3.5,'rgba(184,158,108,.4)',1.8,3.2,1,ph);
-      for(let y=8;y<TS;y+=21){
-        const o=Math.sin(y/TS*6.28318+ph)*3.2;
-        blob(x,px+o+(R()-.5)*3,y+(R()-.5)*4,3.4,'#eddba4');
+    speck(x, R,180,['rgba(58,42,23,.38)','rgba(166,138,90,.35)'],1.8,5);
+    for(let i=0;i<6;i++){
+      const px=(i+.5)*(TS/6), ph=i*1.4;
+      furrow(x,px,'rgba(46,32,16,.55)',11,4.2,1,ph);
+      furrow(x,px-6,'rgba(190,164,112,.42)',3.4,4.2,1,ph);
+      for(let y=8;y<TS;y+=26){                          // les graines, bien plus grosses
+        const o=Math.sin(y/TS*6.28318+ph)*4.2;
+        const gx=px+o+(R()-.5)*5, gy=y+(R()-.5)*6, r=5.4+R()*2.2;
+        blob(x,gx+1,gy+1.2,r,'rgba(74,54,26,.4)');
+        blob(x,gx,gy,r,'#f0dda6');
+        blob(x,gx-r*.3,gy-r*.32,r*.42,'#fdf3d0');
       }
     }
-    return finish(c);
   }
-  // 3. fertilisé — « Traînées de buses » (F3) : les nappes se recouvrent en taches molles
+  // 2. semé — « Rangs ondulés » (S2)
+  function texSown(){
+    const [c,x] = cv(); drawSown(x, rng(762006)); return finish(c);
+  }
+  // 3. fertilisé — le semis, simplement mouillé : même dessin, terre plus foncée
   function texWet(){
-    const [c,x] = cv(), R = rng(763788);
-    x.fillStyle='#5c4423'; x.fillRect(0,0,TS,TS);
-    for(let i=0;i<8;i++){
-      const px=(i+.5)*32;
-      for(let y=0;y<TS;y+=13){
-        const o=Math.sin(y/TS*6.28318+i)*5;
-        glow(x,px+o,y,15+R()*9,'rgba(34,23,10,.34)','rgba(34,23,10,0)');
-      }
-    }
-    bands(x,.04);
-    x.globalAlpha=.34;
-    for(let i=0;i<8;i++) furrow(x,(i+.5)*32,'#2e1f0d',3.5,2,1,i);
-    x.globalAlpha=1;
-    grains(x,R,180,['rgba(186,204,214,.26)'],.7,2.2);
+    const [c,x] = cv(), R = rng(762006);
+    drawSown(x, R);
+    x.fillStyle = 'rgba(40,26,10,.5)'; x.fillRect(0,0,TS,TS);
+    const R2 = rng(763788);
+    for(let i=0;i<26;i++)                               // quelques flaques, à peine
+      glow(x,R2()*TS,R2()*TS,16+R2()*34,'rgba(20,12,4,.35)','rgba(20,12,4,0)');
+    speck(x, R2,90,['rgba(186,204,214,.2)'],1.2,3);
     return finish(c);
   }
-  const TEX = [texTilled(), texSown(), texWet()];
+  // 4. moissonné — « Menue paille » (M5), débris nettement plus longs et plus jaunes
+  function texCut(){
+    const [c,x] = cv(), R = rng(1028679);
+    x.fillStyle='#a3905c'; x.fillRect(0,0,TS,TS); bands(x,.03);
+    speck(x, R,110,['rgba(198,182,132,.34)'],1.6,4.4);
+    for(let i=0;i<200;i++){
+      const px=R()*TS, py=R()*TS, a=R()*6.28, L=6+R()*13;
+      straw(x, R, px+1, py+1.4, a, L, 2.4+R()*2, 'rgba(96,78,38,.35)');
+      straw(x, R, px, py, a, L, 2.4+R()*2,
+            R()>.45 ? 'rgba(244,226,150,.85)' : 'rgba(206,180,104,.7)');
+    }
+    return finish(c);
+  }
+  const TEX = [texTilled(), texSown(), texWet(), texCut()];
   const MAXS = 6000, TILE = 2.2;          // 1 motif = 2,2 m au sol, échelle constante
   const layers = TEX.map((tex,i) => {
     const pos = new Float32Array(MAXS*6), nor = new Float32Array(MAXS*6), uv = new Float32Array(MAXS*4);
@@ -1000,11 +1080,11 @@ const SWATH = (function(){
     geo.setAttribute('uv', new THREE.BufferAttribute(uv,2).setUsage(THREE.DynamicDrawUsage));
     geo.setIndex(new THREE.BufferAttribute(idx,1));
     geo.setDrawRange(0,0);
-    const mm = i === 2
+    const mm = clipToParcel(i === 2
       ? new THREE.MeshPhongMaterial({ map:tex, side:THREE.DoubleSide, shininess:38,
           specular:new THREE.Color('#6f7a80'), depthTest:false, depthWrite:false })  // brillance mouillée
       : new THREE.MeshLambertMaterial({ map:tex, side:THREE.DoubleSide,
-          depthTest:false, depthWrite:false });   // aucun z-fight quand on repasse au même endroit
+          depthTest:false, depthWrite:false }));  // aucun z-fight quand on repasse au même endroit
     const m = new THREE.Mesh(geo, mm);
     m.position.y = i*.004; m.frustumCulled = false; m.receiveShadow = true;
     m.renderOrder = -10 + i;                      // juste après le sol, avant tout le reste
@@ -1019,8 +1099,8 @@ const SWATH = (function(){
       L.v = link ? L.v + Math.hypot(x-L.lx, z-L.lz)/TILE : 0;   // v = distance parcourue
       L.lx = x; L.lz = z;
       const o = L.n*6, u = L.n*4;
-      const ax = cx(x + c*w/2, X0, X0+P), az = cx(z - si*w/2, Z0, Z0+P);
-      const bx = cx(x - c*w/2, X0, X0+P), bz = cx(z + si*w/2, Z0, Z0+P);
+      const ax = x + c*w/2, az = z - si*w/2;
+      const bx = x - c*w/2, bz = z + si*w/2;
       L.pos[o]   = ax; L.pos[o+1] = parcelY(ax,az)*.97 + .015; L.pos[o+2] = az;   // travaillé = aplani
       L.pos[o+3] = bx; L.pos[o+4] = parcelY(bx,bz)*.97 + .015; L.pos[o+5] = bz;
       L.uv[u] = 0;      L.uv[u+1] = L.v;
@@ -1164,12 +1244,12 @@ function tuftCorn(leaf, stemCol, cob){                      // maïs : une canne
 // Avant le labour, la parcelle ne montre plus aucun motif peint : uniquement ce dépôt,
 // les tiges de la récolte précédente qui ont séché sur place.
 function tuftStraw(){
-  const p = [], col = '#e0cb8c', colD = '#b39a5c', colP = '#cbb374';
+  const p = [], col = '#f5e08c', colD = '#c9a94e', colP = '#e2cb6e';
   for(let k=0;k<10;k++){
-    const a = k*1.11 + (k%3)*.42, L = .3 + (k%4)*.1, r = .05 + (k%4)*.055;
-    const g = new THREE.CylinderGeometry(.024,.019,L,4); g.rotateZ(Math.PI/2);
+    const a = k*1.11 + (k%3)*.42, L = .46 + (k%4)*.15, r = .07 + (k%4)*.075;
+    const g = new THREE.CylinderGeometry(.042,.032,L,4); g.rotateZ(Math.PI/2);
     p.push({ g, c: k%3 === 0 ? col : k%3 === 1 ? colD : colP,
-             m: MX(Math.cos(a)*r, .03 + (k%3)*.021, Math.sin(a)*r, 0, a, .05 + (k%2)*.06) });
+             m: MX(Math.cos(a)*r, .045 + (k%3)*.03, Math.sin(a)*r, 0, a, .05 + (k%2)*.06) });
   }
   return merge(p);
 }
@@ -1205,6 +1285,7 @@ for(let x=X0+SP/2; x<X0+P; x+=SP)
     const ti = cellIndex(x,z);
     const ci = Math.min(CN-1,Math.floor((z-Z0)/CH))*CN + Math.min(CN-1,Math.floor((x-X0)/CH));
     const px = x+(Math.random()-.5)*.24, pz = z+(Math.random()-.5)*.24;
+    if (parcelInset(px,pz) < .4) continue;        // rien ne lève hors du contour de la terre
     const p = { x:px, z:pz, y:parcelY(px,pz), ti, ci,
                 g:0, r:0, rot:Math.random()*3.1, s:.85+Math.random()*.3, i:chunks[ci].list.length };
     chunks[ci].list.push(plants.length); plants.push(p);
@@ -1525,6 +1606,29 @@ function killVehicle(v){
     if (o.material && o.material.userData.own) o.material.dispose();
   });
 }
+// conduite au manche, au clavier ou sur parcours : le même code pour l'engin d'attelage
+// comme pour la benne, puisque les deux se pilotent maintenant.
+function driveManual(v, dt){
+  if (kbActive || ctrlMode === 'manche'){
+    const push = Math.max(0, (jmag - .12)/.88);                // zone morte au centre
+    const turning = jmag > .12;
+    const wantH = turning ? Math.atan2(jx, jy) : v.heading;
+    // demi-tour au manche : il lève le pied le temps de pivoter, puis relance
+    let d = wantH - v.heading;
+    while(d >  Math.PI) d -= 6.28318;
+    while(d < -Math.PI) d += 6.28318;
+    const grip = .25 + .75*Math.max(0, Math.cos(d));           // presque un pivot sur place
+    step(v, dt, wantH, push*MAXSPD*mudK*grip, turning);
+  } else {                                                     // parcours dessiné
+    const t = pathState === 'route' ? PATH.target() : null;
+    if (t){
+      if (driveTo(v, t, dt) < 2){
+        PATH.advance();
+        if (!PATH.count()) setPathState('pret');               // arrivé au bout : l'engin s'arrête
+      }
+    } else step(v, dt, v.heading, 0, false);
+  }
+}
 function step(v, dt, wantHeading, wantSpeed, turnable){
   if (turnable){
     let diff = wantHeading - v.heading;
@@ -1601,7 +1705,7 @@ const MAXSPD0 = 7.6, RMIN0 = 1.5;   // vitesse de base ; rayon de braquage mini
 // Le braquage tenait de l'engin de chantier : plafonné à 1,9 rad/s sur un rayon de 2,8 m,
 // il fallait un virage large pour se retourner. On resserre le rayon, on relève le plafond,
 // et on ajoute un pivot minimal pour que l'engin réponde au manche même en roulant doucement.
-const TURNCAP = 4.6, TURNFLOOR = 1.6;
+const TURNCAP = 7.0, TURNFLOOR = 3.0;
 let MAXSPD = MAXSPD0, RMIN = RMIN0, ACC = 10, GROWK = 1, PRICEK = 1, mudK = 1;
 function driveTo(v, target, dt, stop){
   const want = Math.atan2(target.x-v.pos.x, target.z-v.pos.z);
@@ -1621,7 +1725,7 @@ function lanesFor(W){
   return L;
 }
 const _tp = new THREE.Vector3(), _tq = new THREE.Quaternion(), _tsc = new THREE.Vector3(),
-      _te = new THREE.Euler();
+      _te = new THREE.Euler(), _spout = new THREE.Vector3(), _bin = new THREE.Vector3();
 function toolPose(v){
   const T = v.g.userData.tool; if (!T) return null;
   v.h.updateMatrixWorld(true);
@@ -1668,8 +1772,9 @@ const STAGES = [
   { k:'grow',    n:'Pousse',   ic:'🌿', d:'La culture mûrit' },
   { k:'harvest', n:'Moisson',  ic:'🌾', d:'Moissonneuse — la benne vient au transfert' }
 ];
-let stage = 0, worker = null, hauler = null, haulState = '', coins = 0, stock = 0;
-const CAP0 = 130, TRCAP0 = 300;
+let stage = 0, worker = null, hauler = null, coins = 0, stock = 0;
+let driven = 'worker';          // quel engin répond aux commandes : la benne ne roule plus seule
+const CAP0 = 900, TRCAP0 = 1800;   // une trémie qui tient un vrai bout de parcelle
 let CAP = CAP0, TRCAP = TRCAP0;
 const elNow = document.getElementById('job');
 
@@ -1679,7 +1784,11 @@ function refreshNow(){
 }
 function startStage(skipSeed){
   const s = STAGES[stage];
-  if (stage === 0) SWATH.reset();   // nouveau cycle : la parcelle repart du sol nu
+  if (stage === 0){
+    SWATH.reset();                  // nouveau cycle : la parcelle repart du sol nu
+    if (hauler && hauler.hop <= .5){ killVehicle(hauler); hauler = null; }
+  }
+  if (!hauler) driven = 'worker';
   if (s.k === 'sow' && !skipSeed) paySeed();   // la semence se règle au moment de la mettre en terre
   document.querySelectorAll('#steps .step').forEach((e,i) => {
     e.classList.toggle('on', i === stage);
@@ -2304,6 +2413,36 @@ mkBtn(rowTools, '🛒', 'Boutique', () => openPanel('shop'));
 mkBtn(rowTools, '🌿', 'Cultures', () => openPanel('crop'));
 mkBtn(rowTools, '⚙️', 'Réglages', () => openPanel('ctrl'));
 
+// ---------- passage d'un engin à l'autre : la benne ne vient que si on va la chercher ----------
+const elVehRow = document.getElementById('vehrow'), elVehBtn = document.getElementById('vehBtn');
+function haulerNeeded(){ return !!hauler || !!(worker && worker.kind === 'harvest'); }
+function drawVeh(){
+  const show = haulerNeeded();
+  elVehRow.classList.toggle('on', show);
+  if (!show) return;
+  elVehBtn.innerHTML = driven === 'worker'
+    ? '<i>🚜</i><span>Passer à la benne</span>'
+    : '<i>🌾</i><span>Revenir à la moissonneuse</span>';
+}
+function switchVehicle(){
+  if (!haulerNeeded()) return;
+  if (driven === 'worker'){
+    if (!hauler){
+      hauler = vehicle('trailer');
+      hauler.pos.copy(GATE); hauler.heading = Math.PI;
+      hauler.h.position.set(GATE.x, 0, GATE.z);
+      hauler.hop = 0; hauler.paid = 0; hauler.cropId = crop().id;
+      toast('Benne attelée — conduis-la sous la goulotte');
+    }
+    driven = 'hauler';
+  } else {
+    if (!worker) return;
+    driven = 'worker';
+  }
+  setManual(); setPathState('pret'); sfx('stage'); drawVeh();
+}
+elVehBtn.onclick = switchVehicle;
+
 // ---------- clavier : le jeu se joue aussi sans écran tactile ----------
 const keys = Object.create(null);
 let kbActive = false;
@@ -2321,6 +2460,7 @@ addEventListener('keydown', e => {
     else if (k === 'c') openPanel('crop');
     else if (k === 'h') openPanel('help');
     else if (k === 'x') cycleSpeed();
+    else if (k === 'e') switchVehicle();
     else if (k === 'g'){                       // faire tourner les modes de pilotage
       const i = CTRL.findIndex(c => c.id === ctrlMode);
       ctrlMode = CTRL[(i+1) % CTRL.length].id; applyCtrl(); save();
@@ -2403,26 +2543,10 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   const S = STAGES[stage];
 
   if (worker){
-    if (manual){
-      if (kbActive || ctrlMode === 'manche'){
-        const push = Math.max(0, (jmag - .12)/.88);            // zone morte au centre
-        const turning = jmag > .12;
-        const wantH = turning ? Math.atan2(jx, jy) : worker.heading;
-        // demi-tour au manche : il lève le pied le temps de pivoter, puis relance
-        let d = wantH - worker.heading;
-        while(d >  Math.PI) d -= 6.28318;
-        while(d < -Math.PI) d += 6.28318;
-        const grip = .45 + .55*Math.max(0, Math.cos(d));
-        step(worker, dt, wantH, push*MAXSPD*mudK*grip, turning);
-      } else {                                                 // parcours dessiné
-        const t = pathState === 'route' ? PATH.target() : null;
-        if (t){
-          if (driveTo(worker, t, dt) < 2){
-            PATH.advance();
-            if (!PATH.count()) setPathState('pret');           // arrivé au bout : l'engin s'arrête
-          }
-        } else step(worker, dt, worker.heading, 0, false);
-      }
+    if (driven !== 'worker'){
+      step(worker, dt, worker.heading, 0, false);               // à l'arrêt pendant qu'on conduit la benne
+    } else if (manual){
+      driveManual(worker, dt);
     } else if (worker.done){
       const waiting = worker.kind === 'harvest' && worker.hop > 1;
       const dist = driveTo(worker, waiting ? worker.pos : GATE, dt, waiting);
@@ -2514,6 +2638,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
         if (cut){
           worker.hop = Math.min(CAP, worker.hop + cut*crop().yieldK);
           applyTool(worker, i => setCell(i,0));
+          laySwath(worker, 3);
           if (Math.random()<.3) popDust(worker.pos.x-Math.sin(worker.heading)*2.5,
                                         worker.pos.z-Math.cos(worker.heading)*2.5);
         }
@@ -2549,56 +2674,68 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   });
 
   // tracteur de transfert
+  // ---------- moisson : la benne se conduit, elle ne vient plus toute seule ----------
   const combine = (worker && worker.kind === 'harvest') ? worker : null;
-  if (combine && !hauler && (combine.hop > CAP*.5 || (combine.done && combine.hop > 1))){
-    hauler = vehicle('trailer'); haulState = 'toCombine'; hauler.hop = 0; hauler.mul = 1.35;
-    hauler.cropId = crop().id; hauler.paid = 0;   // le chargement garde le prix de sa culture
+  const cFull = !!combine && (combine.hop >= CAP - .5 || (combine.done && combine.hop > .5));
+
+  if (hauler){
+    if (driven === 'hauler') driveManual(hauler, dt);
+    else step(hauler, dt, hauler.heading, 0, false);
+  }
+
+  // transfert : uniquement quand la benne est venue se ranger sous la goulotte
+  let vidange = false;
+  if (combine && hauler && combine.hop > .5 && hauler.hop < TRCAP - .5){
+    combine.h.updateMatrixWorld(true); hauler.h.updateMatrixWorld(true);
+    combine.g.userData.spout.getWorldPosition(_spout);
+    hauler.g.userData.bin.getWorldPosition(_bin);
+    const gap = Math.hypot(_spout.x-_bin.x, _spout.z-_bin.z);
+    const deployee = combine.g.userData.auger.rotation.y < .55;
+    if (gap < 3.4 && deployee) vidange = true;
+  }
+  if (vidange){
+    const give = Math.min(combine.hop, 150*dt, TRCAP-hauler.hop);
+    combine.hop -= give; hauler.hop += give;
+    // débit calé sur le temps, pas sur l'image : sinon le jet sature à 60 fps
+    if (give > 0 && Math.random() < Math.min(.9, dt*30))
+      popGrain(_spout.x, _spout.y, _spout.z, _bin.x, _bin.z);
+    if (Math.random() < .05) popDust(_bin.x, _bin.z);
+  }
+  // la vis reste rangée pendant la coupe ; elle ne sort qu'à trémie pleine, et rentre une fois vidée
+  if (combine){
+    const a = combine.g.userData.auger;
+    const want = (cFull || vidange) ? AUG_OPEN : AUG_FOLD;
+    a.rotation.y += (want - a.rotation.y)*Math.min(1, dt*2.2);
+  }
+  if (hauler && hauler.g.userData.lid){
+    const l = hauler.g.userData.lid;
+    l.rotation.z += ((vidange ? 1.15 : 0) - l.rotation.z)*Math.min(1, dt*3.4);
   }
   if (combine && combine.g.userData.fill) combine.g.userData.fill.scale.y = .02 + combine.hop/CAP*.98;
+
+  // livraison : on amène la benne au silo et elle se vide
   if (hauler){
-    const hd = hauler.g.userData;
-    const side = combine ? new THREE.Vector3(
-      combine.pos.x + Math.cos(combine.heading)*4 - Math.sin(combine.heading)*1.5, 0,
-      combine.pos.z - Math.sin(combine.heading)*4 - Math.cos(combine.heading)*1.5) : null;
-    if (haulState === 'toCombine' && combine){
-      if (driveTo(hauler, side, dt) < RMIN) haulState = 'transfer';
-    } else if (haulState === 'transfer' && combine){
-      driveTo(hauler, side, dt, hauler.pos.distanceTo(side) < 3.4);
-      const give = Math.min(combine.hop, 55*dt, TRCAP-hauler.hop);
-      combine.hop -= give; hauler.hop += give;
-      // débit calé sur le temps, pas sur l'image : sinon le jet sature à 60 fps
-      if (give > 0 && Math.random() < Math.min(.9, dt*26)){
-        const ch = combine.heading;
-        popGrain(combine.pos.x + Math.cos(ch)*2.9 - Math.sin(ch)*1.2, 3.5,
-                 combine.pos.z - Math.sin(ch)*2.9 - Math.cos(ch)*1.2,
-                 hauler.pos.x - Math.sin(hauler.heading)*3.3,
-                 hauler.pos.z - Math.cos(hauler.heading)*3.3);
+    if (hauler.hop > .2 && hauler.pos.distanceTo(SILO) < 6){
+      const give = Math.min(hauler.hop, 160*dt);
+      const c = CROPS.find(x => x.id === hauler.cropId) || CROPS[0];
+      const pay = give*c.price*PRICEK;
+      hauler.hop -= give; stock += give; totalT += give; coins += pay;
+      hauler.paid += pay;
+      contractDeliver(c.id, give);
+      if (hauler.paid > 700){                  // une tranche encaissée : le gain part vers le compteur
+        floatCoin(SILO.x, SILO.z-2, '+' + fmt(hauler.paid));
+        for(let i=0;i<4;i++) flyCoin(SILO.x, SILO.z-2, i*70);
+        hauler.paid = 0; sfx('coin');
       }
-      if (Math.random() < .04) popDust(hauler.pos.x, hauler.pos.z-2);
-      if (hauler.hop >= TRCAP-.5 || (combine.done && combine.hop <= .5)) haulState = 'toSilo';
-    } else if (haulState === 'toSilo'){
-      if (driveTo(hauler, SILO, dt) < RMIN+1.5) haulState = 'dump';
-    } else if (haulState === 'dump'){
-      driveTo(hauler, SILO, dt, true);
-      const give = Math.min(hauler.hop, 90*dt);
-      if (give > 0){
-        const c = CROPS.find(x => x.id === hauler.cropId) || CROPS[0];
-        const pay = give*c.price*PRICEK;
-        hauler.hop -= give; stock += give; totalT += give; coins += pay;
-        hauler.paid += pay;
-        contractDeliver(c.id, give);
-        if (hauler.paid > 700){                  // une tranche encaissée : le gain part vers le compteur
-          floatCoin(SILO.x, SILO.z-2, '+' + fmt(hauler.paid));
-          for(let i=0;i<4;i++) flyCoin(SILO.x, SILO.z-2, i*70);
-          hauler.paid = 0; sfx('coin');
-        }
-      }
-      if (hauler.hop <= .2){ haulState = 'park'; sfx('cash'); save(); }
-    } else if (haulState === 'park'){
-      if (driveTo(hauler, GATE, dt) < RMIN+1){ killVehicle(hauler); hauler = null; }
-    } else if (!combine){ haulState = 'toSilo'; }
-    if (hauler && hd.fill) hd.fill.scale.y = .02 + hauler.hop/TRCAP*.98;
+      if (hauler.hop <= .2){ sfx('cash'); save(); toast('Benne vidée au silo', 'good'); }
+    }
+    if (hauler.g.userData.fill) hauler.g.userData.fill.scale.y = .02 + hauler.hop/TRCAP*.98;
   }
+
+  // le joueur est prévenu une seule fois par remplissage
+  if (cFull && !combine.warned){ combine.warned = true; toast('Trémie pleine — prends la benne', 'bad'); sfx('deny'); }
+  if (combine && !cFull) combine.warned = false;
+  drawVeh();
 
   if (combine && !combine.done && !manual){
     let left = 0;
@@ -2634,7 +2771,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
 
   // caméra : suit l'engin piloté
   // caméra quasi figée : elle ne bouge que si l'engin sort d'une zone morte centrale
-  const foc = worker || hauler;
+  const foc = (driven === 'hauler' && hauler) ? hauler : (worker || hauler);
   if (foc){
     const a = SW/SH;
     const mx = (VIEW*a/2) * .42;                       // marge horizontale avant décrochage
@@ -2680,6 +2817,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   else if (S.k === 'sow'){   gf = (cellN[2]+cellN[3])/NC;          gl = 'Semis ' + Math.round(gf*100) + ' %'; }
   else if (S.k === 'fert'){  gf = cellN[3]/NC;                     gl = 'Engrais ' + Math.round(gf*100) + ' %'; }
   else if (S.k === 'grow'){  gf = sown ? ripe/sown : 0;            gl = 'Maturité ' + Math.round(gf*100) + ' %'; }
+  else if (driven === 'hauler' && hauler){ gf = hauler.hop/TRCAP; gl = 'Benne ' + Math.round(gf*100) + ' %'; }
   else {                     gf = combine ? combine.hop/CAP : (hauler ? hauler.hop/TRCAP : 0);
                              gl = (combine ? 'Trémie ' : 'Benne ') + Math.round(gf*100) + ' %'; }
   elGauge.firstElementChild.style.width = (gf*100).toFixed(1) + '%';
@@ -2706,8 +2844,12 @@ window.__FARM_DEBUG = () => ({
   cap:+(worker ? worker.heading : 0).toFixed(3), vit:+(worker ? worker.speed : 0).toFixed(2),
   posX:+worker?.pos.x.toFixed(1), posZ:+worker?.pos.z.toFixed(1),
   cly:+(worker ? worker.gy || 0 : 0).toFixed(3),
-  hop:worker ? Math.round(worker.hop) : 0, benne:hauler ? Math.round(hauler.hop) : -1,
-  navette:haulState, grain:grains.reduce((n,d)=>n+(d.m.visible?1:0),0),
+  hop:worker ? Math.round(worker.hop) : 0,
+  conduit:driven, benneLa:!!hauler, benne:hauler ? Math.round(hauler.hop) : -1,
+  bx:+(hauler ? hauler.pos.x : 0).toFixed(1), bz:+(hauler ? hauler.pos.z : 0).toFixed(1),
+  capMax:Math.round(CAP), trCapMax:Math.round(TRCAP),
+  vis:+(worker && worker.g.userData.auger ? worker.g.userData.auger.rotation.y : -1).toFixed(2),
+  grain:grains.reduce((n,d)=>n+(d.m.visible?1:0),0),
   terre:SOIL.live(), graines:SEED.live(), gouttes:spray.reduce((n,d)=>n+(d.m.visible?1:0),0),
   paille:plants.reduce((n,p)=>n+(p.r?1:0),0),
   vole:document.querySelectorAll('#fx .fly').length
