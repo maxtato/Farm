@@ -162,7 +162,14 @@
 
   /* ---------- manette ---------- */
   #pad { display:flex; justify-content:center; }
-  body.kb #pad { display:none; }
+  #padStick, #padCap, #padPath { display:none; width:100%; justify-content:center; }
+  #pad.manche #padStick { display:flex; }
+  #pad.cap    #padCap   { display:flex; gap:6px; }
+  #pad.trace  #padPath  { display:flex; gap:8px; align-items:center; }
+  body.kb #pad.manche { display:none; }
+  #padPath .hint { flex:1; font-size:var(--fsm); opacity:.82; line-height:1.3; }
+  #padPath .btn  { flex:0 0 96px; }
+  .btn.cap i { font-size:clamp(15px, 2.6vh, 19px); }
   #stick { position:relative; width:clamp(82px, 15vh, 116px); aspect-ratio:1; border-radius:50%;
            background:radial-gradient(circle at 50% 38%, rgba(0,0,0,.28), rgba(0,0,0,.46));
            border:4px solid rgba(255,255,255,.22); touch-action:none;
@@ -263,7 +270,19 @@
       <div id="gauge"><i></i><span id="gval">0 %</span></div>
     </div>
     <div id="acts"></div>
-    <div id="pad"><div id="stick"><div id="knob"></div></div></div>
+    <div id="pad">
+      <div id="padStick"><div id="stick"><div id="knob"></div></div></div>
+      <div id="padCap">
+        <button class="btn cap" id="capSpeed"><i>🚦</i><span>Arrêt</span></button>
+        <button class="btn cap" id="capLeft"><i>↰</i><span>15°</span></button>
+        <button class="btn cap" id="capU"><i>↻</i><span>Demi-tour</span></button>
+        <button class="btn cap" id="capRight"><i>↱</i><span>15°</span></button>
+      </div>
+      <div id="padPath">
+        <div class="hint" id="pathHint">Dessine le parcours avec ton doigt sur le champ.</div>
+        <button class="btn" id="pathClear"><i>🧹</i><span>Effacer</span></button>
+      </div>
+    </div>
   </footer>
 </div>
 
@@ -593,7 +612,11 @@ function build(kind){
       });
       arms.push({a1,a2,a3});
     });
-    d = { wheels:w, steer:[{w:w[2],k:-1},{w:w[3],k:-1}], spinners:[], W:8.6, near:-3.4, far:-1.4,
+    // la rampe est l'outil du pulvérisateur : sans cette déclaration, applyTool ne trouvait
+    // aucune zone de travail et l'étape engrais ne fertilisait rien
+    const mkF = new THREE.Object3D(); mkF.position.set(0,0,-2.4); g.add(mkF);
+    d = { wheels:w, steer:[{w:w[2],k:-1},{w:w[3],k:-1}], spinners:[],
+          tool:{ obj:mkF, W:8.6, near:-.55, far:.55 },
           fold:f => arms.forEach(({a1,a2,a3}) => { a1.rotation.z=(1-f)*1.48; a2.rotation.z=-(1-f)*2.85; a3.rotation.z=(1-f)*2.85; }) };
     d.fold(1);
   }
@@ -681,37 +704,116 @@ function fillCells(s2){ cell.fill(s2); for(let k=0;k<4;k++) cellN[k] = k===s2 ? 
   y.rotation.x = -Math.PI/2; y.position.set(0,.01,YARD+4); y.receiveShadow = true; y.renderOrder = -12; scene.add(y);
 })();
 
-// fond de parcelle : le marron d'origine, toujours visible
-const parcelBase = (function(){
-  const c = document.createElement('canvas'); c.width=c.height=128;
+// ---------- la parcelle : un bloc de terre en surépaisseur, ni plat ni rectiligne ----------
+// Le sol du champ domine l'herbe d'une vingtaine de centimètres : les engins y montent
+// pour de vrai. Le bord n'est pas une arête droite mais une découpe crantée, et le dessus
+// ondule sur deux échelles avec des mottes posées dessus.
+const LIP = .22;                                       // surépaisseur de la terre
+function soilBump(x,z){                                // le relief propre à la parcelle
+  return Math.sin(x*.41 + z*.23)*.055
+       + Math.sin(x*.19 - z*.47)*.042
+       + Math.sin((x+z)*.83)*.024
+       + Math.sin(x*1.63)*Math.sin(z*1.49)*.032
+       + Math.sin(x*2.71 + z*1.9)*.017 + Math.sin(z*2.53 - x*1.7)*.015;
+}
+const mod2 = t => ((t % 2) + 2) % 2;
+function edgeWob(t, seed){                             // ondulation + crans du bord, en mètres
+  return Math.sin(t*.31 + seed)*.42 + Math.sin(t*.87 - seed*1.7)*.24
+       + (mod2(Math.floor(t*.62 + seed)) < 1 ? .26 : -.16);
+}
+// distance signée au bord découpé : > 0 dedans
+function parcelInset(x,z){
+  const l = x - (X0        - edgeWob(z, 0.7));
+  const r = (X0 + P + edgeWob(z, 2.9)) - x;
+  const b = z - (Z0        - edgeWob(x, 4.1));
+  const t = (Z0 + P + edgeWob(x, 5.7)) - z;
+  return Math.min(l, r, b, t);
+}
+// hauteur du dessus de la terre : 0 sur l'herbe, la rampe de bord fait monter l'engin
+function parcelY(x,z){
+  const d = parcelInset(x,z);
+  if (d <= 0) return 0;
+  const k = Math.min(1, d/1.15), sm = k*k*(3-2*k);
+  return (LIP + soilBump(x,z)) * sm;
+}
+function soilTex(){
+  const c = document.createElement('canvas'); c.width = c.height = 128;
   const x = c.getContext('2d');
-  x.fillStyle='#a8965f'; x.fillRect(0,0,128,128);
+  x.fillStyle = '#a8965f'; x.fillRect(0,0,128,128);
   for(let i=0;i<340;i++){
     x.fillStyle = Math.random()>.5 ? 'rgba(214,198,146,.5)' : 'rgba(126,110,66,.4)';
     x.beginPath(); x.arc(Math.random()*128, Math.random()*128, .8+Math.random()*2, 0, 6.3); x.fill();
   }
   const t = new THREE.CanvasTexture(c);
-  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(P/2.2, P/2.2);
-  return new THREE.Mesh(new THREE.PlaneGeometry(P,P,64,64), new THREE.MeshLambertMaterial({ map:t }));
-})();
-parcelBase.rotation.x = -Math.PI/2; parcelBase.position.set(0,.09,Z0+P/2); parcelBase.renderOrder = -11;
-(function relief(){                                    // déplacement des sommets : la terre ondule
-  const g = parcelBase.geometry, pos = g.attributes.position;
-  for(let i=0;i<pos.count;i++){
-    const vx = pos.getX(i), vy = pos.getY(i);          // plan encore en XY, tourné ensuite
-    pos.setZ(i, -groundH(vx, -vy + Z0 + P/2));
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+(function parcelle(){
+  const N = 108, ST = (P + 3)/N, BX = X0 - 1.5, BZ = Z0 - 1.5;   // grille un peu plus large que le champ
+  const inside = new Uint8Array((N+1)*(N+1)), idxOf = new Int32Array((N+1)*(N+1)).fill(-1);
+  const pos = [], uv = [], col = [], tri = [];
+  const push = (x,y,z,shade) => {
+    pos.push(x,y,z); uv.push((x-X0)/2.2, (z-Z0)/2.2); col.push(shade,shade,shade);
+    return pos.length/3 - 1;
+  };
+  for(let j=0;j<=N;j++) for(let i=0;i<=N;i++){
+    const x = BX + i*ST, z = BZ + j*ST, k = j*(N+1)+i;
+    if (parcelInset(x,z) <= 0) continue;
+    inside[k] = 1;
+    const y = parcelY(x,z);
+    // creux plus sombres, bosses plus claires : le relief se lit même à plat
+    idxOf[k] = push(x, y, z, .80 + (y - LIP)*2.4);
   }
-  pos.needsUpdate = true; g.computeVertexNormals();
+  for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+    const a = j*(N+1)+i, b = a+1, c = a+N+1, d = c+1;
+    if (inside[a] && inside[b] && inside[c] && inside[d]){
+      tri.push(idxOf[a], idxOf[c], idxOf[b], idxOf[b], idxOf[c], idxOf[d]);
+    }
+  }
+  // jupe : chaque arête de bord descend sous l'herbe, c'est ce qui donne l'épaisseur
+  const skirt = (k1,k2) => {
+    const x1 = BX + (k1%(N+1))*ST, z1 = BZ + Math.floor(k1/(N+1))*ST;
+    const x2 = BX + (k2%(N+1))*ST, z2 = BZ + Math.floor(k2/(N+1))*ST;
+    const t1 = push(x1, parcelY(x1,z1), z1, .70), t2 = push(x2, parcelY(x2,z2), z2, .70);
+    const b1 = push(x1, -.08, z1, .42),           b2 = push(x2, -.08, z2, .42);
+    tri.push(t1,b1,t2, t2,b1,b2);
+  };
+  for(let j=0;j<N;j++) for(let i=0;i<N;i++){
+    const a = j*(N+1)+i, b = a+1, c = a+N+1, d = c+1;
+    const q = (inside[a]?1:0)+(inside[b]?1:0)+(inside[c]?1:0)+(inside[d]?1:0);
+    if (q === 0 || q === 4) continue;
+    if (inside[a] !== inside[b]) skirt(a,b);
+    if (inside[c] !== inside[d]) skirt(c,d);
+    if (inside[a] !== inside[c]) skirt(a,c);
+    if (inside[b] !== inside[d]) skirt(b,d);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uv,2));
+  geo.setAttribute('color',    new THREE.Float32BufferAttribute(col,3));
+  geo.setIndex(tri);
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map:soilTex(), vertexColors:true }));
+  m.receiveShadow = true; m.renderOrder = -11; scene.add(m);
+
 })();
-(function bordure(){                                   // petit trottoir de terre autour du champ
-  const col = '#8a7343', hh = .26, wd = .7;
-  [[0, Z0-wd/2, P+wd*2, wd],[0, Z0+P+wd/2, P+wd*2, wd],
-   [X0-wd/2, Z0+P/2, wd, P],[X0+P+wd/2, Z0+P/2, wd, P]].forEach(([bx,bz,sx,sz]) => {
-    const m = rbox(sx, hh, sz, col, bx, hh/2, bz, scene, .06);
-    m.receiveShadow = true;
-  });
-})();
-parcelBase.receiveShadow = true; scene.add(parcelBase);
+// mottes : de petits volumes posés sur la terre, plus denses près des bords
+function semerMottes(){
+  const clods = [], cg = new THREE.SphereGeometry(1, 6, 4);
+  for(let i=0;i<260;i++){
+    const x = X0 + Math.random()*P, z = Z0 + Math.random()*P;
+    const d = parcelInset(x,z);
+    if (d <= .25) continue;
+    if (d > 2.4 && Math.random() > .3) continue;
+    const r = .10 + Math.random()*.19;
+    const m = MX(x, parcelY(x,z) + r*.28, z, 0, Math.random()*3, 0, 1);
+    m.scale(new THREE.Vector3(r*1.5, r*.6, r*1.25));
+    clods.push({ g:cg, c: Math.random()>.5 ? '#8f7c4c' : '#6f5f38', m });
+  }
+  if (!clods.length) return;
+  const cm = new THREE.Mesh(merge(clods), new THREE.MeshLambertMaterial({ vertexColors:true }));
+  cm.castShadow = true; cm.receiveShadow = true; scene.add(cm);
+}
 
 // ---------- traînées de passage : un ruban continu, pas des rectangles bout à bout ----------
 // (des quads successifs faisaient un bord en dents de scie dans les courbes : ici les sommets
@@ -827,7 +929,7 @@ const SWATH = (function(){
       : new THREE.MeshLambertMaterial({ map:tex, side:THREE.DoubleSide,
           depthTest:false, depthWrite:false });   // aucun z-fight quand on repasse au même endroit
     const m = new THREE.Mesh(geo, mm);
-    m.position.y = .105 + i*.004; m.frustumCulled = false; m.receiveShadow = true;
+    m.position.y = i*.004; m.frustumCulled = false; m.receiveShadow = true;
     m.renderOrder = -10 + i;                      // juste après le sol, avant tout le reste
     scene.add(m);
     return { geo, pos, uv, idx, n:0, tri:0, v:0, lx:0, lz:0 };
@@ -842,8 +944,8 @@ const SWATH = (function(){
       const o = L.n*6, u = L.n*4;
       const ax = cx(x + c*w/2, X0, X0+P), az = cx(z - si*w/2, Z0, Z0+P);
       const bx = cx(x - c*w/2, X0, X0+P), bz = cx(z + si*w/2, Z0, Z0+P);
-      L.pos[o]   = ax; L.pos[o+1] = groundH(ax,az)*.55; L.pos[o+2] = az;   // travaillé = aplani
-      L.pos[o+3] = bx; L.pos[o+4] = groundH(bx,bz)*.55; L.pos[o+5] = bz;
+      L.pos[o]   = ax; L.pos[o+1] = parcelY(ax,az)*.97 + .015; L.pos[o+2] = az;   // travaillé = aplani
+      L.pos[o+3] = bx; L.pos[o+4] = parcelY(bx,bz)*.97 + .015; L.pos[o+5] = bz;
       L.uv[u] = 0;      L.uv[u+1] = L.v;
       L.uv[u+2] = w/TILE; L.uv[u+3] = L.v;
       if (link && L.n > 0){
@@ -982,6 +1084,16 @@ function tuftCorn(leaf, stemCol, cob){                      // maïs : une canne
   p.push({ g:new THREE.ConeGeometry(.055,.36,4), c:cob, m:MX(0,H,0) });   // la panicule au sommet
   return merge(p);
 }
+function tuftStraw(){                                   // ce qui reste au sol après la coupe
+  const p = [], col = '#d8c489', colD = '#a89258';
+  for(let k=0;k<6;k++){
+    const a = k*1.27 + (k%2)*.6, L = .3 + (k%3)*.11, r = .06 + (k%3)*.06;
+    const g = new THREE.CylinderGeometry(.022,.022,L,4); g.rotateZ(Math.PI/2);
+    p.push({ g, c: k%2 ? col : colD,
+             m: MX(Math.cos(a)*r, .035 + (k%2)*.022, Math.sin(a)*r, 0, a, .07) });
+  }
+  return merge(p);
+}
 const CROPS = [
   { id:'ble', n:'Blé', emo:'🌾', d:'Rustique et sans frais de semence.',
     price:9, yieldK:.70, grow:1, scale:1, uh:2.1, seed:0, unlock:0,
@@ -1005,6 +1117,7 @@ function cropGeo(c){
 }
 let cropI = 0, cropScale = 1;
 const crop = () => CROPS[cropI];
+semerMottes();
 const SP = .72, plants = [], chunks = [];                    // pieds bien plus serrés
 for(let cz=0;cz<CN;cz++) for(let cx=0;cx<CN;cx++)
   chunks.push({ cx:X0+(cx+.5)*CH, cz:Z0+(cz+.5)*CH, list:[] });
@@ -1012,13 +1125,21 @@ for(let x=X0+SP/2; x<X0+P; x+=SP)
   for(let z=Z0+SP/2; z<Z0+P; z+=SP){
     const ti = cellIndex(x,z);
     const ci = Math.min(CN-1,Math.floor((z-Z0)/CH))*CN + Math.min(CN-1,Math.floor((x-X0)/CH));
-    const p = { x:x+(Math.random()-.5)*.24, z:z+(Math.random()-.5)*.24, ti, ci,
-                g:0, rot:Math.random()*3.1, s:.85+Math.random()*.3, i:chunks[ci].list.length };
+    const px = x+(Math.random()-.5)*.24, pz = z+(Math.random()-.5)*.24;
+    const p = { x:px, z:pz, y:parcelY(px,pz), ti, ci,
+                g:0, r:0, rot:Math.random()*3.1, s:.85+Math.random()*.3, i:chunks[ci].list.length };
     chunks[ci].list.push(plants.length); plants.push(p);
   }
+const geoStraw = tuftStraw();
+geoStraw.computeBoundingSphere();
+geoStraw.boundingSphere = new THREE.Sphere(new THREE.Vector3(0,.2,0), CH*.75 + 1);
 chunks.forEach(c => {
   c.young = new THREE.InstancedMesh(cropGeo(CROPS[0])._y, windMat(), Math.max(1,c.list.length));
   c.ripe  = new THREE.InstancedMesh(cropGeo(CROPS[0])._r, windMat(), Math.max(1,c.list.length));
+  c.straw = new THREE.InstancedMesh(geoStraw,
+    new THREE.MeshLambertMaterial({ vertexColors:true }), Math.max(1,c.list.length));
+  c.straw.position.set(c.cx,0,c.cz); c.straw.receiveShadow = true;
+  c.straw.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(c.straw);
   [c.young,c.ripe].forEach(m => {
     m.position.set(c.cx,0,c.cz); m.castShadow = false; m.receiveShadow = false;
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(m);
@@ -1028,17 +1149,23 @@ const dummy = new THREE.Object3D();
 function writePlant(k){
   const p = plants[k], c = chunks[p.ci];
   const ripe = Math.max(0, Math.min(1, (p.g-.62)/.18));
-  dummy.position.set(p.x-c.cx, 0, p.z-c.cz); dummy.rotation.set(0,p.rot,0);
+  dummy.position.set(p.x-c.cx, p.y, p.z-c.cz); dummy.rotation.set(0,p.rot,0);
   const h = p.s*cropScale*Math.min(1,p.g*1.25);
   dummy.scale.setScalar(h*(1-ripe)); dummy.updateMatrix();
   c.young.setMatrixAt(p.i, dummy.matrix);
   dummy.scale.setScalar(h*ripe); dummy.updateMatrix();
   c.ripe.setMatrixAt(p.i, dummy.matrix);
+  dummy.rotation.set(0, p.rot*1.7, 0);
+  dummy.scale.setScalar(p.r ? p.s : 0); dummy.updateMatrix();
+  c.straw.setMatrixAt(p.i, dummy.matrix);
   c.dirty = true;
 }
 function redrawPlants(){
   plants.forEach((p,k) => writePlant(k));
-  chunks.forEach(c => { c.young.instanceMatrix.needsUpdate = c.ripe.instanceMatrix.needsUpdate = true; });
+  chunks.forEach(c => {
+    c.young.instanceMatrix.needsUpdate = c.ripe.instanceMatrix.needsUpdate = true;
+    c.straw.instanceMatrix.needsUpdate = true;
+  });
 }
 // bascule de culture : on échange la géométrie des tuiles, les instances restent en place
 function applyCrop(){
@@ -1078,12 +1205,69 @@ const TRACKS = (function(){
         if (life[i] <= 0) continue;
         life[i] -= dt; any = true;
         const f = Math.max(0, Math.min(1, life[i]/LIFE));
-        d.position.set(px[i], .05, pz[i]); d.rotation.set(0,pa[i],0);
+        d.position.set(px[i], parcelY(px[i],pz[i]) + .05, pz[i]); d.rotation.set(0,pa[i],0);
         d.scale.set(pw[i]*f, 1, .55); d.updateMatrix();
         mesh.setMatrixAt(i, d.matrix);
       }
       if (any) mesh.instanceMatrix.needsUpdate = true;
     }
+  };
+})();
+
+// ---------- pilotage : manche, cap et allure, ou parcours dessiné ----------
+const _ray = new THREE.Raycaster(), _ndc = new THREE.Vector2(),
+      _plane = new THREE.Plane(new THREE.Vector3(0,1,0), -LIP), _hit = new THREE.Vector3();
+function screenToWorld(cx, cy){
+  _ndc.set(((cx-SX)/SW)*2 - 1, -((((cy-SY)/SH))*2 - 1));
+  _ray.setFromCamera(_ndc, camera);
+  return _ray.ray.intersectPlane(_plane, _hit) ? _hit.clone() : null;
+}
+// le parcours dessiné, montré comme un ruban posé sur la terre
+const PATH = (function(){
+  const MAX = 420, W = .55;
+  const pos = new Float32Array(MAX*6), idx = new Uint32Array((MAX-1)*6);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3).setUsage(THREE.DynamicDrawUsage));
+  geo.setIndex(new THREE.BufferAttribute(idx,1));
+  geo.setDrawRange(0,0);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color:'#ffd24a', transparent:true, opacity:.8, side:THREE.DoubleSide,
+    depthTest:false, depthWrite:false }));
+  mesh.frustumCulled = false; mesh.renderOrder = 4; mesh.visible = false; scene.add(mesh);
+  let pts = [], head = 0;
+  function rebuild(){
+    const n = Math.min(pts.length, MAX);
+    if (n < 2){ geo.setDrawRange(0,0); mesh.visible = false; return; }
+    for(let i=0;i<n;i++){
+      const a = pts[Math.max(0,i-1)], b = pts[Math.min(n-1,i+1)];
+      let dx = b.x-a.x, dz = b.z-a.z;
+      const m = Math.hypot(dx,dz) || 1; dx/=m; dz/=m;
+      const px = -dz*W/2, pz = dx*W/2;                 // normale au tracé
+      const o = i*6, x = pts[i].x, z = pts[i].z, y = parcelY(x,z) + .05;
+      pos[o]   = x+px; pos[o+1] = y; pos[o+2] = z+pz;
+      pos[o+3] = x-px; pos[o+4] = y; pos[o+5] = z-pz;
+    }
+    for(let i=0;i<n-1;i++){
+      const a = i*2, b = a+1, c = a+2, d = a+3, t = i*6;
+      idx[t]=a; idx[t+1]=b; idx[t+2]=c; idx[t+3]=b; idx[t+4]=d; idx[t+5]=c;
+    }
+    geo.attributes.position.needsUpdate = true; geo.index.needsUpdate = true;
+    geo.setDrawRange(0, (n-1)*6);
+    mesh.visible = true;
+  }
+  return {
+    start(p){ pts = [p]; head = 0; rebuild(); },
+    add(p){
+      const last = pts[pts.length-1];
+      if (!last || Math.hypot(p.x-last.x, p.z-last.z) > 1.1){
+        if (pts.length < MAX) pts.push(p);
+        rebuild();
+      }
+    },
+    clear(){ pts = []; head = 0; geo.setDrawRange(0,0); mesh.visible = false; },
+    count(){ return Math.max(0, pts.length - head); },
+    target(){ return pts[head] || null; },
+    advance(){ head++; if (head >= pts.length) this.clear(); }
   };
 })();
 
@@ -1149,10 +1333,10 @@ for(let i=0;i<26;i++){
   const m = new THREE.Mesh(dustGeo, new THREE.MeshLambertMaterial({color:'#e0d2ab', transparent:true}));
   m.visible = false; scene.add(m); dust.push({m,t:0,vy:0});
 }
-const sprayGeo = new THREE.SphereGeometry(.09,5,4), spray = [];
-for(let i=0;i<70;i++){
+const sprayGeo = new THREE.SphereGeometry(.16,5,4), spray = [];
+for(let i=0;i<90;i++){
   const m = new THREE.Mesh(sprayGeo,
-    new THREE.MeshLambertMaterial({color:'#bfe3f2', transparent:true, opacity:.8}));
+    new THREE.MeshLambertMaterial({color:'#9fdcf7', transparent:true, opacity:.9}));
   m.visible = false; scene.add(m); spray.push({m,t:0,vx:0,vy:0,vz:0});
 }
 function popSpray(x,y,z,ax,az){
@@ -1160,11 +1344,59 @@ function popSpray(x,y,z,ax,az){
   d.m.visible = true; d.t = 0;
   d.m.position.set(x,y,z);
   d.m.scale.setScalar(.6+Math.random()*.7);
-  d.m.material.opacity = .8;
-  d.vx = ax*.6 + (Math.random()-.5)*.5;
-  d.vz = az*.6 + (Math.random()-.5)*.5;
-  d.vy = -.4 - Math.random()*.4;
+  d.m.material.opacity = .9;
+  d.vx = ax*.6 + (Math.random()-.5)*1.1;
+  d.vz = az*.6 + (Math.random()-.5)*1.1;
+  d.vy = -1.1 - Math.random()*.8;
 }
+// Un champ de particules instancié : position, vitesse, gravité et culbute.
+// Elles retombent sur la terre — dont la hauteur varie — et s'y posent avant de disparaître.
+function particleField(n, geo, color, g, spin){
+  const mesh = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ color }), n);
+  mesh.frustumCulled = false; mesh.castShadow = false; scene.add(mesh);
+  const P = [], d = new THREE.Object3D();
+  for(let i=0;i<n;i++){
+    P.push({ t:-1, x:0,y:0,z:0, vx:0,vy:0,vz:0, s:1, rx:0,ry:0,rz:0, wx:0,wy:0,wz:0, life:1 });
+    d.scale.set(0,0,0); d.updateMatrix(); mesh.setMatrixAt(i, d.matrix);
+  }
+  let head = 0;
+  return {
+    spawn(x,y,z, vx,vy,vz, life, sc){
+      const p = P[head]; head = (head+1)%n;
+      p.t = 0; p.life = life; p.x = x; p.y = y; p.z = z;
+      p.vx = vx; p.vy = vy; p.vz = vz; p.s = sc;
+      p.rx = Math.random()*6.28; p.ry = Math.random()*6.28; p.rz = Math.random()*6.28;
+      p.wx = (Math.random()-.5)*spin; p.wy = (Math.random()-.5)*spin; p.wz = (Math.random()-.5)*spin;
+    },
+    update(dt){
+      let any = false;
+      for(let i=0;i<n;i++){
+        const p = P[i]; if (p.t < 0) continue;
+        any = true; p.t += dt;
+        if (p.t > p.life){ p.t = -1; d.scale.set(0,0,0); d.updateMatrix(); mesh.setMatrixAt(i,d.matrix); continue; }
+        p.vy -= g*dt;
+        p.x += p.vx*dt; p.y += p.vy*dt; p.z += p.vz*dt;
+        const sol = parcelY(p.x, p.z) + .035;
+        if (p.y <= sol){                       // elle touche : elle roule un peu puis s'immobilise
+          p.y = sol; p.vy = -p.vy*.18; p.vx *= .42; p.vz *= .42;
+          if (Math.abs(p.vy) < .35) p.vy = 0;
+          p.wx *= .3; p.wy *= .3; p.wz *= .3;
+        } else {
+          p.rx += p.wx*dt; p.ry += p.wy*dt; p.rz += p.wz*dt;
+        }
+        d.position.set(p.x, p.y, p.z);
+        d.rotation.set(p.rx, p.ry, p.rz);
+        d.scale.setScalar(p.s * Math.min(1, (p.life-p.t)*5));
+        d.updateMatrix(); mesh.setMatrixAt(i, d.matrix);
+      }
+      if (any) mesh.instanceMatrix.needsUpdate = true;
+    },
+    live(){ let n = 0; for(let i=0;i<P.length;i++) if (P[i].t >= 0) n++; return n; }
+  };
+}
+const SOIL = particleField(170, new THREE.TetrahedronGeometry(.2),  '#5b4823', 15, 9);
+const SEED = particleField(150, new THREE.SphereGeometry(.085,4,3), '#fff0c2', 13, 5);
+
 const grainGeo = new THREE.SphereGeometry(.11,5,4), grains = [];
 for(let i=0;i<44;i++){
   const m = new THREE.Mesh(grainGeo, new THREE.MeshLambertMaterial({color:'#f0c74a'}));
@@ -1263,10 +1495,18 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
   v.rolV += (-K*v.rol - D*v.rolV - v.turnRate*v.speed*.075
              + Math.sin(v.wph + 2.1)*1.3*sf)*dt;              // balancement gauche-droite du voile
   v.rol = Math.max(-.16, Math.min(.16, v.rol + v.rolV*dt));
-  v.h.position.set(v.pos.x, 0, v.pos.z);
+  // la terre est en surépaisseur : l'engin y monte, et se cabre sur la rampe du bord
+  const sn2 = Math.sin(v.heading), cs2 = Math.cos(v.heading);
+  const gy = parcelY(v.pos.x, v.pos.z);
+  const fy = parcelY(v.pos.x + sn2*1.8, v.pos.z + cs2*1.8);
+  const by = parcelY(v.pos.x - sn2*1.8, v.pos.z - cs2*1.8);
+  if (v.gy === undefined) v.gy = gy;
+  v.gy += (gy - v.gy)*Math.min(1, dt*10);
+  v.slope = (v.slope || 0) + (Math.atan2(by - fy, 3.6) - (v.slope || 0))*Math.min(1, dt*8);
+  v.h.position.set(v.pos.x, v.gy, v.pos.z);
   v.h.rotation.y = v.heading;
   v.g.position.y = v.sus;
-  v.g.rotation.set(v.pit, 0, v.rol);
+  v.g.rotation.set(v.pit + v.slope, 0, v.rol);
   const br = v.g.userData.brakes;
   if (br){                                                   // feux stop au ralentissement
     const on = (wantSpeed < v.speed - .25) ? 1 : .18;
@@ -1612,7 +1852,7 @@ function save(){
   try {
     localStorage.setItem(SKEY, JSON.stringify({
       v:1, coins, stock, totalT, harvests, lv, owned, cropI, stage, day, dayT,
-      contract, son:SND.isOn()
+      contract, son:SND.isOn(), ctrl:ctrlMode
     }));
   } catch(e){ /* mode privé : on joue sans sauvegarde */ }
 }
@@ -1630,6 +1870,7 @@ function restore(){
   day = Math.max(1, +d.day || 1); dayT = +d.dayT || .3;
   contract = d.contract && d.contract.qty ? d.contract : null;
   if (d.son === false) SND.set(false);
+  if (CTRL.some(c => c.id === d.ctrl)) ctrlMode = d.ctrl;
   applyUpgrades();
   return d;
 }
@@ -1646,14 +1887,15 @@ function primeField(st){
   const state = [0,1,2,3,3][st], g0 = [0,0,.05,.34,1][st], layer = [-1,0,1,2,2][st];
   fillCells(state);
   if (layer >= 0) paintParcel(layer);
-  for(let k=0;k<plants.length;k++) plants[k].g = g0;
+  for(let k=0;k<plants.length;k++){ plants[k].g = g0; plants[k].r = 0; }
   redrawPlants();
 }
 
 // ---------- panneau : boutique, cultures, aide (et pause) ----------
 const ovl = document.getElementById('ovl'), elTitle = document.getElementById('sheetTitle'),
       elTabs = document.getElementById('tabs'), elBody = document.getElementById('body');
-const TABS = [['shop','🛒 Boutique'], ['crop','🌱 Cultures'], ['help','⌨️ Aide']];
+const TABS = [['shop','🛒 Boutique'], ['crop','🌱 Cultures'],
+              ['ctrl','🎮 Pilotage'], ['help','❔ Aide']];
 let panelTab = 'shop', paused = false;
 const panelOpen = () => ovl.classList.contains('on');
 function openPanel(tab){
@@ -1695,11 +1937,13 @@ function drawPanel(){
     b.onclick = () => { panelTab = id; drawPanel(); };
     elTabs.appendChild(b);
   });
-  elTitle.textContent = panelTab === 'shop' ? 'Boutique' : panelTab === 'crop' ? 'Cultures' : 'Aide';
+  elTitle.textContent = panelTab === 'shop' ? 'Boutique' : panelTab === 'crop' ? 'Cultures'
+                      : panelTab === 'ctrl' ? 'Pilotage' : 'Aide';
   elBody.innerHTML = '';
   elBody.scrollTop = 0;
   if (panelTab === 'shop') drawShop();
   else if (panelTab === 'crop') drawCrops();
+  else if (panelTab === 'ctrl') drawCtrl();
   else drawHelp();
 }
 function card(icon, title, sub, extraHTML){
@@ -1794,6 +2038,23 @@ function drawLevel(n){
   };
   elBody.appendChild(b);
 }
+function drawCtrl(){
+  elBody.insertAdjacentHTML('beforeend',
+    '<div class="note">Trois façons de conduire. Le pilote automatique reste disponible dans tous les cas, ' +
+    'et le clavier reprend la main dès qu\'on l\'utilise.</div>');
+  CTRL.forEach(c => {
+    const el = card(c.emo, c.n, c.d);
+    if (c.id === ctrlMode) el.classList.add('sel');
+    const b = document.createElement('button');
+    if (c.id === ctrlMode){ b.className = 'buy max'; b.textContent = 'en place'; }
+    else {
+      b.className = 'buy'; b.textContent = 'choisir';
+      b.onclick = () => { ctrlMode = c.id; applyCtrl(); sfx('buy');
+                          toast(c.emo + ' ' + c.n, 'good'); save(); drawPanel(); };
+    }
+    el.appendChild(b); elBody.appendChild(el);
+  });
+}
 function drawHelp(){
   elBody.insertAdjacentHTML('beforeend',
     '<div class="note">Un cycle complet : <b>déchaumer</b> le sol, <b>semer</b>, <b>fertiliser</b>, ' +
@@ -1804,6 +2065,7 @@ function drawHelp(){
     '<kbd>Z Q S D</kbd><span>piloter (ou W A S D / flèches)</span>' +
     '<kbd>Espace</kbd><span>freiner</span>' +
     '<kbd>V</kbd><span>pilote automatique</span>' +
+    '<kbd>G</kbd><span>changer de mode de pilotage</span>' +
     '<kbd>1 2 3 4</kbd><span>sol · semis · engrais · moisson</span>' +
     '<kbd>X</kbd><span>accélérer le temps ×1 ×3 ×6</span>' +
     '<kbd>B</kbd><span>boutique</span>' +
@@ -1813,12 +2075,32 @@ function drawHelp(){
     '<kbd>Échap</kbd><span>pause / reprendre</span>' +
     '</div>');
   elBody.insertAdjacentHTML('beforeend',
-    '<div class="note" style="margin-top:12px">Sur mobile, le manche en bas de l\'écran remplace le clavier : ' +
-    'sa direction donne le cap, son amplitude la vitesse.</div>');
+    '<div class="note" style="margin-top:12px">Sans clavier, le poste de commande en bas de l\'écran prend le ' +
+    'relais. Trois modes au choix dans <b>Réglages</b> : le <b>manche</b> (direction = cap, amplitude = vitesse), ' +
+    '<b>cap et allure</b> (on règle une fois, l\'engin tient la ligne seul) et <b>parcours</b> (on dessine le ' +
+    'trajet au doigt sur le champ et l\'engin le suit).</div>');
 }
 
 // ---------- manette ----------
 let jx = 0, jy = 0, jmag = 0, manual = false, btnAuto = null;   // une seule manette : angle = cap, amplitude = vitesse
+// trois façons de conduire : au manche, au cap et à l'allure, ou sur un parcours dessiné
+const CTRL = [
+  { id:'manche', n:'Manche',         emo:'🕹️', d:'La direction donne le cap, l\'amplitude la vitesse.' },
+  { id:'cap',    n:'Cap et allure',  emo:'🧭', d:'On règle l\'allure et le cap : l\'engin tient la ligne tout seul.' },
+  { id:'trace',  n:'Parcours',       emo:'✏️', d:'On dessine le trajet sur le champ, l\'engin le suit.' }
+];
+const CAPSP = [0, .34, .68, 1], CAPN = ['Arrêt','Lent','Normal','Rapide'];
+let ctrlMode = 'manche', capLvl = 0, capH = Math.PI;
+// le poste de commande visible suit le mode choisi
+function applyCtrl(){
+  const pad = document.getElementById('pad');
+  pad.className = ctrlMode;
+  if (ctrlMode !== 'trace') PATH.clear();
+  if (ctrlMode === 'cap' && worker) capH = worker.heading;
+  const b = document.getElementById('capSpeed');
+  if (b) b.querySelector('span').textContent = CAPN[capLvl];
+  if (b) b.classList.toggle('on', capLvl > 0);
+}
 (function(){
   const stick = document.getElementById('stick'), knob = document.getElementById('knob');
   let id = null;
@@ -1836,7 +2118,52 @@ let jx = 0, jy = 0, jmag = 0, manual = false, btnAuto = null;   // une seule man
   const clear = e => { if (e.pointerId!==id) return; id=null; jx=jy=jmag=0; knob.style.transform=''; };
   stick.addEventListener('pointerup', clear);
   stick.addEventListener('pointercancel', clear);
+})();
 
+// --- cap et allure : on règle une fois, l'engin tient la ligne sans rien maintenir
+(function(){
+  const sp = document.getElementById('capSpeed');
+  sp.onclick = () => {
+    capLvl = (capLvl+1) % CAPSP.length;
+    sp.querySelector('span').textContent = CAPN[capLvl];
+    sp.classList.toggle('on', capLvl > 0);
+    if (capLvl > 0){ if (!manual) capH = worker ? worker.heading : capH; setManual(); }
+  };
+  const nudge = a => { capH += a; setManual(); if (capLvl === 0){ capLvl = 2; sp.querySelector('span').textContent = CAPN[2]; sp.classList.add('on'); } };
+  // maintenir enchaîne les crans, taper en donne un seul
+  function hold(el, a){
+    let t = null, rep = null;
+    const go = () => { nudge(a); };
+    el.addEventListener('pointerdown', e => {
+      e.preventDefault(); go();
+      t = setTimeout(() => { rep = setInterval(go, 150); }, 420);
+    });
+    const stop = () => { clearTimeout(t); clearInterval(rep); t = rep = null; };
+    ['pointerup','pointercancel','pointerleave'].forEach(ev => el.addEventListener(ev, stop));
+  }
+  hold(document.getElementById('capLeft'),  -Math.PI/12);
+  hold(document.getElementById('capRight'),  Math.PI/12);
+  document.getElementById('capU').onclick = () => nudge(Math.PI);
+})();
+
+// --- parcours dessiné : le doigt trace, l'engin suit
+(function(){
+  const stage = document.getElementById('stage');
+  let drawing = false;
+  stage.addEventListener('pointerdown', e => {
+    if (ctrlMode !== 'trace' || paused) return;
+    const p = screenToWorld(e.clientX, e.clientY); if (!p) return;
+    drawing = true; stage.setPointerCapture(e.pointerId);
+    PATH.start(p); setManual();
+  });
+  stage.addEventListener('pointermove', e => {
+    if (!drawing) return;
+    const p = screenToWorld(e.clientX, e.clientY); if (p) PATH.add(p);
+  });
+  const end = () => { drawing = false; };
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+  document.getElementById('pathClear').onclick = () => PATH.clear();
 })();
 function setManual(){
   if (manual) return;
@@ -1885,7 +2212,7 @@ function cycleSpeed(){ setSpeed(SPEED === 1 ? 3 : SPEED === 3 ? 6 : 1); }
 setSpeed(1);
 mkBtn(rowTools, '🛒', 'Boutique', () => openPanel('shop'));
 mkBtn(rowTools, '🌿', 'Cultures', () => openPanel('crop'));
-mkBtn(rowTools, '❔', 'Aide',     () => openPanel('help'));
+mkBtn(rowTools, '⚙️', 'Réglages', () => openPanel('ctrl'));
 
 // ---------- clavier : le jeu se joue aussi sans écran tactile ----------
 const keys = Object.create(null);
@@ -1904,6 +2231,11 @@ addEventListener('keydown', e => {
     else if (k === 'c') openPanel('crop');
     else if (k === 'h') openPanel('help');
     else if (k === 'x') cycleSpeed();
+    else if (k === 'g'){                       // faire tourner les modes de pilotage
+      const i = CTRL.findIndex(c => c.id === ctrlMode);
+      ctrlMode = CTRL[(i+1) % CTRL.length].id; applyCtrl(); save();
+      const c = CTRL.find(x => x.id === ctrlMode); toast(c.emo + ' ' + c.n);
+    }
     else if (k === 'n') toast(SND.toggle() ? '🔊 Son activé' : '🔇 Son coupé');
     else if (k >= '1' && k <= '4') switchTo([0,1,2,4][+k-1]);
   }
@@ -1935,13 +2267,15 @@ const JK=40, JD=3.1;
 const elCoins=document.getElementById('coins'), elStock=document.getElementById('stock'),
       elClock=document.getElementById('clock'), elWIcon=document.getElementById('wIcon'),
       elLvl=document.getElementById('lvl'), elGauge=document.getElementById('gauge'),
-      elGVal=document.getElementById('gval'), chipLvl=document.getElementById('chipLvl');
+      elGVal=document.getElementById('gval'), chipLvl=document.getElementById('chipLvl'),
+      elPathHint=document.getElementById('pathHint');
 let saveT = 0, lastCoins = -1, lastLvl = 0;
 (function boot(){
   const had = restore();
   applyCrop();
   if (had && stage > 0) primeField(stage);   // on reprend la parcelle telle que l'étape la suppose
   startStage(!!had);                         // à la reprise, la semence a déjà été payée
+  applyCtrl();
   if (!contract) newContract(); else drawContract();
   if (!had) setTimeout(() => openPanel('help'), 400);   // première partie : on montre les commandes
 })();
@@ -1980,9 +2314,18 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
 
   if (worker){
     if (manual){
-      const push = Math.max(0, (jmag - .12)/.88);              // zone morte au centre
-      const wantH = jmag > .12 ? Math.atan2(jx, jy) : worker.heading;
-      step(worker, dt, wantH, push*MAXSPD*mudK, jmag > .12);
+      if (kbActive || ctrlMode === 'manche'){
+        const push = Math.max(0, (jmag - .12)/.88);            // zone morte au centre
+        const wantH = jmag > .12 ? Math.atan2(jx, jy) : worker.heading;
+        step(worker, dt, wantH, push*MAXSPD*mudK, jmag > .12);
+      } else if (ctrlMode === 'cap'){
+        step(worker, dt, capH, CAPSP[capLvl]*MAXSPD*mudK, capLvl > 0);
+      } else {                                                 // parcours dessiné
+        const t = PATH.target();
+        if (t){
+          if (driveTo(worker, t, dt) < 2) PATH.advance();
+        } else step(worker, dt, worker.heading, 0, false);
+      }
     } else if (worker.done){
       const waiting = worker.kind === 'harvest' && worker.hop > 1;
       const dist = driveTo(worker, waiting ? worker.pos : GATE, dt, waiting);
@@ -2006,22 +2349,54 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
       laySwath(worker, 0);
       if (n){
         popDust(worker.pos.x - Math.sin(worker.heading)*3.5, worker.pos.z - Math.cos(worker.heading)*3.5);
-        plants.forEach((p,k) => { if (cell[p.ti]===1 && p.g>0){ p.g = 0; writePlant(k); } });
+        // le déchaumage enfouit ce qui traînait : plants levés comme dépôt de paille
+        plants.forEach((p,k) => {
+          if (cell[p.ti]===1 && (p.g>0 || p.r)){ p.g = 0; p.r = 0; writePlant(k); }
+        });
+      }
+      // la terre gicle derrière le rouleau, d'autant plus qu'on avance vite
+      const q = toolPose(worker);
+      if (q && worker.speed > .5){
+        const back = -Math.sin(q.a), backZ = -Math.cos(q.a);
+        let nb = Math.min(6, Math.round(dt*worker.speed*9));
+        while (nb-- > 0){
+          const u = (Math.random()-.5)*q.W;
+          const x = q.x + Math.cos(q.a)*u + back*.5, z = q.z - Math.sin(q.a)*u + backZ*.5;
+          SOIL.spawn(x, parcelY(x,z)+.25, z,
+                     back*(1.4+Math.random()*2.4) + (Math.random()-.5)*1.6,
+                     1.8 + Math.random()*2.3,
+                     backZ*(1.4+Math.random()*2.4) + (Math.random()-.5)*1.6,
+                     .8 + Math.random()*.45, .8 + Math.random()*.8);
+        }
       }
     }
     else if (S.k === 'sow'){
       const n = applyTool(worker, i => cell[i]===1 && setCell(i,2));
       laySwath(worker, 1);
       if (n) plants.forEach((p,k) => { if (cell[p.ti]===2 && p.g===0){ p.g = .04; writePlant(k); } });
+      const q = toolPose(worker);
+      if (q && worker.speed > .3){
+        let nb = Math.min(7, Math.round(dt*worker.speed*13));
+        while (nb-- > 0){
+          const u = (Math.random()-.5)*q.W;
+          const x = q.x + Math.cos(q.a)*u, z = q.z - Math.sin(q.a)*u;
+          SEED.spawn(x, parcelY(x,z)+1.05, z,
+                     (Math.random()-.5)*1.7 - Math.sin(q.a)*worker.speed*.25,
+                     .5 + Math.random()*.9,
+                     (Math.random()-.5)*1.7 - Math.cos(q.a)*worker.speed*.25,
+                     .8 + Math.random()*.5, .8 + Math.random()*.6);
+        }
+      }
     }
     else if (S.k === 'fert'){
       applyTool(worker, i => cell[i]===2 && setCell(i,3));
       laySwath(worker, 2);
       const q = toolPose(worker);                       // buses réparties sur toute la rampe
       if (q && worker.speed > .3){
-        for(let k=0;k<3;k++){
-          const u = (Math.random()-.5)*q.W;
-          popSpray(q.x + Math.cos(q.a)*u, 2.75, q.z - Math.sin(q.a)*u,
+        const NB = 8;                                   // une buse tous les mètres environ
+        for(let k=0;k<NB;k++){
+          const u = (k + .5)/NB*q.W - q.W/2 + (Math.random()-.5)*.4;
+          popSpray(q.x + Math.cos(q.a)*u, 3.15, q.z - Math.sin(q.a)*u,
                    -Math.sin(q.a)*worker.speed*.15, -Math.cos(q.a)*worker.speed*.15);
         }
       }
@@ -2037,7 +2412,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
           const dx = p.x-q.x, dz = p.z-q.z;
           if (dx*dx+dz*dz > RR) continue;
           const lx = dx*cs+dz*sn, lz = -dx*sn+dz*cs;
-          if (Math.abs(lx) < q.W/2 && lz > q.near && lz < q.far){ p.g = 0; writePlant(k); cut++; }
+          if (Math.abs(lx) < q.W/2 && lz > q.near && lz < q.far){ p.g = 0; p.r = 1; writePlant(k); cut++; }
         }
         if (cut){
           worker.hop = Math.min(CAP, worker.hop + cut*crop().yieldK);
@@ -2066,10 +2441,15 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   if (S.k === 'grow' && !manual && (sown === 0 || ripe >= sown*.95)) nextStage();
   chunks.forEach(c => {
     if (c.dirty){ c.young.instanceMatrix.needsUpdate = true;
-                  c.ripe.instanceMatrix.needsUpdate = true; c.dirty = false; }
-    let y = 0, r = 0;
-    for(const k of c.list){ const g = plants[k].g; if (g > 0){ if (g < .8) y++; if (g > .62) r++; } }
-    c.young.visible = y > 0; c.ripe.visible = r > 0;      // on n'envoie pas au GPU un maillage vide
+                  c.ripe.instanceMatrix.needsUpdate = true;
+                  c.straw.instanceMatrix.needsUpdate = true; c.dirty = false; }
+    let y = 0, r = 0, st = 0;
+    for(const k of c.list){
+      const pl = plants[k];
+      if (pl.r) st++;
+      if (pl.g > 0){ if (pl.g < .8) y++; if (pl.g > .62) r++; }
+    }
+    c.young.visible = y > 0; c.ripe.visible = r > 0; c.straw.visible = st > 0;   // pas de maillage vide au GPU
   });
 
   // tracteur de transfert
@@ -2130,6 +2510,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
     if (left === 0) combine.done = true;
   }
 
+  SOIL.update(dt); SEED.update(dt);
   grains.forEach(d => {
     if(!d.m.visible) return;
     d.t += dt; d.vy -= 9.2*dt;
@@ -2140,8 +2521,8 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
     if(!d.m.visible) return;
     d.t += dt; d.vy -= 7*dt;
     d.m.position.x += d.vx*dt; d.m.position.y += d.vy*dt; d.m.position.z += d.vz*dt;
-    d.m.material.opacity = Math.max(0, .8 - d.t*1.5);
-    if (d.m.position.y < .12 || d.t > .6) d.m.visible = false;
+    d.m.material.opacity = Math.max(0, .95 - d.t*1.1);
+    if (d.m.position.y < parcelY(d.m.position.x, d.m.position.z) + .05 || d.t > .9) d.m.visible = false;
   });
   RAIN.update(tick, curRain, camLook.x, camLook.z);
   SND.rain(curRain);
@@ -2209,6 +2590,12 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   elGVal.textContent = gl;
   elGauge.classList.toggle('full', gf > .985);
 
+  if (ctrlMode === 'trace'){
+    const n = PATH.count();
+    const txt = n ? 'Parcours en cours — ' + n + ' points restants.'
+                  : 'Dessine le parcours avec ton doigt sur le champ.';
+    if (elPathHint.textContent !== txt) elPathHint.textContent = txt;
+  }
   saveT += tick;
   if (saveT > 6){ saveT = 0; save(); }
 
@@ -2221,8 +2608,13 @@ window.__FARM_DEBUG = () => ({
   stage, etape:STAGES[stage].n, culture:crop().id, jour:day, heure:+(dayT*24).toFixed(2),
   meteo:wKey, niveaux:Object.assign({}, lv), contrat:contract && {c:contract.crop, q:contract.qty, got:Math.round(contract.got)},
   manuel:manual, pause:paused, vitesse:SPEED,
+  pilotage:ctrlMode, allure:capLvl, cap:+capH.toFixed(3), trace:PATH.count(),
+  posX:+worker?.pos.x.toFixed(1), posZ:+worker?.pos.z.toFixed(1),
+  cly:+(worker ? worker.gy || 0 : 0).toFixed(3),
   hop:worker ? Math.round(worker.hop) : 0, benne:hauler ? Math.round(hauler.hop) : -1,
   navette:haulState, grain:grains.reduce((n,d)=>n+(d.m.visible?1:0),0),
+  terre:SOIL.live(), graines:SEED.live(), gouttes:spray.reduce((n,d)=>n+(d.m.visible?1:0),0),
+  paille:plants.reduce((n,p)=>n+(p.r?1:0),0),
   vole:document.querySelectorAll('#fx .fly').length
 });
 

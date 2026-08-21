@@ -31,14 +31,22 @@ l'ajout à l'écran d'accueil est perdu.
 | `Z Q S D` / `W A S D` / flèches | piloter — la direction donne le cap, la pression la vitesse |
 | `Espace` | freiner |
 | `V` | pilote automatique (l'engin fait ses passages tout seul) |
+| `G` | changer de mode de pilotage |
 | `1` `2` `3` `4` | sol · semis · engrais · moisson |
 | `X` | accélérer le temps ×1 ×3 ×6 |
 | `B` `C` `H` | boutique · cultures · aide |
 | `N` | couper le son |
 | `Échap` | pause / reprendre |
 
-Sur mobile, le manche virtuel en bas de l'écran remplace le clavier et les
-boutons du bandeau font le reste.
+Sans clavier, le poste de commande en bas de l'écran prend le relais. Trois
+modes au choix dans **Réglages** :
+
+- **Manche** — la direction donne le cap, l'amplitude la vitesse.
+- **Cap et allure** — on choisit une allure (arrêt, lent, normal, rapide) et on
+  corrige le cap par crans de 15° ou d'un demi-tour. Une fois réglé, l'engin
+  tient la ligne sans qu'on maintienne quoi que ce soit.
+- **Parcours** — on dessine le trajet au doigt sur le champ et l'engin le suit
+  point par point.
 
 ## L'écran
 
@@ -71,6 +79,14 @@ mètre) quelle que soit la hauteur des bandeaux.
 - **Sauvegarde automatique** dans le navigateur : trésorerie, améliorations,
   cultures débloquées, contrat en cours, jour et étape.
 - **Son synthétisé** à la volée (moteur, pluie, encaissements, clics) — aucun fichier audio.
+- **Une parcelle qui a du volume.** La terre est un bloc en surépaisseur d'une
+  vingtaine de centimètres : les engins y montent pour de vrai et se cabrent sur
+  la rampe du bord. Le dessus ondule sur plusieurs échelles, des mottes y sont
+  posées, et le bord n'est pas une arête droite mais une découpe crantée.
+- **Chaque outil laisse sa trace.** La déchaumeuse projette des mottes de terre
+  derrière elle, le semoir sème des grains qui rebondissent au sol, les buses du
+  pulvérisateur crachent de vraies gouttes, et la moisson laisse un dépôt de
+  paille visible — que le déchaumage suivant enfouit.
 - **Des gains qui se voient.** Le grain jaillit de la vis vers la benne pendant le
   transfert ; à l'encaissement, des pièces partent du silo et filent jusqu'au
   compteur, qui rebondit. Fin d'étape, contrat rempli et passage de niveau
