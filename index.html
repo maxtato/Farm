@@ -24,7 +24,7 @@
     --plum:#a374de; --plumD:#6f43a8;
     /* tout le chrome se mesure en hauteur d'écran : sur un petit téléphone,
        des tailles fixes ne laissaient qu'un tiers de l'écran au jeu */
-    --sd:clamp(23px, 3.5vh, 29px);      /* diamètre d'une étape */
+    --sd:clamp(21px, 3.1vh, 26px);      /* diamètre d'une étape */
     --gap:clamp(4px, .8vh, 7px);
     --fsm:clamp(9.5px, 1.5vh, 11.5px);  /* petit texte */
   }
@@ -50,7 +50,7 @@
          background:repeating-linear-gradient(90deg, var(--barkE) 0 14px, #5d7b3d 14px 28px); }
   #top::after { bottom:0; }
   #bot::before { top:0; }
-  #bot { padding:var(--gap) 9px calc(env(safe-area-inset-bottom) + var(--gap));
+  #bot { padding:var(--gap) 9px calc(min(env(safe-area-inset-bottom), 8px) + 3px);
          box-shadow:0 -5px 0 rgba(0,0,0,.28), 0 -14px 22px rgba(0,0,0,.3);
          display:flex; flex-direction:column; gap:var(--gap); }
 
@@ -60,7 +60,7 @@
   .chips { display:flex; gap:5px; justify-content:space-between; }
   .chip { flex:0 1 auto; min-width:0; display:flex; align-items:center; gap:5px;
           background:var(--cream); color:var(--ink); border-radius:999px;
-          padding:4px 9px 4px 4px; box-shadow:0 3px 0 rgba(0,0,0,.34); }
+          padding:3px 9px 3px 3px; box-shadow:0 3px 0 rgba(0,0,0,.34); }
   .chip .tok { flex:0 0 auto; width:clamp(20px, min(4vh, 7vw), 30px); aspect-ratio:1; border-radius:50%;
                display:grid; place-items:center; font-size:clamp(11px, min(2vh, 3.6vw), 15px);
                background:var(--goldD); box-shadow:inset 0 -2px 0 rgba(0,0,0,.22); }
@@ -75,7 +75,7 @@
 
   /* ---------- suivi du cycle ---------- */
   #steps { display:flex; align-items:flex-start; margin-top:var(--gap); }
-  .step { flex:1 1 0; display:flex; flex-direction:column; align-items:center; gap:3px;
+  .step { flex:1 1 0; display:flex; flex-direction:column; align-items:center; gap:2px;
           position:relative; opacity:.5; pointer-events:auto; background:none; border:none;
           padding:0; font:inherit; color:inherit; }
   .step:focus-visible { outline:3px solid var(--gold); outline-offset:3px; border-radius:10px; }
@@ -86,7 +86,7 @@
   .step i { position:relative; z-index:1; width:var(--sd); height:var(--sd); border-radius:50%;
             display:grid; place-items:center; font-size:clamp(12px, 2vh, 15px); font-style:normal;
             background:var(--bark); border:3px solid rgba(0,0,0,.3); }
-  .step span { font-size:clamp(7.5px, 1.25vh, 9px); text-transform:uppercase;
+  .step span { font-size:clamp(7px, 1.15vh, 8.5px); text-transform:uppercase;
                letter-spacing:.3px; white-space:nowrap; }
   .step.done { opacity:.92; }
   .step.done i { background:var(--grassD); border-color:var(--grass); }
@@ -98,12 +98,12 @@
 
   /* ---------- contrat ---------- */
   #contract { display:none; margin-top:var(--gap); background:rgba(0,0,0,.3); border-radius:12px;
-              padding:5px 10px 6px; font-size:var(--fsm); }
+              padding:4px 10px 5px; font-size:var(--fsm); }
   #contract.on { display:block; }
   #contract .hd { display:flex; align-items:center; gap:6px; }
   #contract .hd b { color:var(--gold); }
   #contract .hd .sp { flex:1; }
-  #contract .bar { height:6px; border-radius:4px; background:rgba(0,0,0,.42); margin-top:4px;
+  #contract .bar { height:6px; border-radius:4px; background:rgba(0,0,0,.42); margin-top:3px;
                    overflow:hidden; box-shadow:inset 0 2px 0 rgba(0,0,0,.25); }
   #contract .bar i { display:block; height:100%; border-radius:5px; width:0;
                      background:linear-gradient(180deg,#ffe07a,var(--gold));
@@ -111,7 +111,7 @@
 
   /* ---------- bandeau bas ---------- */
   #gaugerow { margin-top:var(--gap); }
-  #gauge { width:100%; height:clamp(19px, 2.9vh, 24px); border-radius:999px; background:rgba(0,0,0,.4);
+  #gauge { width:100%; height:clamp(17px, 2.5vh, 21px); border-radius:999px; background:rgba(0,0,0,.4);
            box-shadow:inset 0 2px 0 rgba(0,0,0,.3); position:relative; overflow:hidden; }
   #gauge i { position:absolute; inset:2px auto 2px 2px; width:0; border-radius:999px;
              background:linear-gradient(180deg,#8fe36a,var(--grassD)); transition:width .2s linear; }
