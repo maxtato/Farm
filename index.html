@@ -463,6 +463,51 @@ Object.assign(sun.shadow.camera,{left:-30,right:30,top:30,bottom:-30,near:1,far:
 scene.add(sun, sun.target);
 
 // ---------- matériaux ----------
+// ---------- le filtre ----------
+// Un voile de matière, deux fois plus discret que le premier essai : la couleur est un peu
+// plus dense là où l'outil a repassé, un peu plus claire ailleurs, avec le grain du papier
+// par-dessus. Les engins en reçoivent un peu plus, et un cran de saturation en prime pour
+// qu'ils restent vifs devant le terrain.
+const GOU_FN = `
+  varying vec2 vGouP;
+  float gouH(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453123); }
+  float gouN(vec2 p){
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f*f*(3.0-2.0*f);
+    return mix(mix(gouH(i), gouH(i+vec2(1.0,0.0)), u.x),
+               mix(gouH(i+vec2(0.0,1.0)), gouH(i+vec2(1.0,1.0)), u.x), u.y);
+  }`;
+// monde : le motif est fixé au terrain, il ne glisse pas quand la caméra bouge.
+// objet : le motif est peint sur la pièce, il la suit — c'est ce qu'il faut pour un engin.
+function gouache(m, force, monde, vif){
+  const a = (force === undefined ? 1 : force).toFixed(3);
+  const sat = (vif === undefined ? 1 : vif).toFixed(3);
+  const src = monde
+    ? `#ifdef USE_INSTANCING
+         vec4 gouW = modelMatrix * instanceMatrix * vec4(transformed, 1.0);
+       #else
+         vec4 gouW = modelMatrix * vec4(transformed, 1.0);
+       #endif
+       vGouP = gouW.xz + gouW.y*vec2(0.63,-0.47);`
+    : `vGouP = position.xz + position.y*vec2(0.71,-0.53);`;
+  return chainCompile(m, sh => {
+    sh.vertexShader = 'varying vec2 vGouP;\n' + sh.vertexShader.replace(
+      '#include <begin_vertex>', '#include <begin_vertex>\n' + src);
+    sh.fragmentShader = GOU_FN + '\n' + sh.fragmentShader.replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+       {
+         vec2 gp = vGouP * 1.15;
+         float gl1 = gouN(gp*0.42), gl2 = gouN(gp*1.35), gl3 = gouN(gp*6.5);
+         float lav = (gl1*0.5 + gl2*0.34 + gl3*0.16) - 0.5;
+         diffuseColor.rgb *= 1.0 + lav * 0.34 * ${a};
+         float dep = smoothstep(0.60, 0.95, gouN(gp*0.72 + 11.3));
+         diffuseColor.rgb *= 1.0 - dep * 0.09 * ${a};
+         float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+         diffuseColor.rgb = clamp(mix(vec3(lum), diffuseColor.rgb, ${sat}), 0.0, 1.0);
+       }`);
+  });
+}
 // Un patch de shader peut en cacher un autre : on les enchaîne au lieu de les écraser.
 function chainCompile(m, fn){
   const prev = m.onBeforeCompile;
@@ -490,7 +535,8 @@ function mat(c){
   const T = JELLY ? matJ : matS;
   if (T[c]) return T[c];
   const m = new THREE.MeshLambertMaterial({color:c});
-  return T[c] = JELLY ? jelly(m) : m;
+  if (JELLY) jelly(m);
+  return T[c] = gouache(m, .6, false, 1.16);   // peint sur la pièce, et un rien plus vif
 }
 function rrShape(w,h,r){
   const s = new THREE.Shape(), x=-w/2, y=-h/2;
@@ -903,9 +949,11 @@ function fillCells(s2){ cell.fill(s2); for(let k=0;k<4;k++) cellN[k] = k===s2 ? 
   const t = new THREE.CanvasTexture(c);
   t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(20,20);
   t.center.set(.5,.5); t.rotation = Math.PI/4.2;
-  const g = new THREE.Mesh(new THREE.PlaneGeometry(400,400), new THREE.MeshLambertMaterial({map:t}));
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(400,400),
+                           gouache(new THREE.MeshLambertMaterial({map:t}), .4, true));
   g.rotation.x = -Math.PI/2; g.receiveShadow = true; g.renderOrder = -13; scene.add(g);
-  const y = new THREE.Mesh(new THREE.PlaneGeometry(80,16), new THREE.MeshLambertMaterial({color:'#a9b06b'}));
+  const y = new THREE.Mesh(new THREE.PlaneGeometry(80,16),
+                           gouache(new THREE.MeshLambertMaterial({color:'#a9b06b'}), .42, true));
   y.rotation.x = -Math.PI/2; y.position.set(0,.01,YARD+4); y.receiveShadow = true; y.renderOrder = -12; scene.add(y);
 })();
 
@@ -1025,6 +1073,7 @@ function soilTex(){
   geo.computeVertexNormals();
   const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
     map:soilTex(), vertexColors:true, side:THREE.DoubleSide }));
+  gouache(m.material, .42, true);
   m.receiveShadow = true; m.renderOrder = -11; scene.add(m);
 })();
 // mottes : de petits volumes posés sur la terre, plus denses près des bords
@@ -1053,6 +1102,7 @@ function semerMottes(){
 // contour réel qui le découpe, au pixel près, dans le fragment shader.
 function clipToParcel(m){
   const L = X0.toFixed(3), Rr = (X0+P).toFixed(3), B = Z0.toFixed(3), T = (Z0+P).toFixed(3);
+  gouache(m, .42, true);
   chainCompile(m, sh => {
     sh.vertexShader = 'varying vec3 vWP;\n' + sh.vertexShader.replace(
       '#include <fog_vertex>',
@@ -1269,6 +1319,7 @@ function tuftE(head, stemCol){
 const UW = { t:{value:0}, amp:{value:.1}, h:{value:2.1} };
 function windMat(){
   const m = new THREE.MeshLambertMaterial({ vertexColors:true });
+  gouache(m, .3, true);
   chainCompile(m, s => {
     s.uniforms.uTime = UW.t; s.uniforms.uAmp = UW.amp; s.uniforms.uH = UW.h;
     s.vertexShader = 'uniform float uTime;uniform float uAmp;uniform float uH;\n' + s.vertexShader
@@ -1391,7 +1442,7 @@ chunks.forEach(c => {
   c.young = new THREE.InstancedMesh(cropGeo(CROPS[0])._y, windMat(), Math.max(1,c.list.length));
   c.ripe  = new THREE.InstancedMesh(cropGeo(CROPS[0])._r, windMat(), Math.max(1,c.list.length));
   c.straw = new THREE.InstancedMesh(geoStraw,
-    new THREE.MeshLambertMaterial({ vertexColors:true }), Math.max(1,c.list.length));
+    gouache(new THREE.MeshLambertMaterial({ vertexColors:true }), .3, true), Math.max(1,c.list.length));
   c.straw.position.set(c.cx,0,c.cz); c.straw.receiveShadow = true;
   c.straw.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(c.straw);
   [c.young,c.ripe].forEach(m => {
@@ -1727,6 +1778,17 @@ function popDust(x,z){
 }
 
 // ---------- véhicules ----------
+// Un seul disque au milieu du tracteur laissait passer tout le reste : l'outil traîné, la
+// coupe de la moissonneuse, la caisse de la benne entraient dans les murs pendant que le
+// centre, lui, passait à côté. À l'écran l'engin forçait dans le bâtiment. Chaque engin
+// porte donc plusieurs disques répartis sur sa longueur — décalage vers l'avant, rayon.
+const CORPS = {
+  prep:    [[ .4,1.8], [-3.2,2.3]],
+  sow:     [[ .4,1.8], [-3.2,2.3]],
+  fert:    [[ .4,1.8], [-3.2,2.6]],          // rampes larges
+  harvest: [[3.0,2.7], [0,2.3], [-2.4,2.0]], // coupe devant, corps, arrière
+  trailer: [[2.4,1.8], [-2.6,2.2]]           // tracteur puis caisse
+};
 function vehicle(kind){
   brakeLights = []; headlamps = []; beacons = [];
   const g = build(kind);
@@ -1737,7 +1799,9 @@ function vehicle(kind){
            bob:Math.random()*3, trk:0, laneI:0, lanes:null, done:false, hop:0,
            sus:0, susV:0, pit:0, pitV:0, rol:0, rolV:0, lastS:0, wph:Math.random()*6,
            sq:0, sqV:0, line:0, strk:0,
-           rad: kind === 'trailer' ? 2.7 : kind === 'harvest' ? 2.6 : 2.2 };
+           corps: CORPS[kind] || CORPS.prep,
+           rad: Math.max.apply(null, (CORPS[kind]||CORPS.prep).map(c=>c[1])),
+           avant: Math.max.apply(null, (CORPS[kind]||CORPS.prep).map(c=>c[0]+c[1])) };
 }
 // Allure en virage : plein régime dans l'axe, ralentissement franc au demi-tour, et
 // entre les deux une courbe douce plutôt qu'une cassure. La même sert au manche et au
@@ -2856,34 +2920,49 @@ function readKeys(){
 // poussait dessus. On retient donc la direction de la poussée, et on braque du même côté —
 // le mur écarte l'avant au lieu de l'arrêter, et l'engin longe puis contourne.
 function unstick(v){
-  const R = v.rad || 2.2;
-  let px = 0, pz = 0, prof = 0;
-  for(let i=0;i<OBST.length;i++){
-    const o = OBST[i], dx = v.pos.x-o.x, dz = v.pos.z-o.z;
-    const min = R + o.r, d2 = dx*dx + dz*dz;
-    if (d2 >= min*min) continue;
-    const d = Math.sqrt(d2) || 1e-3, k = (min-d)/d;
+  const sn = Math.sin(v.heading), cs = Math.cos(v.heading);
+  const B = v.corps || CORPS.prep;
+  let px = 0, pz = 0, tor = 0, prof = 0;
+  // pousser (dx,dz) sur le disque placé à `off` : ça déplace l'engin et le fait pivoter,
+  // puisqu'une poussée reçue à l'arrière chasse l'arrière et rentre le nez.
+  const pousse = (off, dx, dz, k, p) => {
     v.pos.x += dx*k; v.pos.z += dz*k;
-    px += dx*k; pz += dz*k; prof = Math.max(prof, min-d);
-  }
-  for(let i=0;i<KINDS.length;i++){
-    const w = fleet[KINDS[i]];
-    if (!w || w === v) continue;
-    const dx = v.pos.x-w.pos.x, dz = v.pos.z-w.pos.z;
-    const min = R + (w.rad || 2.2), d2 = dx*dx + dz*dz;
-    if (d2 >= min*min) continue;
-    const d = Math.sqrt(d2) || 1e-3, k = (min-d)/d*.5;   // chacun recule de moitié
-    v.pos.x += dx*k; v.pos.z += dz*k;
-    w.pos.x -= dx*k; w.pos.z -= dz*k;
-    px += dx*k; pz += dz*k; prof = Math.max(prof, min-d);
+    px += dx*k; pz += dz*k;
+    tor += off * (dx*k*cs - dz*k*sn);
+    if (p > prof) prof = p;
+  };
+  for(let b=0;b<B.length;b++){
+    const off = B[b][0], R = B[b][1];
+    const cx = v.pos.x + sn*off, cz = v.pos.z + cs*off;
+    for(let i=0;i<OBST.length;i++){
+      const o = OBST[i], dx = cx-o.x, dz = cz-o.z;
+      const min = R + o.r, d2 = dx*dx + dz*dz;
+      if (d2 >= min*min) continue;
+      const d = Math.sqrt(d2) || 1e-3;
+      pousse(off, dx, dz, (min-d)/d, min-d);
+    }
+    for(let i=0;i<KINDS.length;i++){
+      const w = fleet[KINDS[i]];
+      if (!w || w === v) continue;
+      const WB = w.corps || CORPS.prep, wsn = Math.sin(w.heading), wcs = Math.cos(w.heading);
+      for(let c=0;c<WB.length;c++){
+        const wx = w.pos.x + wsn*WB[c][0], wz = w.pos.z + wcs*WB[c][0];
+        const dx = cx-wx, dz = cz-wz;
+        const min = R + WB[c][1], d2 = dx*dx + dz*dz;
+        if (d2 >= min*min) continue;
+        const d = Math.sqrt(d2) || 1e-3, k = (min-d)/d*.5;   // chacun recule de moitié
+        pousse(off, dx, dz, k, min-d);
+        w.pos.x -= dx*k; w.pos.z -= dz*k;
+      }
+    }
   }
   if (!prof) return;
-  // la poussée nous éloigne de l'obstacle : on tourne dans son sens pour le longer
-  const sn = Math.sin(v.heading), cs = Math.cos(v.heading);
-  const cote = px*cs - pz*sn;                            // >0 : l'obstacle est à gauche
-  v.heading += (cote >= 0 ? 1 : -1) * Math.min(.11, prof*.55);
+  v.heading += Math.max(-.13, Math.min(.13, tor*.5));
+  // et si le couple est nul — choc de plein fouet — on choisit quand même un côté
+  const cote = px*cs - pz*sn;
+  if (Math.abs(tor) < .02) v.heading += (cote >= 0 ? 1 : -1) * Math.min(.11, prof*.55);
   v.cote = cote >= 0 ? 1 : -1;                           // l'évitement contournera du même côté
-  v.choc = .9;                                           // mémoire de contact, en secondes
+  v.choc = 1.4;                                          // mémoire de contact, en secondes
   v.speed *= .74; v.line = 0;                            // on ralentit sans caler
 }
 // Évitement. Une simple poussée latérale ne suffisait pas : l'engin venait buter sur la
@@ -2901,15 +2980,16 @@ function dodge(v, want, portee){
   const look = Math.min(but, Math.max(12, v.speed*1.8));
   const sn = Math.sin(want), cs = Math.cos(want);
   let bloc = null, proche = 1e9;
+  const nez = v.avant || 2.2;                             // l'obstacle se mesure depuis l'avant
   const test = (ox, oz, orad) => {
     const dx = ox - v.pos.x, dz = oz - v.pos.z;
-    const along = dx*sn + dz*cs;                          // distance devant
-    if (along <= -orad) return;                           // derrière : il ne gêne plus
+    const along = dx*sn + dz*cs - nez;                    // distance devant le nez
+    if (along <= -orad - nez) return;                     // derrière : il ne gêne plus
     if (along > but + .5) return;                         // au-delà du but : il ne gêne pas
     const side = dx*cs - dz*sn;                           // écart latéral, positif à droite
     const need = R + orad;
     if (Math.abs(side) > need) return;                    // on passe à côté sans le frôler
-    const dist = Math.hypot(dx, dz);
+    const dist = Math.max(.1, Math.hypot(dx, dz) - nez);
     if (dist > look + orad || dist >= proche) return;
     proche = dist; bloc = { along, side, need, dist };
   };
@@ -2921,7 +3001,9 @@ function dodge(v, want, portee){
     // elles deux, on garde le choc mais pas l'évitement, sinon la goulotte ne trouve jamais
     if ((v.kind === 'harvest' && w.kind === 'trailer') ||
         (v.kind === 'trailer' && w.kind === 'harvest')) continue;
-    test(w.pos.x, w.pos.z, (w.rad || 2.2) * .9);
+    const WB = w.corps || CORPS.prep, wsn = Math.sin(w.heading), wcs = Math.cos(w.heading);
+    for(let c=0;c<WB.length;c++)
+      test(w.pos.x + wsn*WB[c][0], w.pos.z + wcs*WB[c][0], WB[c][1]*.92);
   }
   if (!bloc){ v.cote = 0; return want; }
   if (!v.cote) v.cote = bloc.side >= 0 ? -1 : 1;          // il est à droite : on passe à gauche
@@ -3331,11 +3413,16 @@ window.__FARM_DEBUG = () => ({
   enfonce:(function(){
     const v = pilote(); if (!v) return 0;
     let pire = 0;
-    for(const o of OBST){ const d = Math.hypot(v.pos.x-o.x, v.pos.z-o.z);
-      pire = Math.max(pire, (v.rad+o.r) - d); }
-    for(const k of KINDS){ const w = fleet[k]; if (!w || w===v) continue;
-      const d = Math.hypot(v.pos.x-w.pos.x, v.pos.z-w.pos.z);
-      pire = Math.max(pire, (v.rad+w.rad) - d); }
+    const sn = Math.sin(v.heading), cs = Math.cos(v.heading);
+    for(const b of v.corps){
+      const cx = v.pos.x + sn*b[0], cz = v.pos.z + cs*b[0];
+      for(const o of OBST) pire = Math.max(pire, (b[1]+o.r) - Math.hypot(cx-o.x, cz-o.z));
+      for(const k of KINDS){ const w = fleet[k]; if (!w || w===v) continue;
+        const ws = Math.sin(w.heading), wc = Math.cos(w.heading);
+        for(const c of w.corps)
+          pire = Math.max(pire, (b[1]+c[1]) - Math.hypot(cx-(w.pos.x+ws*c[0]), cz-(w.pos.z+wc*c[0])));
+      }
+    }
     return +pire.toFixed(2);
   })(),
   traceVu:!!(pilote() && pilote().trace && pilote().trace.mesh.visible),
