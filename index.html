@@ -506,12 +506,19 @@ function gouache(m, force, monde, vif){
          float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
          diffuseColor.rgb = clamp(mix(vec3(lum), diffuseColor.rgb, ${sat}), 0.0, 1.0);
        }`);
-  });
+  }, 'gou' + a + '/' + sat + '/' + (monde ? 'monde' : 'objet'));
 }
 // Un patch de shader peut en cacher un autre : on les enchaîne au lieu de les écraser.
-function chainCompile(m, fn){
+// three range ses programmes compilés par le TEXTE de onBeforeCompile. Nos patchs enchaînés
+// ont tous le même texte — celui de la fonction ci-dessous — si bien que deux matériaux aux
+// réglages pourtant différents tombaient sur la même case et se repassaient le shader du
+// premier arrivé. Chaque patch ajoute donc sa signature à celle du matériau.
+function chainCompile(m, fn, cle){
   const prev = m.onBeforeCompile;
   m.onBeforeCompile = s => { if (prev) prev(s); fn(s); };
+  const base = m.__cle !== undefined ? m.__cle : (prev ? prev.toString() : '');
+  const k = m.__cle = base + '|' + (cle || fn.toString());
+  m.customProgramCacheKey = () => k;
   m.needsUpdate = true;
   return m;
 }
@@ -1123,6 +1130,24 @@ function clipToParcel(m){
   return m;
 }
 
+// Les grains de semence vivent dans leur propre couche : on les pose sur la terre semée
+// puis fertilisée, et on les efface dès que les pousses ont franchi une dizaine de
+// centimètres — passé là, ce qu'on voit du sol, c'est le vert, plus la semence.
+const GRAIN = { value: 1 };
+function semis(m, tex, teinte){
+  const k = (teinte === undefined ? 1 : teinte).toFixed(3);
+  return chainCompile(m, sh => {
+    sh.uniforms.uSemis = { value: tex };
+    sh.uniforms.uGrain = GRAIN;
+    sh.fragmentShader = 'uniform sampler2D uSemis;\nuniform float uGrain;\n' + sh.fragmentShader
+      .replace('#include <map_fragment>', `#include <map_fragment>
+       {
+         vec4 gr = texture2D(uSemis, vUv);
+         diffuseColor.rgb = mix(diffuseColor.rgb, gr.rgb * ${k}, gr.a * uGrain);
+       }`);
+  }, 'semis' + k);
+}
+
 const SWATH = (function(){
   // Une texture par état, dessinée pour être franchement distincte des autres.
   // (principe repris de Mow & Go : un motif fin déposé le long du passage, pas un aplat)
@@ -1150,24 +1175,30 @@ const SWATH = (function(){
     speck(x, R,120,['rgba(163,134,86,.5)','rgba(58,42,23,.45)'],2.3,6.4);
     return finish(c);
   }
-  // le dessin du semis, réutilisé tel quel par l'engrais
+  // le dessin du semis, réutilisé tel quel par l'engrais. Les rangs ont sauté : la terre
+  // travaillée reste nue, les grains sont semés à la volée dans une couche à part.
   function drawSown(x, R){
     x.fillStyle='#7d5e39'; x.fillRect(0,0,TS,TS); bands(x,.028);
     speck(x, R,150,['rgba(58,42,23,.38)','rgba(166,138,90,.35)'],2.5,6.8);
-    for(let i=0;i<5;i++){
-      const px=(i+.5)*(TS/5), ph=i*1.4;
-      furrow(x,px,'rgba(46,32,16,.55)',14,5.4,1,ph);
-      furrow(x,px-8,'rgba(190,164,112,.42)',4.6,5.4,1,ph);
-      for(let y=10;y<TS;y+=33){                         // les graines, bien plus grosses
-        const o=Math.sin(y/TS*6.28318+ph)*5.4;
-        const gx=px+o+(R()-.5)*6, gy=y+(R()-.5)*7, r=7+R()*3;
-        blob(x,gx+1.3,gy+1.6,r,'rgba(74,54,26,.4)');
-        blob(x,gx,gy,r,'#f0dda6');
-        blob(x,gx-r*.3,gy-r*.32,r*.42,'#fdf3d0');
-      }
+    for(let i=0;i<34;i++){                              // mottes émiettées par le passage
+      const px=R()*TS, py=R()*TS, r=3.4+R()*6.2;
+      blob(x,px+r*.3,py+r*.32,r,'rgba(52,37,19,.34)');
+      blob(x,px,py,r*.86,'rgba(150,122,76,.5)');
     }
   }
-  // 2. semé — « Rangs ondulés » (S2)
+  // les grains seuls, sur fond transparent : une couche par-dessus le semis et l'engrais,
+  // qu'on efface dès que les pousses sortent de terre
+  function texGrains(){
+    const [c,x] = cv(), R = rng(884411);
+    for(let i=0;i<100;i++){
+      const gx=R()*TS, gy=R()*TS, r=4.6+R()*3.2;
+      blob(x,gx+1.2,gy+1.5,r,'rgba(74,54,26,.34)');
+      blob(x,gx,gy,r,'#f0dda6');
+      blob(x,gx-r*.3,gy-r*.32,r*.42,'#fdf3d0');
+    }
+    return finish(c);
+  }
+  // 2. semé — grains à la volée (S2)
   function texSown(){
     const [c,x] = cv(); drawSown(x, rng(762006)); return finish(c);
   }
@@ -1189,6 +1220,7 @@ const SWATH = (function(){
     return finish(c);
   }
   const TEX = [texTilled(), texSown(), texWet(), texCut()];
+  const GTEX = texGrains();
   const MAXS = 6000, TILE = 2.9;          // 1 motif = 2,9 m au sol, échelle constante
   const layers = TEX.map((tex,i) => {
     const pos = new Float32Array(MAXS*6), nor = new Float32Array(MAXS*6), uv = new Float32Array(MAXS*4);
@@ -1200,11 +1232,14 @@ const SWATH = (function(){
     geo.setAttribute('uv', new THREE.BufferAttribute(uv,2).setUsage(THREE.DynamicDrawUsage));
     geo.setIndex(new THREE.BufferAttribute(idx,1));
     geo.setDrawRange(0,0);
-    const mm = clipToParcel(i === 2
+    const base = i === 2
       ? new THREE.MeshPhongMaterial({ map:tex, side:THREE.DoubleSide, shininess:38,
           specular:new THREE.Color('#6f7a80'), depthTest:false, depthWrite:false })  // brillance mouillée
       : new THREE.MeshLambertMaterial({ map:tex, side:THREE.DoubleSide,
-          depthTest:false, depthWrite:false }));  // aucun z-fight quand on repasse au même endroit
+          depthTest:false, depthWrite:false });  // aucun z-fight quand on repasse au même endroit
+    // le semis et l'engrais portent les grains ; sur la terre mouillée ils sont assombris
+    if (i === 1 || i === 2) semis(base, GTEX, i === 2 ? .58 : 1);
+    const mm = clipToParcel(base);
     const m = new THREE.Mesh(geo, mm);
     m.position.y = i*.004; m.frustumCulled = false; m.receiveShadow = true;
     m.renderOrder = -10 + i;                      // juste après le sol, avant tout le reste
@@ -1589,8 +1624,15 @@ function traceLeft(v){ return v && v.path ? Math.max(0, v.path.length - v.head) 
 // aussi la trajectoire — et l'évitement travaille à pleine portée.
 function followPath(v, dt){
   let avance = false;
-  while (v.head < v.path.length &&
-         Math.hypot(v.path[v.head].x-v.pos.x, v.path[v.head].z-v.pos.z) < 2.6){ v.head++; avance = true; }
+  // Le tracteur suit la ligne et l'outil la suit derrière lui : en cours de route c'est
+  // donc bien le tracteur qui consomme les points. Le dernier, en revanche, c'est l'outil
+  // qui doit l'atteindre — c'est là que le joueur a voulu que l'effet s'arrête.
+  while (v.head < v.path.length){
+    const der = v.head === v.path.length - 1;
+    const P = der ? outilXZ(v, _out) : v.pos;
+    if (Math.hypot(v.path[v.head].x-P.x, v.path[v.head].z-P.z) >= 2.6) break;
+    v.head++; avance = true;
+  }
   if (v.head >= v.path.length){
     traceClear(v); if (v === pilote()) setPathState('pret');
     return;
@@ -1604,7 +1646,9 @@ function followPath(v, dt){
   // coincé pour de bon : on abandonne le point courant plutôt que d'insister
   v.bloque = v.speed < 1.2 ? (v.bloque || 0) + dt : 0;
   if (v.bloque > 2.5){ v.bloque = 0; v.head++; traceDraw(v); return; }
-  driveTo(v, v.path[i], dt, false, true);
+  // sur le tout dernier point seulement, on vise avec l'outil : l'engin dépasse le bout du
+  // tracé de la longueur de son attelage, pour que l'outil, lui, s'arrête pile dessus
+  driveTo(v, v.path[i], dt, false, true, i === v.path.length-1);
 }
 
 // ---------- effets ----------
@@ -1795,7 +1839,13 @@ function vehicle(kind){
   g.traverse(o => { if(o.isMesh) o.castShadow = true; });
   const h = new THREE.Group(); h.add(g); scene.add(h);
   g.userData.brakes = brakeLights; g.userData.lamps = headlamps; g.userData.beacons = beacons;
-  return { kind, g, h, pos:GATE.clone(), heading:Math.PI, speed:0, steerA:0, turnRate:0,
+  // Où se pose l'effet sur la parcelle : le rouleau du déchaumeur, les socs du semoir, la
+  // rampe, la barre de coupe, la caisse de la benne. C'est ce point-là que le joueur
+  // désigne quand il double-tape ou qu'il dessine, jamais le nez du tracteur.
+  h.updateMatrixWorld(true);
+  const org = (g.userData.tool && g.userData.tool.obj) || g.userData.bin;
+  const trav = org ? h.worldToLocal(org.getWorldPosition(new THREE.Vector3())).z : 0;
+  return { kind, g, h, trav, pos:GATE.clone(), heading:Math.PI, speed:0, steerA:0, turnRate:0,
            bob:Math.random()*3, trk:0, laneI:0, lanes:null, done:false, hop:0,
            sus:0, susV:0, pit:0, pitV:0, rol:0, rolV:0, lastS:0, wph:Math.random()*6,
            sq:0, sqV:0, line:0, strk:0,
@@ -1969,7 +2019,27 @@ const MAXSPD0 = 7.6, RMIN0 = 2.0;   // vitesse de base ; rayon de braquage mini
 const TURNCAP = 4.3, TURNFLOOR = 1.7;
 const LINEK = .48;                  // jusqu'à +48 % d'allure sur un long passage droit
 let MAXSPD = MAXSPD0, RMIN = RMIN0, ACC = 10, GROWK = 1, PRICEK = 1, mudK = 1;
-function driveTo(v, target, dt, stop, large){
+// Le décalage de l'outil, ramené dans le repère du monde : viser un point avec l'outil,
+// c'est viser, avec le tracteur, ce même point reculé de la longueur de l'attelage.
+function outilXZ(v, out){
+  const o = v.trav || 0;
+  out.x = v.pos.x + Math.sin(v.heading)*o;
+  out.z = v.pos.z + Math.cos(v.heading)*o;
+  return out;
+}
+const _vise = { x:0, z:0 }, _out = { x:0, z:0 }, _out2 = { x:0, z:0 };
+function driveTo(v, target, dt, stop, large, outil){
+  const vrai = target;
+  const dec = outil ? (v.trav || 0) : 0;
+  if (dec){
+    // L'outil traîne exactement derrière l'engin : viser un point avec lui, c'est viser
+    // ce point reculé de la longueur de l'attelage, dans l'axe de l'engin. On dépasse
+    // donc le point de cette longueur (outil porté à l'arrière) ou on s'arrête d'autant
+    // avant (barre de coupe), et la consigne reste devant pendant tout le dépassement.
+    _vise.x = target.x - Math.sin(v.heading)*dec;
+    _vise.z = target.z - Math.cos(v.heading)*dec;
+    target = _vise;
+  }
   const dbut = Math.hypot(target.x-v.pos.x, target.z-v.pos.z);
   // `large` : on regarde aussi au-delà du point visé. Sur un tracé les points se suivent de
   // près, et se borner à eux revenait à rouler les yeux fermés.
@@ -1981,7 +2051,8 @@ function driveTo(v, target, dt, stop, large){
   // en auto aussi il ralentit pour braquer, avec exactement la même courbe qu'au manche
   const grip = easeGrip(v, stop ? 1 : speedForTurn(diff), dt);
   step(v, dt, want, stop ? 0 : MAXSPD*mudK*(v.mul||1)*grip, true);
-  return v.pos.distanceTo(target);
+  if (dec){ const T = outilXZ(v, _out2); return Math.hypot(vrai.x-T.x, vrai.z-T.z); }
+  return Math.hypot(target.x-v.pos.x, target.z-v.pos.z);
 }
 function lanesFor(W){
   const L = [], cols = Math.max(1, Math.ceil(P/W));
@@ -2209,12 +2280,13 @@ function toast(msg, cls){
 }
 
 // ---------- améliorations ----------
+// La transmission ne s'achète plus : elle touchait au braquage et à la reprise, donc à la
+// conduite elle-même, et deux parties d'un même jeu ne se pilotaient plus pareil.
 const UPGRADES = [
-  { id:'moteur',  n:'Moteur',       emo:'⚙️', d:'Vitesse de travail',    max:5, base:2400 },
-  { id:'boite',   n:'Transmission', emo:'🔧', d:'Braquage et reprise',   max:5, base:2200 },
-  { id:'tremie',  n:'Trémie',       emo:'🛢️', d:'Capacité de récolte',   max:5, base:2800 },
-  { id:'semence', n:'Semences',     emo:'🌱', d:'Vitesse de pousse',     max:5, base:2600 },
-  { id:'negoce',  n:'Négoce',       emo:'🤝', d:'Prix de vente au silo', max:5, base:3200 }
+  { id:'moteur',  n:'Moteur',      emo:'⚙️', d:'Vitesse de travail',    max:5, base:2400 },
+  { id:'tremie',  n:'Trémie',      emo:'🛢️', d:'Capacité de récolte',   max:5, base:2800 },
+  { id:'semence', n:'Fertilisant', emo:'🌿', d:'Vitesse de pousse',     max:5, base:2600 },
+  { id:'negoce',  n:'Négoce',      emo:'💵', d:'Prix de vente au silo', max:5, base:3200 }
 ];
 const upCost = (u,l) => Math.round(u.base*Math.pow(1.8,l)/50)*50;
 const lv = {}; UPGRADES.forEach(u => lv[u.id] = 0);
@@ -2223,8 +2295,8 @@ let totalT = 0, harvests = 0;
 const level = () => 1 + Math.floor(Math.sqrt(totalT/1500));
 function applyUpgrades(){
   MAXSPD = MAXSPD0*(1 + .11*lv.moteur);
-  RMIN   = RMIN0  *(1 - .075*lv.boite);
-  ACC    = 10     *(1 + .16*lv.boite);
+  RMIN   = RMIN0;                                  // le braquage ne s'achète pas
+  ACC    = 10;                                     // la reprise non plus
   CAP    = Math.round(CAP0  *(1 + .28*lv.tremie));
   TRCAP  = Math.round(TRCAP0*(1 + .28*lv.tremie));
   GROWK  = 1 + .22*lv.semence;
@@ -2646,9 +2718,14 @@ function setPathState(st){ drawPathBtn(); }
 (function(){
   const el = document.getElementById('stage');
   const btn = document.getElementById('pathBtn');
-  const SEUIL = 14;                                  // px au-delà desquels c'est un balayage
-  let mode = 'rien';                                 // 'rien' | 'trace' | 'camera'
-  let id1 = null, x0 = 0, y0 = 0;
+  // Un tracé se mérite. Le doigt qui se pose et ripe de deux millimètres ne doit rien
+  // lancer du tout : il faut du temps ET de la longueur, et tant que les deux ne sont pas
+  // réunis on ne fait qu'enregistrer le geste, sans rien envoyer à l'engin.
+  const SEUIL = 14;                                  // px : en dessous, c'était une tape
+  const TENUE = 260;                                 // ms de doigt posé avant qu'un tracé prenne
+  const LONGE = 58;                                  // px de trait réellement dessiné
+  let mode = 'rien';                                 // 'rien' | 'esquisse' | 'trace' | 'camera'
+  let id1 = null, x0 = 0, y0 = 0, t0 = 0, lg = 0, lx = 0, ly = 0, buf = [];
   let bD = 0, bZ = 1, bX = 0, bY = 0, bA = 0, cum = 0;
   let tapT = 0, tapX = 0, tapY = 0;
   const deux = () => { const it = TOUCH.values(); return [it.next().value, it.next().value]; };
@@ -2665,7 +2742,10 @@ function setPathState(st){ drawPathBtn(); }
   el.addEventListener('pointerdown', e => {
     if (paused) return;
     TOUCH.set(e.pointerId, { x:e.clientX, y:e.clientY });
-    if (TOUCH.size === 1){ id1 = e.pointerId; x0 = e.clientX; y0 = e.clientY; mode = 'rien'; }
+    if (TOUCH.size === 1){
+      id1 = e.pointerId; x0 = lx = e.clientX; y0 = ly = e.clientY;
+      t0 = performance.now(); lg = 0; buf = []; mode = 'rien';
+    }
     else if (TOUCH.size === 2){
       // un deuxième doigt : c'était un pincement, pas un tracé. On efface ce qu'on venait
       // de poser, sinon l'engin part sur un bout de trajet qu'on n'a jamais voulu.
@@ -2698,12 +2778,24 @@ function setPathState(st){ drawPathBtn(); }
       return;
     }
     if (e.pointerId !== id1 || mode === 'camera') return;
-    if (mode !== 'trace' && Math.hypot(e.clientX-x0, e.clientY-y0) < SEUIL) return;
-    const v = pilote(); if (!v) return;
-    if (mode !== 'trace'){                           // le balayage commence : on repart à zéro
+    lg += Math.hypot(e.clientX-lx, e.clientY-ly);     // longueur réellement parcourue
+    lx = e.clientX; ly = e.clientY;
+    if (mode !== 'trace'){
+      if (mode === 'rien'){
+        if (Math.hypot(e.clientX-x0, e.clientY-y0) < SEUIL) return; // simple tremblement
+        mode = 'esquisse';                           // le geste est parti, rien n'est décidé
+      }
+      buf.push({ x:e.clientX, y:e.clientY });
+      if (lg < LONGE || performance.now()-t0 < TENUE) return;
+      // temps et longueur y sont : le tracé prend, et il reprend le geste depuis le début
+      const v = pilote(); if (!v) return;
       mode = 'trace'; traceClear(v); v.goto = null; setManual();
       const q = screenToWorld(x0, y0); if (q) traceAdd(v, q);
+      for(const b of buf){ const w = screenToWorld(b.x, b.y); if (w) traceAdd(v, w); }
+      buf = [];
+      return;
     }
+    const v = pilote(); if (!v) return;
     const p = screenToWorld(e.clientX, e.clientY); if (p) traceAdd(v, p);
   });
   function fin(e){
@@ -2715,7 +2807,9 @@ function setPathState(st){ drawPathBtn(); }
       id1 = r[0]; x0 = r[1].x; y0 = r[1].y; mode = 'camera';
       return;                                        // il ne tracera rien : le geste est fini
     }
-    const etait = mode; mode = 'rien'; id1 = null;
+    const etait = mode; mode = 'rien'; id1 = null; buf = [];
+    // une esquisse trop courte ou trop brève ne vaut ni tape ni tracé : elle ne fait rien
+    if (etait === 'esquisse'){ tapT = 0; return; }
     if (etait !== 'rien'){ drawPathBtn(); return; }
     // c'était une tape : sur un engin elle sélectionne, sur le champ elle vise
     const cible = vehicleAt(e.clientX, e.clientY);
@@ -3032,7 +3126,7 @@ function driveOne(v, conduit, chantier, dt){
     // `stop` mettrait la consigne de vitesse à zéro : on roule jusqu'au point, on ne s'y gare pas
     v.bloque = v.speed < 1.2 ? (v.bloque || 0) + dt : 0;
     if (v.bloque > 3){ v.bloque = 0; v.goto = null; v.speed = 0; return; }  // inatteignable
-    if (driveTo(v, v.goto, dt) < RMIN + 1.2){ v.goto = null; v.speed = 0; }
+    if (driveTo(v, v.goto, dt, false, false, true) < RMIN + 1.2){ v.goto = null; v.speed = 0; }
     return;
   }
   if (conduit && manual){ driveManual(v, dt); return; }
@@ -3211,11 +3305,11 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
     fleet.harvest.g.userData.fill.scale.y = .02 + fleet.harvest.hop/CAP*.98;
 
   // pousse continue
-  let ripe = 0, sown = 0;
+  let ripe = 0, sown = 0, gsum = 0;
   const growK = dt*GROWK*crop().grow, rainK = curRain*.009;
   for(let k=0;k<plants.length;k++){
     const p = plants[k], t = cell[p.ti];
-    if (p.g > 0) sown++;
+    if (p.g > 0){ sown++; gsum += p.g; }
     if (t >= 2 && p.g > 0 && p.g < 1){   // l'engrais accélère fortement, il ne bloque plus
       p.g = Math.min(1, p.g + ((t===3 ? .032 : .006) + rainK)*growK);
       writePlant(k);
@@ -3223,6 +3317,13 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
     if (p.g > .8) ripe++;
   }
   if (S.k === 'grow' && !manual && (sown === 0 || ripe >= sown*.95)) nextStage();
+  // les grains blancs tiennent tant qu'on sème et qu'on fertilise ; à la pousse ils
+  // disparaissent dès que les tiges ont percé d'une dizaine de centimètres
+  const hPousse = sown ? Math.min(1, gsum/sown*1.25) * crop().uh : 0;
+  const grainCible = (S.k === 'sow' || S.k === 'fert') ? 1
+                   : !sown ? 0
+                   : 1 - Math.max(0, Math.min(1, (hPousse - .10)/.15));
+  GRAIN.value += (grainCible - GRAIN.value) * Math.min(1, dt*1.6);
   chunks.forEach(c => {
     if (c.dirty){ c.young.instanceMatrix.needsUpdate = true;
                   c.ripe.instanceMatrix.needsUpdate = true;
@@ -3425,6 +3526,12 @@ window.__FARM_DEBUG = () => ({
     }
     return +pire.toFixed(2);
   })(),
+  trav:(function(){ const o={}; for(const k of KINDS){ const v=fleet[k]; if(v) o[k]=+v.trav.toFixed(2); } return o; })(),
+  grains:+GRAIN.value.toFixed(3),
+  finTrace:(function(){ const v = pilote(); if (!v || !v.path || !v.path.length) return null;
+    const p = v.path[v.path.length-1]; return [+p.x.toFixed(2), +p.z.toFixed(2)]; })(),
+  outil:(function(){ const v = pilote(); if (!v) return null;
+    const p = outilXZ(v, {x:0,z:0}); return [+p.x.toFixed(2), +p.z.toFixed(2)]; })(),
   traceVu:!!(pilote() && pilote().trace && pilote().trace.mesh.visible),
   cap:+(worker ? worker.heading : 0).toFixed(3), vit:+(worker ? worker.speed : 0).toFixed(2),
   allure:+(worker && worker.grip !== undefined ? worker.grip : 1).toFixed(2),
