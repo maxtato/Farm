@@ -973,9 +973,9 @@ function parcelY(x,z){
 const CUT_TONS = ['#f6e59d', '#e6d089', '#cdb271', '#b39c64'];
 function drawCut(x, R){
   x.fillStyle = '#ab9862'; x.fillRect(0,0,TS,TS);
-  speck(x, R,130,['rgba(214,199,150,.34)','rgba(186,170,118,.3)'],1.8,5.2);
-  for(let i=0;i<300;i++){
-    const px=R()*TS, py=R()*TS, a=R()*6.28, L=7+R()*15, w=2.6+R()*2.2;
+  speck(x, R,110,['rgba(214,199,150,.34)','rgba(186,170,118,.3)'],2.5,7);
+  for(let i=0;i<260;i++){
+    const px=R()*TS, py=R()*TS, a=R()*6.28, L=10+R()*20, w=3.6+R()*3;
     straw(x, R, px, py, a, L, w, CUT_TONS[(R()*CUT_TONS.length)|0]);
   }
 }
@@ -991,7 +991,7 @@ function soilTex(){
   const pos = [], uvs = [], col = [], tri = [];
   const px = new Float32Array(W*W), pz = new Float32Array(W*W), idx = new Int32Array(W*W);
   const push = (x,y,z,shade) => {
-    pos.push(x,y,z); uvs.push((x-X0)/2.2, (z-Z0)/2.2); col.push(shade,shade,shade);
+    pos.push(x,y,z); uvs.push((x-X0)/2.9, (z-Z0)/2.9); col.push(shade,shade,shade);
     return pos.length/3 - 1;
   };
   for(let j=0;j<=N;j++) for(let i=0;i<=N;i++){
@@ -1092,31 +1092,31 @@ const SWATH = (function(){
   // 1. déchaumé — « Sillons souples » (L1), mottes franchement grossies
   function texTilled(){
     const [c,x] = cv(), R = rng(601844);
-    x.fillStyle='#7d6039'; x.fillRect(0,0,TS,TS); bands(x);
+    x.fillStyle='#7d6039'; x.fillRect(0,0,TS,TS); bands(x,.03);
     x.globalAlpha=.62;
-    for(let i=0;i<6;i++) furrow(x,(i+.5)*(TS/6),'#4a3620',7,4,1,i);
+    for(let i=0;i<5;i++) furrow(x,(i+.5)*(TS/5),'#4a3620',9,5,1,i);
     x.globalAlpha=1;
-    for(let i=0;i<95;i++){                              // grosses mottes, avec leur ombre
-      const px=R()*TS, py=R()*TS, r=3.4+R()*6.6;
+    for(let i=0;i<80;i++){                              // grosses mottes, avec leur ombre
+      const px=R()*TS, py=R()*TS, r=4.6+R()*8.4;
       blob(x,px+r*.3,py+r*.32,r,'rgba(52,37,19,.5)');
       blob(x,px,py,r*.88,'#9d7d4d');
       blob(x,px-r*.24,py-r*.28,r*.36,'rgba(226,205,160,.4)');
     }
-    speck(x, R,140,['rgba(163,134,86,.5)','rgba(58,42,23,.45)'],1.6,4.6);
+    speck(x, R,120,['rgba(163,134,86,.5)','rgba(58,42,23,.45)'],2.3,6.4);
     return finish(c);
   }
   // le dessin du semis, réutilisé tel quel par l'engrais
   function drawSown(x, R){
-    x.fillStyle='#7d5e39'; x.fillRect(0,0,TS,TS); bands(x,.045);
-    speck(x, R,180,['rgba(58,42,23,.38)','rgba(166,138,90,.35)'],1.8,5);
-    for(let i=0;i<6;i++){
-      const px=(i+.5)*(TS/6), ph=i*1.4;
-      furrow(x,px,'rgba(46,32,16,.55)',11,4.2,1,ph);
-      furrow(x,px-6,'rgba(190,164,112,.42)',3.4,4.2,1,ph);
-      for(let y=8;y<TS;y+=26){                          // les graines, bien plus grosses
-        const o=Math.sin(y/TS*6.28318+ph)*4.2;
-        const gx=px+o+(R()-.5)*5, gy=y+(R()-.5)*6, r=5.4+R()*2.2;
-        blob(x,gx+1,gy+1.2,r,'rgba(74,54,26,.4)');
+    x.fillStyle='#7d5e39'; x.fillRect(0,0,TS,TS); bands(x,.028);
+    speck(x, R,150,['rgba(58,42,23,.38)','rgba(166,138,90,.35)'],2.5,6.8);
+    for(let i=0;i<5;i++){
+      const px=(i+.5)*(TS/5), ph=i*1.4;
+      furrow(x,px,'rgba(46,32,16,.55)',14,5.4,1,ph);
+      furrow(x,px-8,'rgba(190,164,112,.42)',4.6,5.4,1,ph);
+      for(let y=10;y<TS;y+=33){                         // les graines, bien plus grosses
+        const o=Math.sin(y/TS*6.28318+ph)*5.4;
+        const gx=px+o+(R()-.5)*6, gy=y+(R()-.5)*7, r=7+R()*3;
+        blob(x,gx+1.3,gy+1.6,r,'rgba(74,54,26,.4)');
         blob(x,gx,gy,r,'#f0dda6');
         blob(x,gx-r*.3,gy-r*.32,r*.42,'#fdf3d0');
       }
@@ -1132,9 +1132,9 @@ const SWATH = (function(){
     drawSown(x, R);
     x.fillStyle = 'rgba(40,26,10,.5)'; x.fillRect(0,0,TS,TS);
     const R2 = rng(763788);
-    for(let i=0;i<26;i++)                               // quelques flaques, à peine
-      glow(x,R2()*TS,R2()*TS,16+R2()*34,'rgba(20,12,4,.35)','rgba(20,12,4,0)');
-    speck(x, R2,90,['rgba(186,204,214,.2)'],1.2,3);
+    for(let i=0;i<20;i++)                               // quelques flaques, à peine
+      glow(x,R2()*TS,R2()*TS,24+R2()*46,'rgba(20,12,4,.35)','rgba(20,12,4,0)');
+    speck(x, R2,80,['rgba(186,204,214,.2)'],1.8,4.2);
     return finish(c);
   }
   // 4. moissonné — « Menue paille » (M5), débris nettement plus longs et plus jaunes
@@ -1144,7 +1144,7 @@ const SWATH = (function(){
     return finish(c);
   }
   const TEX = [texTilled(), texSown(), texWet(), texCut()];
-  const MAXS = 6000, TILE = 2.2;          // 1 motif = 2,2 m au sol, échelle constante
+  const MAXS = 6000, TILE = 2.9;          // 1 motif = 2,9 m au sol, échelle constante
   const layers = TEX.map((tex,i) => {
     const pos = new Float32Array(MAXS*6), nor = new Float32Array(MAXS*6), uv = new Float32Array(MAXS*4);
     for(let k=0;k<MAXS*2;k++){ nor[k*3]=0; nor[k*3+1]=1; nor[k*3+2]=0; }
