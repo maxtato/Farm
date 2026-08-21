@@ -35,7 +35,8 @@
 
   /* ---------- ossature : bandeaux pleins, scène au milieu ---------- */
   #ui { position:fixed; inset:0; display:flex; flex-direction:column; }
-  #stage { position:relative; flex:1 1 auto; min-height:0; overflow:hidden; background:#54a52e; }
+  #stage { position:relative; flex:1 1 auto; min-height:0; overflow:hidden; background:#54a52e;
+           touch-action:none; }
   #app { position:absolute; inset:0; }
   canvas { display:block; }
 
@@ -75,7 +76,9 @@
   /* ---------- suivi du cycle ---------- */
   #steps { display:flex; align-items:flex-start; margin-top:var(--gap); }
   .step { flex:1 1 0; display:flex; flex-direction:column; align-items:center; gap:3px;
-          position:relative; opacity:.5; }
+          position:relative; opacity:.5; pointer-events:auto; background:none; border:none;
+          padding:0; font:inherit; color:inherit; }
+  .step:focus-visible { outline:3px solid var(--gold); outline-offset:3px; border-radius:10px; }
   .step::before { content:''; position:absolute; top:calc(var(--sd)/2 - 2px); left:-50%; width:100%; height:5px;
                   background:rgba(0,0,0,.3); border-radius:3px; z-index:0; }
   .step:first-child::before { display:none; }
@@ -120,12 +123,31 @@
   #gauge span { position:absolute; inset:0; display:grid; place-items:center; font-size:clamp(9.5px, 1.5vh, 11px);
                 font-weight:900; text-shadow:0 1px 2px rgba(0,0,0,.6); }
 
-  #acts { display:flex; flex-direction:column; gap:6px; }
-  .actrow { display:flex; gap:6px; }
-  #vehrow { display:none; }
-  #vehrow.on { display:flex; }
-  #vehBtn { background:linear-gradient(180deg,#ffdd77,var(--gold));
-            box-shadow:0 4px 0 var(--goldD), 0 6px 8px rgba(0,0,0,.28); }
+  /* deux gros boutons, et tout le reste en pastilles de coin : le bandeau respire */
+  #mainrow { display:flex; gap:9px; }
+  .big { flex:1 1 0; min-width:0; background:var(--cream); color:var(--ink); border:none;
+         border-radius:16px; padding:clamp(7px,1.2vh,11px) 8px; font-family:inherit; font-weight:900;
+         font-size:clamp(11px,1.7vh,13.5px); line-height:1.15; display:flex; align-items:center;
+         justify-content:center; gap:8px; box-shadow:0 4px 0 var(--creamD), 0 6px 10px rgba(0,0,0,.28);
+         transition:transform .06s; }
+  .big i { font-style:normal; font-size:clamp(17px,2.9vh,22px); line-height:1; }
+  .big span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .big:active { transform:translateY(3px); box-shadow:0 1px 0 var(--creamD); }
+  .big:disabled { opacity:.5; box-shadow:0 4px 0 var(--creamD); }
+  #vehBtn.alt { background:linear-gradient(180deg,#ffdd77,var(--gold));
+                box-shadow:0 4px 0 var(--goldD), 0 6px 10px rgba(0,0,0,.28); }
+
+  #padrow { display:flex; align-items:center; gap:8px; }
+  #padrow #pad { flex:1 1 auto; }
+  .corner { flex:0 0 auto; display:flex; flex-direction:column; gap:9px; }
+  .mini { width:clamp(40px,6.2vh,48px); aspect-ratio:1; border-radius:50%; border:none; padding:0;
+          background:rgba(0,0,0,.34); color:var(--cream); font-family:inherit; font-weight:900;
+          font-size:clamp(15px,2.4vh,18px); display:grid; place-items:center;
+          box-shadow:inset 0 0 0 2px rgba(255,255,255,.14); transition:transform .06s; }
+  .mini:active { transform:scale(.92); }
+  .mini:focus-visible { outline:3px solid var(--gold); outline-offset:2px; }
+  .mini.on { background:linear-gradient(180deg,#ffdd77,var(--gold)); color:var(--ink);
+             box-shadow:0 3px 0 var(--goldD); }
 
   /* ---------- boutons épais ---------- */
   .btn { flex:1 1 0; min-width:0; background:var(--cream); color:var(--ink); border:none;
@@ -141,6 +163,15 @@
   .btn.on { background:linear-gradient(180deg,#ffdd77,var(--gold)); box-shadow:0 4px 0 var(--goldD), 0 6px 8px rgba(0,0,0,.28); }
   .btn.dark { background:var(--barkL); color:var(--cream); box-shadow:0 4px 0 rgba(0,0,0,.42); }
   .btn.wide { flex:2 1 0; }
+
+  /* repère de zoom : sans retour visible, on ne sait pas qu'on pince */
+  #zoomTag { position:fixed; z-index:9; left:50%; transform:translateX(-50%) scale(.9);
+             top:calc(env(safe-area-inset-top) + 168px);
+             background:rgba(14,20,14,.82); color:var(--cream); border-radius:999px;
+             padding:6px 15px; font-size:13px; font-weight:900;
+             font-variant-numeric:tabular-nums; opacity:0; pointer-events:none;
+             transition:opacity .18s ease, transform .18s ease; }
+  #zoomTag.on { opacity:1; transform:translateX(-50%) scale(1); }
 
   /* ---------- effets volants ---------- */
   #fx { position:fixed; inset:0; pointer-events:none; overflow:hidden; z-index:6; }
@@ -290,9 +321,16 @@
       <div id="job">—</div>
       <div id="gauge"><i></i><span id="gval">0 %</span></div>
     </div>
-    <div id="acts"></div>
-    <div id="vehrow"><button class="btn wide" id="vehBtn"><i>🚜</i><span>Passer à la benne</span></button></div>
-    <div id="pad">
+    <div id="mainrow">
+      <button class="big" id="vehBtn"><i>🌾</i><span>Moissonneuse</span></button>
+      <button class="big" id="cropBtn"><i>🌾</i><span>Blé</span></button>
+    </div>
+    <div id="padrow">
+      <div class="corner">
+        <button class="mini" id="btnShop" aria-label="Boutique">🛒</button>
+        <button class="mini" id="btnSet" aria-label="Réglages">⚙️</button>
+      </div>
+      <div id="pad">
       <div id="padStick"><div id="stick"><div id="knob"></div></div></div>
       <div id="padPath">
         <button id="pathBtn" aria-label="Tracer un parcours">
@@ -307,10 +345,16 @@
         </button>
         <div class="cap" id="pathCap">Tracer un parcours</div>
       </div>
+      </div>
+      <div class="corner">
+        <button class="mini" id="btnAuto" aria-label="Pilote automatique">🤖</button>
+        <button class="mini" id="btnSpeed" aria-label="Vitesse du temps">×1</button>
+      </div>
     </div>
   </footer>
 </div>
 
+<div id="zoomTag"></div>
 <div id="fx"></div>
 <div id="toast"></div>
 
@@ -357,8 +401,8 @@ app.appendChild(renderer.domElement);
 let zoom = 1;                           // facteur de rapprochement, piloté à deux doigts
 function applyCamera(){
   const a = SW/SH;
-  VIEW = Math.max(22, Math.min(42, SH/13));
-  VIEW = Math.min(VIEW, 72/a) / zoom;   // écran très large : on ne montre pas toute la ferme d'un coup
+  VIEW = Math.max(26, Math.min(50, SH/10.5));
+  VIEW = Math.min(VIEW, 86/a) / zoom;   // écran très large : on ne montre pas toute la ferme d'un coup
   camera.left=-VIEW*a/2; camera.right=VIEW*a/2; camera.top=VIEW/2; camera.bottom=-VIEW/2;
   camera.updateProjectionMatrix();
 }
@@ -368,10 +412,16 @@ function resize(){
   SX = r.left; SY = r.top;
   applyCamera(); renderer.setSize(SW, SH);
 }
+let _zTag = null, _zHide = 0;
 function setZoom(z){
-  const nz = Math.max(.55, Math.min(2.6, z));
+  const nz = Math.max(.45, Math.min(3.2, z));
   if (Math.abs(nz - zoom) < 1e-4) return;
   zoom = nz; applyCamera();
+  if (!_zTag) _zTag = document.getElementById('zoomTag');
+  _zTag.textContent = '🔍 ×' + zoom.toFixed(2).replace('.', ',');
+  _zTag.classList.add('on');
+  clearTimeout(_zHide);
+  _zHide = setTimeout(() => _zTag.classList.remove('on'), 900);
 }
 resize(); addEventListener('resize', resize);
 // les bandeaux changent de hauteur (contrat affiché, manette masquée) : on suit la scène
@@ -566,7 +616,9 @@ function fillBox(w,h,d,x,y,z,p){
   wrap.scale.y = .02; return wrap;
 }
 
-const AUG_FOLD = 2.25, AUG_OPEN = 0;      // vis rangée le long du corps / déployée sur le côté
+// Repliée, la vis doit longer le corps vers l'arrière — à 2,25 rad elle dépassait
+// encore sur le côté, et du mauvais côté qui plus est.
+const AUG_FOLD = Math.PI/2, AUG_OPEN = 0;
 
 // ---------- engins : formes d'origine ----------
 function tractorBase(g, col){
@@ -696,11 +748,11 @@ function build(kind){
     for(let i=0;i<5;i++) rbox(.3,.2,.12, C.lamp, -.8+i*.4,3.92,1.6, g, .04);
     lamps(2.2,3.5,1.78,g);
     // vis de déchargement : rangée le long du corps pendant la coupe, déployée à trémie pleine
-    const augPiv = new THREE.Group(); augPiv.position.set(.7,3.5,-1.3); augPiv.rotation.y = AUG_FOLD; g.add(augPiv);
-    cyl(.26,.26,4.4,8, C.metal, 2.2,0,0, augPiv).rotation.z = Math.PI/2;
-    rbox(.34,.5,.34, C.steel, .5,-.3,0, augPiv, .06);
-    rbox(.66,.62,.66, C.metal, 4.3,-.3,0, augPiv, .12);                      // la goulotte
-    const spout = new THREE.Object3D(); spout.position.set(4.3,-.72,0); augPiv.add(spout);
+    const augPiv = new THREE.Group(); augPiv.position.set(.6,3.62,.2); augPiv.rotation.y = AUG_FOLD; g.add(augPiv);
+    cyl(.26,.26,3.8,8, C.metal, 1.9,0,0, augPiv).rotation.z = Math.PI/2;
+    rbox(.34,.5,.34, C.steel, .35,-.28,0, augPiv, .06);
+    rbox(.62,.58,.62, C.metal, 3.85,-.28,0, augPiv, .12);                    // la goulotte
+    const spout = new THREE.Object3D(); spout.position.set(3.85,-.66,0); augPiv.add(spout);
     rbox(6,.7,1.3, C.metal, 0,1,3.1, g, .14);
     rbox(6,.34,.5, C.dark, 0,.6,3.6, g, .08);
     const r = reel(5.7,.72,5, 0,1.8,3.4, g, C.gold);
@@ -1276,7 +1328,6 @@ function cropGeo(c){
 }
 let cropI = 0, cropScale = 1;
 const crop = () => CROPS[cropI];
-semerMottes();
 const SP = .72, plants = [], chunks = [];                    // pieds bien plus serrés
 for(let cz=0;cz<CN;cz++) for(let cx=0;cx<CN;cx++)
   chunks.push({ cx:X0+(cx+.5)*CH, cz:Z0+(cz+.5)*CH, list:[] });
@@ -1779,6 +1830,7 @@ let CAP = CAP0, TRCAP = TRCAP0;
 const elNow = document.getElementById('job');
 
 function refreshNow(){
+  if (typeof drawCropBtn === 'function') drawCropBtn();
   const s = STAGES[stage];
   elNow.innerHTML = '<b>' + crop().emo + ' ' + crop().n + ' · ' + s.n + '</b><br>' + s.d;
 }
@@ -2381,48 +2433,49 @@ function setAuto(){
 // ---------- HUD ----------
 const stepsEl = document.getElementById('steps');
 STAGES.forEach((s,i) => {
-  const e = document.createElement('div');
-  e.className = 'step';
+  const e = document.createElement('button');
+  e.className = 'step'; e.type = 'button';
   e.innerHTML = '<i>' + s.ic + '</i><span>' + s.n + '</span>';
+  e.title = s.n + ' — ' + s.d;
+  e.onclick = () => switchTo(i);          // le chemin des étapes sert aussi à choisir le chantier
   stepsEl.appendChild(e);
 });
-const acts = document.getElementById('acts');
-function actRow(){ const d = document.createElement('div'); d.className = 'actrow'; acts.appendChild(d); return d; }
-function mkBtn(row, ico, label, fn, cls){
-  const b = document.createElement('button');
-  b.className = 'btn' + (cls ? ' ' + cls : '');
-  b.innerHTML = '<i>' + ico + '</i><span>' + label + '</span>';
-  b.onclick = fn; row.appendChild(b); return b;
-}
-const rowJobs = actRow();
-[['🚜','Sol',0],['🌱','Semis',1],['💧','Engrais',2],['🌾','Moisson',4]]
-  .forEach(([ic,n,i]) => mkBtn(rowJobs, ic, n, () => switchTo(i)));
-const rowTools = actRow(); rowTools.classList.add('tools');
-btnAuto = mkBtn(rowTools, '🤖', 'Auto', () => manual ? setAuto() : setManual());
+
+const elVehBtn = document.getElementById('vehBtn'), elCropBtn = document.getElementById('cropBtn');
+elCropBtn.onclick = () => openPanel('crop');
+document.getElementById('btnShop').onclick = () => openPanel('shop');
+document.getElementById('btnSet').onclick  = () => openPanel('ctrl');
+
+btnAuto = document.getElementById('btnAuto');
 btnAuto.classList.add('on');
+btnAuto.onclick = () => manual ? setAuto() : setManual();
+
 let SPEED = 1;
-const btnSpeed = mkBtn(rowTools, '⏩', '×1', () => cycleSpeed(), 'keep');
+const btnSpeed = document.getElementById('btnSpeed');
+btnSpeed.onclick = () => cycleSpeed();
 function setSpeed(v){
   SPEED = v;
-  btnSpeed.innerHTML = '<i>⏩</i><span>×' + v + '</span>';
+  btnSpeed.textContent = '×' + v;
   btnSpeed.classList.toggle('on', v > 1);
 }
 function cycleSpeed(){ setSpeed(SPEED === 1 ? 3 : SPEED === 3 ? 6 : 1); }
 setSpeed(1);
-mkBtn(rowTools, '🛒', 'Boutique', () => openPanel('shop'));
-mkBtn(rowTools, '🌿', 'Cultures', () => openPanel('crop'));
-mkBtn(rowTools, '⚙️', 'Réglages', () => openPanel('ctrl'));
 
 // ---------- passage d'un engin à l'autre : la benne ne vient que si on va la chercher ----------
-const elVehRow = document.getElementById('vehrow'), elVehBtn = document.getElementById('vehBtn');
 function haulerNeeded(){ return !!hauler || !!(worker && worker.kind === 'harvest'); }
+const VEHICO = { prep:'🚜', sow:'🌱', fert:'💧', harvest:'🌾', trailer:'🛻' };
 function drawVeh(){
-  const show = haulerNeeded();
-  elVehRow.classList.toggle('on', show);
-  if (!show) return;
-  elVehBtn.innerHTML = driven === 'worker'
-    ? '<i>🚜</i><span>Passer à la benne</span>'
-    : '<i>🌾</i><span>Revenir à la moissonneuse</span>';
+  const swap = haulerNeeded();
+  const cur = driven === 'hauler' ? 'trailer' : (worker ? worker.kind : null);
+  elVehBtn.disabled = !swap;
+  elVehBtn.classList.toggle('alt', driven === 'hauler');
+  const n = cur === 'trailer' ? 'Benne' : cur === 'harvest' ? 'Moissonneuse'
+          : cur === 'prep' ? 'Déchaumeuse' : cur === 'sow' ? 'Semoir'
+          : cur === 'fert' ? 'Pulvérisateur' : 'Au repos';
+  elVehBtn.innerHTML = '<i>' + (VEHICO[cur] || '🚜') + '</i><span>' + n + '</span>';
+}
+function drawCropBtn(){
+  elCropBtn.innerHTML = '<i>' + crop().emo + '</i><span>' + crop().n + '</span>';
 }
 function switchVehicle(){
   if (!haulerNeeded()) return;
@@ -2774,8 +2827,8 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   const foc = (driven === 'hauler' && hauler) ? hauler : (worker || hauler);
   if (foc){
     const a = SW/SH;
-    const mx = (VIEW*a/2) * .42;                       // marge horizontale avant décrochage
-    const mz = (VIEW/Math.sin(PITCH)/2) * .42;         // idem en profondeur (axe écran vertical)
+    const mx = (VIEW*a/2) * .22;                       // marge avant décrochage : on suit tôt,
+    const mz = (VIEW/Math.sin(PITCH)/2) * .22;         // l'engin n'approche jamais du bord
     const dx = foc.pos.x - camLook.x, dz = foc.pos.z - camLook.z;
     let tx = camLook.x, tz = camLook.z;
     if (dx >  mx) tx = foc.pos.x - mx;
@@ -2783,8 +2836,8 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
     if (dz >  mz) tz = foc.pos.z - mz;
     if (dz < -mz) tz = foc.pos.z + mz;
     // recadrage doux, et uniquement sur l'axe qui a décroché
-    camLook.x += (tx - camLook.x) * Math.min(1, raw*2.0);
-    camLook.z += (tz - camLook.z) * Math.min(1, raw*2.0);
+    camLook.x += (tx - camLook.x) * Math.min(1, raw*3.2);
+    camLook.z += (tz - camLook.z) * Math.min(1, raw*3.2);
     // large assez pour suivre l'engin dans les fourrières et jusqu'au silo
     camLook.x = Math.max(X0 - 10, Math.min(X0 + P + 10, camLook.x));
     camLook.z = Math.max(Z0 - 14, Math.min(YARD + 8, camLook.z));
