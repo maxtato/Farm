@@ -225,6 +225,7 @@ function rboxGeo(w,h,d,r){
     { depth:Math.max(.002,d-2*r), bevelEnabled:true, bevelThickness:r, bevelSize:r,
       bevelSegments:2, curveSegments:3, steps:1 });
   g.center();
+  g.userData.shared = true;          // mise en cache : elle survit aux engins qui l'utilisent
   return geoC[k] = g;
 }
 function rbox(w,h,d,col,x,y,z,p,r){
@@ -241,6 +242,7 @@ let beacons = [];
 function beacon(x,y,z,p){
   const m = new THREE.Mesh(new THREE.CylinderGeometry(.1,.13,.24,8),
     jelly(new THREE.MeshLambertMaterial({ color:C.beacon, emissive:new THREE.Color(0,0,0) })));
+  m.material.userData.own = true;
   m.position.set(x,y,z); m.castShadow = true; p.add(m); beacons.push(m); return m;
 }
 let brakeLights = [];
@@ -249,6 +251,7 @@ function tail(w,y,z,p){                                  // feux rouges + stop �
   [1,-1].forEach(k => {
     const m = new THREE.Mesh(rboxGeo(.34,.2,.1,.03),
       jelly(new THREE.MeshLambertMaterial({ color:'#c22a1e', emissive:new THREE.Color(0,0,0) })));
+    m.material.userData.own = true;
     m.position.set(k*w*.3, y, z-.04); m.castShadow = true; p.add(m); brakeLights.push(m);
   });
 }
@@ -258,6 +261,7 @@ function lamps(w,y,z,p){
   [1,-1].forEach(k => {                                  // phares : allumés au crépuscule
     const m = new THREE.Mesh(rboxGeo(.3,.19,.1,.04*ROUND),
       jelly(new THREE.MeshLambertMaterial({ color:C.lamp, emissive:new THREE.Color(0,0,0) })));
+    m.material.userData.own = true;
     m.position.set(k*w*.3, y, z+.05); m.castShadow = true; p.add(m); headlamps.push(m);
   });
 }
@@ -976,14 +980,25 @@ function popDust(x,z){
 
 // ---------- véhicules ----------
 function vehicle(kind){
-  brakeLights = []; headlamps = [];
+  brakeLights = []; headlamps = []; beacons = [];
   const g = build(kind);
   g.traverse(o => { if(o.isMesh) o.castShadow = true; });
   const h = new THREE.Group(); h.add(g); scene.add(h);
-  g.userData.brakes = brakeLights; g.userData.lamps = headlamps;
+  g.userData.brakes = brakeLights; g.userData.lamps = headlamps; g.userData.beacons = beacons;
   return { kind, g, h, pos:GATE.clone(), heading:Math.PI, speed:0, steerA:0, turnRate:0,
            bob:Math.random()*3, trk:0, laneI:0, lanes:null, done:false, hop:0,
            sus:0, susV:0, pit:0, pitV:0, rol:0, rolV:0, lastS:0, wph:Math.random()*6 };
+}
+// un engin qui quitte la parcelle rend aussi sa mémoire : sans ça, chaque cycle
+// laissait derrière lui roues, disques et cuves sur le GPU
+function killVehicle(v){
+  if (!v) return;
+  scene.remove(v.h);
+  v.h.traverse(o => {
+    if (!o.isMesh) return;
+    if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
+    if (o.material && o.material.userData.own) o.material.dispose();
+  });
 }
 function step(v, dt, wantHeading, wantSpeed, turnable){
   if (turnable){
@@ -1157,7 +1172,7 @@ function switchTo(i){
   if (i === stage) return;
   const p = worker ? worker.pos.clone() : GATE.clone();
   const h = worker ? worker.heading : Math.PI;
-  if (worker){ scene.remove(worker.h); worker = null; }
+  if (worker){ killVehicle(worker); worker = null; }
   stage = i; startStage();
   if (worker){ worker.pos.copy(p); worker.heading = h; worker.h.position.set(p.x,0,p.z); }
 }
@@ -1166,7 +1181,9 @@ function switchTo(i){
 const SND = (function(){
   let ctx = null, master = null, eng = null, engG = null, rainG = null, on = true;
   function boot(){
-    if (ctx || !on) return;
+    if (!on) return;
+    // le contexte peut naître suspendu (politique d'autoplay) : on le relance à chaque geste
+    if (ctx){ if (ctx.state === 'suspended') ctx.resume().catch(()=>{}); return; }
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
     try { ctx = new AC(); } catch(e){ return; }
     master = ctx.createGain(); master.gain.value = .5; master.connect(ctx.destination);
@@ -1288,15 +1305,16 @@ function contractDeliver(cropId, t){
 // ---------- journée et météo ----------
 const DAYLEN = 300;                                   // 5 minutes de jeu par journée
 let day = 1, dayT = .34;                              // 0 = minuit, .5 = midi
+// La nuit reste lisible : c'est un clair de lune bleu, pas un écran noir.
 const SKY = [
-  { t:0,   sky:'#101a33', hs:'#39466e', hg:'#1a2a19', hi:.30, si:.05, sc:'#8ba3e0', nuit:1 },
-  { t:.23, sky:'#33456b', hs:'#7684a8', hg:'#31432a', hi:.48, si:.15, sc:'#a3b3e4', nuit:.85 },
-  { t:.31, sky:'#7d9c50', hs:'#ffd3a4', hg:'#4d6a30', hi:.72, si:.36, sc:'#ffbe83', nuit:.25 },
+  { t:0,   sky:'#2c4272', hs:'#9fb0dd', hg:'#3b5236', hi:.72, si:.26, sc:'#b6c6f2', nuit:1 },
+  { t:.23, sky:'#42598a', hs:'#a9b6d8', hg:'#41573a', hi:.74, si:.28, sc:'#c0cdf0', nuit:.85 },
+  { t:.31, sky:'#7d9c50', hs:'#ffd3a4', hg:'#4d6a30', hi:.78, si:.38, sc:'#ffbe83', nuit:.25 },
   { t:.5,  sky:'#54a52e', hs:'#ffffff', hg:'#4e8a34', hi:.88, si:.50, sc:'#fff6de', nuit:0 },
-  { t:.68, sky:'#5da03a', hs:'#ffeccd', hg:'#4e7c31', hi:.82, si:.46, sc:'#ffdda9', nuit:0 },
-  { t:.78, sky:'#96703f', hs:'#ffb787', hg:'#4a5228', hi:.62, si:.30, sc:'#ff9f5e', nuit:.4 },
-  { t:.87, sky:'#2c3552', hs:'#5f6c93', hg:'#26331f', hi:.40, si:.10, sc:'#94a7de', nuit:.95 },
-  { t:1,   sky:'#101a33', hs:'#39466e', hg:'#1a2a19', hi:.30, si:.05, sc:'#8ba3e0', nuit:1 }
+  { t:.68, sky:'#5da03a', hs:'#ffeccd', hg:'#4e7c31', hi:.84, si:.46, sc:'#ffdda9', nuit:0 },
+  { t:.78, sky:'#a68350', hs:'#ffd0aa', hg:'#556031', hi:.78, si:.36, sc:'#ff9f5e', nuit:.45 },
+  { t:.87, sky:'#4a5c88', hs:'#a2aecf', hg:'#3a4c30', hi:.74, si:.28, sc:'#b6c3ec', nuit:.95 },
+  { t:1,   sky:'#2c4272', hs:'#9fb0dd', hg:'#3b5236', hi:.72, si:.26, sc:'#b6c6f2', nuit:1 }
 ];
 const WEATHER = {
   clear: { n:'Dégagé',  emo:'☀️', dim:1,   wind:.10, rain:0, mud:1 },
@@ -1330,10 +1348,10 @@ function weatherTick(dt){
   UW.amp.value = curWind;
 }
 const RAIN = (function(){
-  const N = 480;
-  const g = new THREE.BoxGeometry(.035,1,.035);
+  const N = 440;
+  const g = new THREE.BoxGeometry(.1,1.7,.1);          // vues de loin, des traits fins seraient invisibles
   const m = new THREE.InstancedMesh(g,
-    new THREE.MeshBasicMaterial({ color:'#c3ddef', transparent:true, opacity:.5, depthWrite:false }), N);
+    new THREE.MeshBasicMaterial({ color:'#cfe6f6', transparent:true, opacity:.6, depthWrite:false }), N);
   m.frustumCulled = false; m.visible = false; m.renderOrder = 3; scene.add(m);
   const px = new Float32Array(N), py = new Float32Array(N), pz = new Float32Array(N);
   for(let i=0;i<N;i++){ px[i]=(Math.random()-.5)*74; py[i]=Math.random()*26; pz[i]=(Math.random()-.5)*74; }
@@ -1342,7 +1360,7 @@ const RAIN = (function(){
   return { update(dt, amount, cx, cz){
     m.visible = amount > .03;
     if (!m.visible) return;
-    m.material.opacity = .5*amount;
+    m.material.opacity = .62*amount;
     const n = Math.round(N*amount);
     for(let i=0;i<N;i++){
       py[i] -= (26 + (i%9)*1.4)*dt;
@@ -1675,10 +1693,10 @@ let saveT = 0;
   while (dayT >= 1){ dayT -= 1; day++; }
   const sk = skyAt(dayT);
   nightK = sk.nuit;
-  scene.background.setHex(sk.sky).multiplyScalar(.35 + .65*curDim);
+  scene.background.setHex(sk.sky).multiplyScalar(.62 + .38*curDim);
   hemi.color.setHex(sk.hs); hemi.groundColor.setHex(sk.hg);
-  hemi.intensity = sk.hi*(.45 + .55*curDim);
-  sun.color.setHex(sk.sc); sun.intensity = sk.si*curDim;
+  hemi.intensity = sk.hi*(.7 + .3*curDim);
+  sun.color.setHex(sk.sc); sun.intensity = sk.si*(.45 + .55*curDim);
   const glow = Math.max(nightK, 1 - curDim*1.05);          // phares : la nuit et sous l'averse
 
   jbvx += (-JK*jbx - JD*jbvx)*raw + (Math.sin(now*1.6)*.5 + Math.sin(now*2.7)*.3)*raw;
@@ -1686,10 +1704,10 @@ let saveT = 0;
   jbx = Math.max(-.28,Math.min(.28,jbx+jbvx*raw)); jbz = Math.max(-.28,Math.min(.28,jbz+jbvz*raw));
   UJ.bend.value.set(jbx,0,jbz);
   const flash = Math.max(0, Math.sin(now*6.2))**3;
-  beacons.forEach(b => b.material.emissive.setRGB(flash, flash*.42, 0));
   [worker, hauler].forEach(v => {
-    const L = v && v.g.userData.lamps; if (!L) return;
-    L.forEach(m => m.material.emissive.setRGB(glow, glow*.9, glow*.62));
+    if (!v) return;
+    (v.g.userData.beacons||[]).forEach(b => b.material.emissive.setRGB(flash, flash*.42, 0));
+    (v.g.userData.lamps||[]).forEach(m => m.material.emissive.setRGB(glow, glow*.9, glow*.62));
   });
 
   const S = STAGES[stage];
@@ -1702,7 +1720,7 @@ let saveT = 0;
     } else if (worker.done){
       const waiting = worker.kind === 'harvest' && worker.hop > 1;
       const dist = driveTo(worker, waiting ? worker.pos : GATE, dt, waiting);
-      if (!waiting && dist < RMIN+1){ scene.remove(worker.h); worker = null; nextStage(); }
+      if (!waiting && dist < RMIN+1){ killVehicle(worker); worker = null; nextStage(); }
     } else {
       const t = worker.lanes[worker.laneI];
       const full = worker.kind === 'harvest' && worker.hop >= CAP - .5;
@@ -1826,7 +1844,7 @@ let saveT = 0;
       }
       if (hauler.hop <= .2){ haulState = 'park'; sfx('cash'); save(); }
     } else if (haulState === 'park'){
-      if (driveTo(hauler, GATE, dt) < RMIN+1){ scene.remove(hauler.h); hauler = null; }
+      if (driveTo(hauler, GATE, dt) < RMIN+1){ killVehicle(hauler); hauler = null; }
     } else if (!combine){ haulState = 'toSilo'; }
     if (hauler && hd.fill) hd.fill.scale.y = .02 + hauler.hop/TRCAP*.98;
   }
