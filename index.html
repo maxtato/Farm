@@ -3,6 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#3f8a22">
+<meta name="description" content="Déchaume, sème, fertilise, moissonne : conduis toute la saison et fais tourner l'exploitation.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
 <title>Ferme — cycle complet</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -21,13 +28,14 @@
   #top { top:calc(env(safe-area-inset-top) + 12px); left:12px; right:12px; display:flex; gap:7px; }
   .pill { background:rgba(14,20,14,.78); color:#fff; border-radius:14px; padding:8px 11px;
           display:flex; align-items:center; gap:7px; font-size:14px; box-shadow:0 3px 0 rgba(0,0,0,.3); }
-  #steps { top:calc(env(safe-area-inset-top) + 58px); left:12px; right:12px; display:flex; gap:4px; }
+  #stack { top:calc(env(safe-area-inset-top) + 58px); left:12px; right:12px;
+           display:flex; flex-direction:column; gap:6px; pointer-events:none; }
+  #steps { display:flex; gap:4px; }
   .st { flex:1; background:rgba(14,20,14,.6); color:#fff; border-radius:9px; padding:6px 3px;
         font-size:10px; font-weight:800; text-align:center; opacity:.42; }
   .st.on { background:#efb833; color:#2a2213; opacity:1; }
   .st b { display:block; font-size:12px; }
-  #mid { top:calc(env(safe-area-inset-top) + 104px); left:12px; right:12px;
-         display:flex; gap:6px; flex-wrap:wrap; }
+  #mid { display:flex; gap:6px; flex-wrap:wrap; }
   .btn { background:rgba(14,20,14,.82); color:#fff; border:none; border-radius:13px; padding:9px 12px;
          font-size:12.5px; font-weight:800; font-family:inherit; box-shadow:0 4px 0 rgba(0,0,0,.3);
          pointer-events:auto; }
@@ -44,6 +52,63 @@
   #knob { position:absolute; left:50%; top:50%; width:66px; height:66px; margin:-33px 0 0 -33px;
           border-radius:50%; background:#efb833; border:3px solid rgba(0,0,0,.35);
           box-shadow:0 4px 0 rgba(0,0,0,.3); }
+  body.kb #stick { display:none; }
+
+  /* bandeau contrat */
+  #contract { background:rgba(14,20,14,.78); color:#fff; border-radius:13px; padding:7px 11px;
+              font-size:12px; box-shadow:0 3px 0 rgba(0,0,0,.3); display:none; }
+  #contract.on { display:block; }
+  .btn.icon { font-size:15px; padding:8px 11px; }
+  #contract .bar { height:6px; border-radius:4px; background:rgba(255,255,255,.16); margin-top:5px; }
+  #contract .bar i { display:block; height:100%; border-radius:4px; background:#efb833; width:0; }
+
+  /* messages fugaces */
+  #toast { position:fixed; z-index:20; left:50%; transform:translateX(-50%);
+           bottom:calc(env(safe-area-inset-bottom) + 196px);
+           display:flex; flex-direction:column; align-items:center; gap:6px; pointer-events:none; }
+  #toast div { background:rgba(14,20,14,.86); color:#fff; border-radius:12px; padding:8px 14px;
+               font-size:13px; box-shadow:0 3px 0 rgba(0,0,0,.3); animation:tin .3s ease-out; }
+  #toast div.bad { background:rgba(150,32,20,.9); }
+  #toast div.good { background:rgba(28,110,44,.92); }
+  @keyframes tin { from { opacity:0; transform:translateY(10px); } }
+
+  /* panneau (boutique / cultures / aide / pause) */
+  #ovl { position:fixed; inset:0; z-index:30; background:rgba(8,14,8,.72); display:none;
+         align-items:center; justify-content:center; padding:16px; }
+  #ovl.on { display:flex; }
+  #sheet { width:100%; max-width:440px; max-height:86vh; display:flex; flex-direction:column;
+           background:#1a2118; border:3px solid rgba(255,255,255,.12); border-radius:20px;
+           box-shadow:0 10px 0 rgba(0,0,0,.35); overflow:hidden; }
+  #sheetHead { display:flex; align-items:center; gap:10px; padding:13px 14px 10px;
+               color:#fff; font-size:17px; }
+  #sheetHead .sp { flex:1; }
+  #tabs { display:flex; gap:6px; padding:0 14px 10px; }
+  #tabs .btn { flex:1; padding:8px 6px; font-size:12px; }
+  #body { overflow-y:auto; padding:0 14px 16px; -webkit-overflow-scrolling:touch; }
+  .card { background:rgba(255,255,255,.06); border-radius:14px; padding:11px 12px; margin-bottom:8px;
+          display:flex; align-items:center; gap:11px; color:#fff; }
+  .card .ic { font-size:26px; width:34px; text-align:center; }
+  .card .tx { flex:1; min-width:0; }
+  .card .tx b { display:block; font-size:14px; }
+  .card .tx span { display:block; font-size:11.5px; opacity:.72; font-weight:700; margin-top:2px; }
+  .card .lv { display:flex; gap:3px; margin-top:5px; }
+  .card .lv i { width:15px; height:6px; border-radius:3px; background:rgba(255,255,255,.2); }
+  .card .lv i.f { background:#efb833; }
+  .card.sel { background:rgba(239,184,51,.2); box-shadow:inset 0 0 0 2px #efb833; }
+  .buy { background:#2f8f3d; color:#fff; border:none; border-radius:11px; padding:9px 11px;
+         font-size:12px; font-weight:800; font-family:inherit; box-shadow:0 3px 0 rgba(0,0,0,.35);
+         white-space:nowrap; }
+  .buy:disabled { background:#3a423a; color:rgba(255,255,255,.42); box-shadow:none; }
+  .buy.max { background:#3a423a; color:rgba(255,255,255,.5); box-shadow:none; }
+  .note { color:rgba(255,255,255,.66); font-size:12px; line-height:1.55; font-weight:700; margin:2px 0 10px; }
+  .keys { display:grid; grid-template-columns:auto 1fr; gap:5px 11px; color:#fff;
+          font-size:12.5px; align-items:center; }
+  .keys kbd { background:rgba(255,255,255,.12); border-radius:7px; padding:4px 7px;
+              font-family:inherit; font-size:11.5px; white-space:nowrap; text-align:center; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:10px; }
+  .stats div { background:rgba(255,255,255,.06); border-radius:12px; padding:9px 11px; color:#fff; }
+  .stats b { display:block; font-size:17px; }
+  .stats span { font-size:11px; opacity:.7; }
 </style>
 </head>
 <body>
@@ -54,12 +119,26 @@
   <div class="pill">🪙 <span id="coins">0</span></div>
   <div class="pill">🌾 <span id="stock">0</span> t</div>
   <div class="pill">🚜 <span id="hop">0</span>%</div>
+  <div class="pill" id="sky">☀️ <span id="clock">08:00</span></div>
 </div>
-<div id="steps" class="hud"></div>
-<div id="mid" class="hud" style="pointer-events:none"></div>
+<div id="stack" class="hud">
+  <div id="steps"></div>
+  <div id="mid"></div>
+  <div id="contract"></div>
+</div>
 <div id="now">—</div>
+<div id="toast"></div>
 
 <div id="stick"><div id="knob"></div></div>
+
+<div id="ovl">
+  <div id="sheet">
+    <div id="sheetHead"><span id="sheetTitle">Boutique</span><span class="sp"></span>
+      <button class="btn" id="sheetX">✕</button></div>
+    <div id="tabs"></div>
+    <div id="body"></div>
+  </div>
+</div>
 
 
 <script src="vendor/three.min.js"></script>
@@ -97,7 +176,8 @@ function resize(){
 }
 resize(); addEventListener('resize', resize);
 
-scene.add(new THREE.HemisphereLight('#ffffff','#4e8a34',.88));   // lumière plate comme la réf
+const hemi = new THREE.HemisphereLight('#ffffff','#4e8a34',.88);   // lumière plate comme la réf
+scene.add(hemi);
 const sun = new THREE.DirectionalLight('#fff6de',.5);
 sun.castShadow = true; sun.shadow.mapSize.set(1024,1024);
 Object.assign(sun.shadow.camera,{left:-20,right:20,top:20,bottom:-20,near:1,far:90});
@@ -172,10 +252,14 @@ function tail(w,y,z,p){                                  // feux rouges + stop �
     m.position.set(k*w*.3, y, z-.04); m.castShadow = true; p.add(m); brakeLights.push(m);
   });
 }
+let headlamps = [];
 function lamps(w,y,z,p){
   rbox(w*.92,.34,.16, C.dark, 0,y-.05,z, p, .06);
-  rbox(.3,.19,.1, C.lamp,  w*.3,y,z+.05, p, .04);
-  rbox(.3,.19,.1, C.lamp, -w*.3,y,z+.05, p, .04);
+  [1,-1].forEach(k => {                                  // phares : allumés au crépuscule
+    const m = new THREE.Mesh(rboxGeo(.3,.19,.1,.04*ROUND),
+      jelly(new THREE.MeshLambertMaterial({ color:C.lamp, emissive:new THREE.Color(0,0,0) })));
+    m.position.set(k*w*.3, y, z+.05); m.castShadow = true; p.add(m); headlamps.push(m);
+  });
 }
 function glazing(w,h,d,col,x,y,z,p){
   rbox(w+.07,h,d+.07, C.glass, x,y,z, p, .05);          // toutes les faces vitrées, noires
@@ -710,12 +794,60 @@ function windMat(){
   };
   return m;
 }
-const geoYoung = tuftE(C.headY, C.stemY), geoRipe = tuftE(C.headR, C.stemD);
 const CN = 9, CH = P/CN;                                    // 9×9 tuiles : le GPU n'affiche que celles à l'écran
-[geoYoung, geoRipe].forEach(g => {
-  g.computeBoundingSphere();
-  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0,1,0), CH*.75 + 2);
-});
+
+// ---------- cultures : chacune a sa silhouette, son prix et son rythme ----------
+function tuftRape(flower, stemCol){                         // colza : tiges ramifiées, tête en grappe
+  const p = [];
+  [[0,0,1.32],[.1,.07,1.12],[-.09,-.07,1.24],[.03,-.1,.98]].forEach(([x,z,H]) => {
+    const g = new THREE.CylinderGeometry(.022,.036,H,4,1,true); g.translate(0,H/2,0);
+    p.push({ g, c:stemCol, m:MX(x,0,z) });
+    p.push({ g:new THREE.ConeGeometry(.075,.3,4), c:stemCol, m:MX(x+.1,H*.42,z, 0,.6,-1.15) });
+    p.push({ g:new THREE.ConeGeometry(.075,.3,4), c:stemCol, m:MX(x-.1,H*.62,z, 0,-.6, 1.15) });
+    for(let k=0;k<7;k++){                                   // la grappe de fleurs
+      const a = k/7*6.28318, r = .07 + (k%3)*.022;
+      p.push({ g:new THREE.SphereGeometry(.052,5,4), c:flower,
+               m:MX(x+Math.cos(a)*r, H - .02 + (k%3)*.075, z+Math.sin(a)*r) });
+    }
+  });
+  return merge(p);
+}
+function tuftCorn(leaf, stemCol, cob){                      // maïs : une canne haute, feuilles en hélice
+  const p = [], H = 2.0;
+  const g = new THREE.CylinderGeometry(.05,.08,H,5,1,true); g.translate(0,H/2,0);
+  p.push({ g, c:stemCol, m:MX(0,0,0) });
+  for(let k=0;k<6;k++){
+    const a = k*1.05, y = .3 + k*.27, sc = 1 - k*.09;
+    p.push({ g:new THREE.ConeGeometry(.11,.9,3), c:leaf,
+             m:MX(Math.cos(a)*.19, y, Math.sin(a)*.19, 0, -a, 1.18, sc) });
+  }
+  p.push({ g:new THREE.CylinderGeometry(.08,.055,.44,6), c:cob, m:MX(.14,H*.6,.05, 0,0,-.3) });
+  p.push({ g:new THREE.ConeGeometry(.055,.36,4), c:cob, m:MX(0,H,0) });   // la panicule au sommet
+  return merge(p);
+}
+const CROPS = [
+  { id:'ble', n:'Blé', emo:'🌾', d:'Rustique et sans frais de semence.',
+    price:9, yieldK:.70, grow:1, scale:1, uh:2.1, seed:0, unlock:0,
+    young:()=>tuftE(C.headY, C.stemY), ripe:()=>tuftE(C.headR, C.stemD) },
+  { id:'colza', n:'Colza', emo:'🌼', d:'Pousse plus lentement, se vend bien mieux.',
+    price:16, yieldK:.58, grow:.78, scale:1.05, uh:2.0, seed:1500, unlock:6000,
+    young:()=>tuftRape('#a9c552','#4f8f36'), ripe:()=>tuftRape('#f2d417','#779c34') },
+  { id:'mais', n:'Maïs', emo:'🌽', d:'Long à mûrir, mais c\'est la culture reine.',
+    price:27, yieldK:.50, grow:.58, scale:1.15, uh:2.9, seed:4000, unlock:25000,
+    young:()=>tuftCorn('#4f9c33','#478f2e','#4f9c33'), ripe:()=>tuftCorn('#84a53d','#8a9a35','#e8c236') }
+];
+function cropGeo(c){
+  if (!c._y){
+    c._y = c.young(); c._r = c.ripe();
+    [c._y, c._r].forEach(g => {
+      g.computeBoundingSphere();
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0,1,0), CH*.75 + 3);
+    });
+  }
+  return c;
+}
+let cropI = 0, cropScale = 1;
+const crop = () => CROPS[cropI];
 const SP = .72, plants = [], chunks = [];                    // pieds bien plus serrés
 for(let cz=0;cz<CN;cz++) for(let cx=0;cx<CN;cx++)
   chunks.push({ cx:X0+(cx+.5)*CH, cz:Z0+(cz+.5)*CH, list:[] });
@@ -728,8 +860,8 @@ for(let x=X0+SP/2; x<X0+P; x+=SP)
     chunks[ci].list.push(plants.length); plants.push(p);
   }
 chunks.forEach(c => {
-  c.young = new THREE.InstancedMesh(geoYoung, windMat(), Math.max(1,c.list.length));
-  c.ripe  = new THREE.InstancedMesh(geoRipe,  windMat(), Math.max(1,c.list.length));
+  c.young = new THREE.InstancedMesh(cropGeo(CROPS[0])._y, windMat(), Math.max(1,c.list.length));
+  c.ripe  = new THREE.InstancedMesh(cropGeo(CROPS[0])._r, windMat(), Math.max(1,c.list.length));
   [c.young,c.ripe].forEach(m => {
     m.position.set(c.cx,0,c.cz); m.castShadow = false; m.receiveShadow = false;
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(m);
@@ -740,15 +872,25 @@ function writePlant(k){
   const p = plants[k], c = chunks[p.ci];
   const ripe = Math.max(0, Math.min(1, (p.g-.62)/.18));
   dummy.position.set(p.x-c.cx, 0, p.z-c.cz); dummy.rotation.set(0,p.rot,0);
-  const h = p.s*Math.min(1,p.g*1.25);
+  const h = p.s*cropScale*Math.min(1,p.g*1.25);
   dummy.scale.setScalar(h*(1-ripe)); dummy.updateMatrix();
   c.young.setMatrixAt(p.i, dummy.matrix);
   dummy.scale.setScalar(h*ripe); dummy.updateMatrix();
   c.ripe.setMatrixAt(p.i, dummy.matrix);
   c.dirty = true;
 }
-plants.forEach((p,k) => writePlant(k));
-chunks.forEach(c => { c.young.instanceMatrix.needsUpdate = c.ripe.instanceMatrix.needsUpdate = true; });
+function redrawPlants(){
+  plants.forEach((p,k) => writePlant(k));
+  chunks.forEach(c => { c.young.instanceMatrix.needsUpdate = c.ripe.instanceMatrix.needsUpdate = true; });
+}
+// bascule de culture : on échange la géométrie des tuiles, les instances restent en place
+function applyCrop(){
+  const c = cropGeo(crop());
+  cropScale = c.scale; UW.h.value = c.uh;
+  chunks.forEach(ch => { ch.young.geometry = c._y; ch.ripe.geometry = c._r; });
+  redrawPlants();
+}
+applyCrop();
 
 // ---------- traces de roues ----------
 const TRACKS = (function(){
@@ -834,11 +976,11 @@ function popDust(x,z){
 
 // ---------- véhicules ----------
 function vehicle(kind){
-  brakeLights = [];
+  brakeLights = []; headlamps = [];
   const g = build(kind);
   g.traverse(o => { if(o.isMesh) o.castShadow = true; });
   const h = new THREE.Group(); h.add(g); scene.add(h);
-  g.userData.brakes = brakeLights;
+  g.userData.brakes = brakeLights; g.userData.lamps = headlamps;
   return { kind, g, h, pos:GATE.clone(), heading:Math.PI, speed:0, steerA:0, turnRate:0,
            bob:Math.random()*3, trk:0, laneI:0, lanes:null, done:false, hop:0,
            sus:0, susV:0, pit:0, pitV:0, rol:0, rolV:0, lastS:0, wph:Math.random()*6 };
@@ -856,7 +998,7 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
     v.steerA += (0 - v.steerA)*Math.min(1,dt*6);
     v.turnRate *= .9;
   }
-  v.speed += (wantSpeed - v.speed)*Math.min(1, dt*7.5);   // reprise beaucoup plus vive
+  v.speed += (wantSpeed - v.speed)*Math.min(1, dt*ACC);   // reprise beaucoup plus vive
   v.pos.x += Math.sin(v.heading)*v.speed*dt;
   v.pos.z += Math.cos(v.heading)*v.speed*dt;
   const d = v.g.userData;
@@ -906,13 +1048,15 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
     br.forEach(m => m.material.emissive.setRGB(on, on*.06, on*.04));
   }
 }
-const MAXSPD = 7.6, RMIN = 2.8;      // vitesse relevée puis remontée ; rayon de braquage mini 5,2 m
+// valeurs d'usine, puis valeurs courantes modulées par les améliorations et par la météo
+const MAXSPD0 = 7.6, RMIN0 = 2.8;   // vitesse de base ; rayon de braquage mini
+let MAXSPD = MAXSPD0, RMIN = RMIN0, ACC = 7.5, GROWK = 1, PRICEK = 1, mudK = 1;
 function driveTo(v, target, dt, stop){
   const want = Math.atan2(target.x-v.pos.x, target.z-v.pos.z);
   let diff = want - v.heading;
   while(diff> Math.PI) diff -= 6.28318;
   while(diff<-Math.PI) diff += 6.28318;
-  step(v, dt, want, stop ? 0 : MAXSPD*(v.mul||1)*(.5+.5*Math.max(0,Math.cos(diff))), true);   // en auto il ralentit pour pouvoir braquer
+  step(v, dt, want, stop ? 0 : MAXSPD*mudK*(v.mul||1)*(.5+.5*Math.max(0,Math.cos(diff))), true);   // en auto il ralentit pour pouvoir braquer
   return v.pos.distanceTo(target);
 }
 function lanesFor(W){
@@ -973,25 +1117,419 @@ const STAGES = [
   { k:'harvest', n:'Moisson',   d:'Moissonneuse — le tracteur vient au transfert' }
 ];
 let stage = 0, worker = null, hauler = null, haulState = '', coins = 0, stock = 0;
-const CAP = 130, TRCAP = 300;
+const CAP0 = 130, TRCAP0 = 300;
+let CAP = CAP0, TRCAP = TRCAP0;
 const elNow = document.getElementById('now');
 
-function startStage(){
+function refreshNow(){
+  const s = STAGES[stage];
+  elNow.textContent = crop().emo + ' ' + crop().n + ' — ' + s.n + ' — ' + s.d;
+}
+function startStage(skipSeed){
   const s = STAGES[stage];
   if (stage === 0) SWATH.reset();   // nouveau cycle : la parcelle repart du sol nu
+  if (s.k === 'sow' && !skipSeed) paySeed();   // la semence se règle au moment de la mettre en terre
   document.querySelectorAll('#steps .st').forEach((e,i) => e.classList.toggle('on', i===stage));
-  elNow.textContent = s.n + ' — ' + s.d;
+  refreshNow();
   if (s.k === 'grow'){ worker = null; return; }
   worker = vehicle(s.k);
   worker.lanes = lanesFor(worker.g.userData.tool ? worker.g.userData.tool.W : 4);
 }
-function nextStage(){ stage = (stage+1) % STAGES.length; startStage(); }
+// la semence est une vraie dépense : trop juste, on retombe sur le blé, qui ne coûte rien
+function paySeed(){
+  const c = crop();
+  if (!c.seed) return;
+  if (coins >= c.seed){
+    coins -= c.seed;
+    toast('Semence ' + c.emo + ' ' + c.n + ' : −' + c.seed + ' 🪙');
+  } else {
+    cropI = 0; applyCrop(); refreshNow();
+    toast('Trésorerie trop juste : on sème du blé', 'bad'); sfx('deny');
+  }
+  save();
+}
+function nextStage(){
+  stage = (stage+1) % STAGES.length;
+  if (stage === 0) harvests++;      // on vient de boucler un cycle entier
+  startStage(); sfx('stage'); save();
+}
 function switchTo(i){
+  if (i === stage) return;
   const p = worker ? worker.pos.clone() : GATE.clone();
   const h = worker ? worker.heading : Math.PI;
   if (worker){ scene.remove(worker.h); worker = null; }
   stage = i; startStage();
   if (worker){ worker.pos.copy(p); worker.heading = h; worker.h.position.set(p.x,0,p.z); }
+}
+
+// ---------- son : tout est synthétisé, aucun fichier à charger ----------
+const SND = (function(){
+  let ctx = null, master = null, eng = null, engG = null, rainG = null, on = true;
+  function boot(){
+    if (ctx || !on) return;
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    try { ctx = new AC(); } catch(e){ return; }
+    master = ctx.createGain(); master.gain.value = .5; master.connect(ctx.destination);
+    engG = ctx.createGain(); engG.gain.value = 0;                 // ronflement moteur
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 640;
+    eng = ctx.createOscillator(); eng.type = 'sawtooth'; eng.frequency.value = 58;
+    eng.connect(lp); lp.connect(engG); engG.connect(master); eng.start();
+    const len = Math.floor(ctx.sampleRate*2);                    // pluie : bruit blanc filtré
+    const buf = ctx.createBuffer(1,len,ctx.sampleRate), ch = buf.getChannelData(0);
+    for(let i=0;i<len;i++) ch[i] = (Math.random()*2-1)*.5;
+    const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = .5;
+    rainG = ctx.createGain(); rainG.gain.value = 0;
+    src.connect(bp); bp.connect(rainG); rainG.connect(master); src.start();
+  }
+  return {
+    boot,
+    isOn(){ return on; },
+    set(v){ on = v; if (on){ boot(); if (master) master.gain.value = .5; }
+            else if (master) master.gain.value = 0; return on; },
+    toggle(){ return this.set(!on); },
+    engine(spd, working){
+      if (!ctx || !on) return;
+      eng.frequency.setTargetAtTime(50 + spd*13, ctx.currentTime, .12);
+      engG.gain.setTargetAtTime(working ? .045 + spd*.011 : 0, ctx.currentTime, .25);
+    },
+    rain(a){ if (!ctx || !on) return; rainG.gain.setTargetAtTime(a*.11, ctx.currentTime, .6); },
+    blip(f0,f1,dur,type,vol){
+      if (!ctx || !on) return;
+      const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
+      o.type = type || 'triangle'; o.frequency.setValueAtTime(f0, t);
+      if (f1) o.frequency.exponentialRampToValueAtTime(f1, t+dur);
+      g.gain.setValueAtTime(.0001, t);
+      g.gain.linearRampToValueAtTime(vol || .2, t+.012);
+      g.gain.exponentialRampToValueAtTime(.0001, t+dur);
+      o.connect(g); g.connect(master); o.start(t); o.stop(t+dur+.03);
+    }
+  };
+})();
+function sfx(k){
+  if (k === 'coin')  SND.blip(880,1320,.12,'triangle',.13);
+  else if (k === 'cash'){ SND.blip(660,990,.16,'square',.13);
+                          setTimeout(()=>SND.blip(990,1480,.2,'square',.11), 90); }
+  else if (k === 'buy')   SND.blip(420,780,.2,'square',.16);
+  else if (k === 'deny')  SND.blip(240,130,.18,'sawtooth',.13);
+  else if (k === 'stage') SND.blip(520,790,.22,'triangle',.15);
+}
+
+// l'audio ne peut démarrer qu'après un vrai geste de l'utilisateur
+['pointerdown','keydown','touchstart'].forEach(ev =>
+  addEventListener(ev, () => SND.boot(), { passive:true }));
+
+// ---------- messages fugaces ----------
+const toastEl = document.getElementById('toast');
+function toast(msg, cls){
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = msg;
+  toastEl.appendChild(d);
+  setTimeout(()=>{ d.style.transition = 'opacity .4s'; d.style.opacity = '0'; }, 1800);
+  setTimeout(()=>d.remove(), 2300);
+}
+
+// ---------- améliorations ----------
+const UPGRADES = [
+  { id:'moteur',  n:'Moteur',       emo:'⚙️', d:'Vitesse de travail',    max:5, base:2400 },
+  { id:'boite',   n:'Transmission', emo:'🔧', d:'Braquage et reprise',   max:5, base:2200 },
+  { id:'tremie',  n:'Trémie',       emo:'🛢️', d:'Capacité de récolte',   max:5, base:2800 },
+  { id:'semence', n:'Semences',     emo:'🌱', d:'Vitesse de pousse',     max:5, base:2600 },
+  { id:'negoce',  n:'Négoce',       emo:'🤝', d:'Prix de vente au silo', max:5, base:3200 }
+];
+const upCost = (u,l) => Math.round(u.base*Math.pow(1.8,l)/50)*50;
+const lv = {}; UPGRADES.forEach(u => lv[u.id] = 0);
+const owned = { ble:true, colza:false, mais:false };
+let totalT = 0, harvests = 0;
+const level = () => 1 + Math.floor(Math.sqrt(totalT/1500));
+function applyUpgrades(){
+  MAXSPD = MAXSPD0*(1 + .11*lv.moteur);
+  RMIN   = RMIN0  *(1 - .075*lv.boite);
+  ACC    = 7.5    *(1 + .16*lv.boite);
+  CAP    = Math.round(CAP0  *(1 + .28*lv.tremie));
+  TRCAP  = Math.round(TRCAP0*(1 + .28*lv.tremie));
+  GROWK  = 1 + .22*lv.semence;
+  PRICEK = 1 + .16*lv.negoce;
+}
+applyUpgrades();
+
+// ---------- contrats de livraison ----------
+const elContract = document.getElementById('contract');
+let contract = null;
+function newContract(){
+  const pool = CROPS.filter(c => owned[c.id]);
+  const c = pool[Math.floor(Math.random()*pool.length)];
+  const qty = Math.round((700 + Math.random()*900)*(1 + .18*(level()-1))/25)*25;
+  contract = { crop:c.id, qty, got:0, reward:Math.round(qty*c.price*PRICEK*.5/50)*50 };
+  drawContract();
+}
+function drawContract(){
+  if (!contract){ elContract.classList.remove('on'); return; }
+  const c = CROPS.find(x => x.id === contract.crop);
+  const f = Math.min(1, contract.got/contract.qty);
+  elContract.classList.add('on');
+  elContract.innerHTML = '📋 Contrat — livrer <b>' + contract.qty + ' t</b> de ' + c.emo + ' ' + c.n +
+    ' · récompense <b>' + contract.reward + '</b> 🪙<div class="bar"><i style="width:' +
+    (f*100).toFixed(1) + '%"></i></div>';
+}
+function contractDeliver(cropId, t){
+  if (!contract || contract.crop !== cropId) return;
+  contract.got += t;
+  if (contract.got >= contract.qty){
+    coins += contract.reward;
+    toast('Contrat rempli : +' + contract.reward + ' 🪙', 'good');
+    sfx('cash');
+    contract = null; drawContract(); save();
+    setTimeout(newContract, 1400);
+  } else drawContract();
+}
+
+// ---------- journée et météo ----------
+const DAYLEN = 300;                                   // 5 minutes de jeu par journée
+let day = 1, dayT = .34;                              // 0 = minuit, .5 = midi
+const SKY = [
+  { t:0,   sky:'#101a33', hs:'#39466e', hg:'#1a2a19', hi:.30, si:.05, sc:'#8ba3e0', nuit:1 },
+  { t:.23, sky:'#33456b', hs:'#7684a8', hg:'#31432a', hi:.48, si:.15, sc:'#a3b3e4', nuit:.85 },
+  { t:.31, sky:'#7d9c50', hs:'#ffd3a4', hg:'#4d6a30', hi:.72, si:.36, sc:'#ffbe83', nuit:.25 },
+  { t:.5,  sky:'#54a52e', hs:'#ffffff', hg:'#4e8a34', hi:.88, si:.50, sc:'#fff6de', nuit:0 },
+  { t:.68, sky:'#5da03a', hs:'#ffeccd', hg:'#4e7c31', hi:.82, si:.46, sc:'#ffdda9', nuit:0 },
+  { t:.78, sky:'#96703f', hs:'#ffb787', hg:'#4a5228', hi:.62, si:.30, sc:'#ff9f5e', nuit:.4 },
+  { t:.87, sky:'#2c3552', hs:'#5f6c93', hg:'#26331f', hi:.40, si:.10, sc:'#94a7de', nuit:.95 },
+  { t:1,   sky:'#101a33', hs:'#39466e', hg:'#1a2a19', hi:.30, si:.05, sc:'#8ba3e0', nuit:1 }
+];
+const WEATHER = {
+  clear: { n:'Dégagé',  emo:'☀️', dim:1,   wind:.10, rain:0, mud:1 },
+  cloud: { n:'Nuageux', emo:'⛅', dim:.84, wind:.18, rain:0, mud:1 },
+  rain:  { n:'Pluie',   emo:'🌧️', dim:.58, wind:.27, rain:1, mud:.86 }
+};
+let wKey = 'clear', wNext = 60, curDim = 1, curWind = .1, curRain = 0, nightK = 0;
+const _cA = new THREE.Color(), _cB = new THREE.Color(), _cX = new THREE.Color();
+function skyAt(t){
+  let i = 0;
+  while (i < SKY.length-2 && t > SKY[i+1].t) i++;
+  const a = SKY[i], b = SKY[i+1], f = (t-a.t)/Math.max(1e-6, b.t-a.t);
+  const mix = (ka,kb) => _cX.set(_cA.set(ka)).lerp(_cB.set(kb), f).getHex();
+  return { sky:mix(a.sky,b.sky), hs:mix(a.hs,b.hs), hg:mix(a.hg,b.hg),
+           hi:a.hi+(b.hi-a.hi)*f, si:a.si+(b.si-a.si)*f, sc:mix(a.sc,b.sc),
+           nuit:a.nuit+(b.nuit-a.nuit)*f };
+}
+function weatherTick(dt){
+  wNext -= dt;
+  if (wNext <= 0){
+    const r = Math.random();
+    const k = r < .50 ? 'clear' : r < .80 ? 'cloud' : 'rain';
+    wNext = 45 + Math.random()*75;
+    if (k !== wKey){ wKey = k; toast(WEATHER[k].emo + ' ' + WEATHER[k].n); }
+  }
+  const W = WEATHER[wKey], k = Math.min(1, dt*.45);
+  curDim  += (W.dim - curDim)*k;
+  curWind += (W.wind - curWind)*k;
+  curRain += (W.rain - curRain)*k;
+  mudK = 1 - (1 - W.mud)*curRain;
+  UW.amp.value = curWind;
+}
+const RAIN = (function(){
+  const N = 480;
+  const g = new THREE.BoxGeometry(.035,1,.035);
+  const m = new THREE.InstancedMesh(g,
+    new THREE.MeshBasicMaterial({ color:'#c3ddef', transparent:true, opacity:.5, depthWrite:false }), N);
+  m.frustumCulled = false; m.visible = false; m.renderOrder = 3; scene.add(m);
+  const px = new Float32Array(N), py = new Float32Array(N), pz = new Float32Array(N);
+  for(let i=0;i<N;i++){ px[i]=(Math.random()-.5)*74; py[i]=Math.random()*26; pz[i]=(Math.random()-.5)*74; }
+  const d = new THREE.Object3D();
+  d.rotation.set(.14,0,.1);
+  return { update(dt, amount, cx, cz){
+    m.visible = amount > .03;
+    if (!m.visible) return;
+    m.material.opacity = .5*amount;
+    const n = Math.round(N*amount);
+    for(let i=0;i<N;i++){
+      py[i] -= (26 + (i%9)*1.4)*dt;
+      if (py[i] < 0){ py[i] += 26; px[i]=(Math.random()-.5)*74; pz[i]=(Math.random()-.5)*74; }
+      d.position.set(cx+px[i], py[i], cz+pz[i]);
+      d.scale.set(1, i < n ? 1 : 0, 1);
+      d.updateMatrix(); m.setMatrixAt(i, d.matrix);
+    }
+    m.instanceMatrix.needsUpdate = true;
+  }};
+})();
+
+// ---------- sauvegarde ----------
+const SKEY = 'ferme.cycle.v1';
+function save(){
+  try {
+    localStorage.setItem(SKEY, JSON.stringify({
+      v:1, coins, stock, totalT, harvests, lv, owned, cropI, stage, day, dayT,
+      contract, son:SND.isOn()
+    }));
+  } catch(e){ /* mode privé : on joue sans sauvegarde */ }
+}
+function restore(){
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(SKEY) || 'null'); } catch(e){ d = null; }
+  if (!d || d.v !== 1) return null;
+  coins = +d.coins || 0; stock = +d.stock || 0;
+  totalT = +d.totalT || 0; harvests = +d.harvests || 0;
+  UPGRADES.forEach(u => { lv[u.id] = Math.max(0, Math.min(u.max, +d.lv?.[u.id] || 0)); });
+  CROPS.forEach(c => { if (d.owned && d.owned[c.id]) owned[c.id] = true; });
+  cropI = Math.max(0, Math.min(CROPS.length-1, +d.cropI || 0));
+  if (!owned[CROPS[cropI].id]) cropI = 0;
+  stage = Math.max(0, Math.min(STAGES.length-1, +d.stage || 0));
+  day = Math.max(1, +d.day || 1); dayT = +d.dayT || .3;
+  contract = d.contract && d.contract.qty ? d.contract : null;
+  if (d.son === false) SND.set(false);
+  applyUpgrades();
+  return d;
+}
+function wipe(){
+  try { localStorage.removeItem(SKEY); } catch(e){}
+  location.reload();
+}
+// remet la parcelle dans l'état où elle doit être au début de l'étape reprise
+function paintParcel(layer){
+  for(let z = Z0; z <= Z0+P+.01; z += .5) SWATH.add(layer, X0+P/2, z, 0, P, z > Z0);
+}
+function primeField(st){
+  SWATH.reset();
+  const state = [0,1,2,3,3][st], g0 = [0,0,.05,.34,1][st], layer = [-1,0,1,2,2][st];
+  cell.fill(state);
+  if (layer >= 0) paintParcel(layer);
+  for(let k=0;k<plants.length;k++) plants[k].g = g0;
+  redrawPlants();
+}
+
+// ---------- panneau : boutique, cultures, aide (et pause) ----------
+const ovl = document.getElementById('ovl'), elTitle = document.getElementById('sheetTitle'),
+      elTabs = document.getElementById('tabs'), elBody = document.getElementById('body');
+const TABS = [['shop','🛒 Boutique'], ['crop','🌱 Cultures'], ['help','⌨️ Aide']];
+let panelTab = 'shop', paused = false;
+const panelOpen = () => ovl.classList.contains('on');
+function openPanel(tab){
+  panelTab = tab || panelTab; paused = true;
+  ovl.classList.add('on'); drawPanel();
+}
+function closePanel(){ paused = false; ovl.classList.remove('on'); save(); }
+document.getElementById('sheetX').onclick = closePanel;
+ovl.addEventListener('pointerdown', e => { if (e.target === ovl) closePanel(); });
+
+function canChangeCrop(){
+  if (stage === 0) return true;
+  if (stage !== 1) return false;
+  for(let k=0;k<plants.length;k++) if (plants[k].g > 0) return false;
+  return true;
+}
+function statsHTML(){
+  return '<div class="stats">' +
+    '<div><b>' + Math.floor(coins) + ' 🪙</b><span>trésorerie</span></div>' +
+    '<div><b>Niveau ' + level() + '</b><span>' + Math.floor(totalT) + ' t livrées</span></div>' +
+    '<div><b>Jour ' + day + '</b><span>' + WEATHER[wKey].emo + ' ' + WEATHER[wKey].n + '</span></div>' +
+    '<div><b>' + harvests + '</b><span>récoltes bouclées</span></div></div>';
+}
+function drawPanel(){
+  elTabs.innerHTML = '';
+  TABS.forEach(([id,n]) => {
+    const b = document.createElement('button');
+    b.className = 'btn' + (id === panelTab ? ' on' : ''); b.textContent = n;
+    b.onclick = () => { panelTab = id; drawPanel(); };
+    elTabs.appendChild(b);
+  });
+  elTitle.textContent = panelTab === 'shop' ? 'Boutique' : panelTab === 'crop' ? 'Cultures' : 'Aide';
+  elBody.innerHTML = '';
+  if (panelTab === 'shop') drawShop();
+  else if (panelTab === 'crop') drawCrops();
+  else drawHelp();
+}
+function card(icon, title, sub, extraHTML){
+  const d = document.createElement('div');
+  d.className = 'card';
+  d.innerHTML = '<div class="ic">' + icon + '</div><div class="tx"><b>' + title +
+                '</b><span>' + sub + '</span>' + (extraHTML || '') + '</div>';
+  return d;
+}
+function drawShop(){
+  elBody.insertAdjacentHTML('beforeend', statsHTML());
+  elBody.insertAdjacentHTML('beforeend',
+    '<div class="note">Chaque niveau se paie avec la recette du silo et vaut pour tous les engins.</div>');
+  UPGRADES.forEach(u => {
+    const l = lv[u.id], maxed = l >= u.max, cost = upCost(u,l);
+    const bars = '<div class="lv">' + Array.from({length:u.max},
+      (_,i) => '<i class="' + (i < l ? 'f' : '') + '"></i>').join('') + '</div>';
+    const c = card(u.emo, u.n, u.d, bars);
+    const b = document.createElement('button');
+    b.className = 'buy' + (maxed ? ' max' : '');
+    b.textContent = maxed ? 'max' : cost + ' 🪙';
+    b.disabled = maxed || coins < cost;
+    b.onclick = () => {
+      if (coins < cost || maxed){ sfx('deny'); return; }
+      coins -= cost; lv[u.id]++; applyUpgrades(); sfx('buy');
+      toast(u.n + ' niveau ' + lv[u.id], 'good'); save(); drawPanel();
+    };
+    c.appendChild(b); elBody.appendChild(c);
+  });
+  const r = document.createElement('div');
+  r.className = 'note';
+  r.innerHTML = '<button class="btn" id="wipe">↺ Nouvelle partie</button>';
+  elBody.appendChild(r);
+  document.getElementById('wipe').onclick = () => {
+    if (confirm('Effacer la sauvegarde et repartir de zéro ?')) wipe();
+  };
+}
+function drawCrops(){
+  const free = canChangeCrop();
+  elBody.insertAdjacentHTML('beforeend', '<div class="note">' + (free
+    ? 'Choisis ce que tu sèmes. La semence est payée au lancement du semis.'
+    : 'La parcelle est déjà en culture — tu pourras changer au prochain déchaumage.') + '</div>');
+  CROPS.forEach((c,i) => {
+    const have = owned[c.id];
+    const sub = c.d + ' · ' + c.price + ' 🪙/t' + (c.seed ? ' · semence ' + c.seed + ' 🪙' : ' · semence offerte');
+    const el = card(c.emo, c.n, sub);
+    if (i === cropI) el.classList.add('sel');
+    const b = document.createElement('button');
+    b.className = 'buy';
+    if (!have){
+      b.textContent = c.unlock + ' 🪙';
+      b.disabled = coins < c.unlock;
+      b.onclick = () => {
+        if (coins < c.unlock){ sfx('deny'); return; }
+        coins -= c.unlock; owned[c.id] = true; sfx('buy');
+        toast(c.n + ' débloqué', 'good'); save(); drawPanel();
+      };
+    } else if (i === cropI){
+      b.className = 'buy max'; b.textContent = 'en place';
+    } else {
+      b.textContent = 'semer';
+      b.disabled = !free;
+      b.onclick = () => {
+        if (!free){ sfx('deny'); return; }
+        cropI = i; applyCrop(); sfx('buy');
+        toast(c.emo + ' ' + c.n + ' sélectionné', 'good'); save(); drawPanel(); refreshNow();
+      };
+    }
+    el.appendChild(b); elBody.appendChild(el);
+  });
+}
+function drawHelp(){
+  elBody.insertAdjacentHTML('beforeend',
+    '<div class="note">Un cycle complet : <b>déchaumer</b> le sol, <b>semer</b>, <b>fertiliser</b>, ' +
+    'laisser <b>pousser</b>, puis <b>moissonner</b>. La benne vide la moissonneuse et porte le grain au silo, ' +
+    'qui le paie. La météo et la nuit passent toutes seules ; la pluie arrose mais ralentit les engins.</div>');
+  elBody.insertAdjacentHTML('beforeend',
+    '<div class="keys">' +
+    '<kbd>Z Q S D</kbd><span>piloter (ou W A S D / flèches)</span>' +
+    '<kbd>Espace</kbd><span>freiner</span>' +
+    '<kbd>V</kbd><span>pilote automatique</span>' +
+    '<kbd>1 2 3 4</kbd><span>sol · semis · engrais · moisson</span>' +
+    '<kbd>X</kbd><span>accélérer le temps ×1 ×3 ×6</span>' +
+    '<kbd>B</kbd><span>boutique</span>' +
+    '<kbd>C</kbd><span>cultures</span>' +
+    '<kbd>H</kbd><span>cette aide</span>' +
+    '<kbd>N</kbd><span>couper le son</span>' +
+    '<kbd>Échap</kbd><span>pause / reprendre</span>' +
+    '</div>');
+  elBody.insertAdjacentHTML('beforeend',
+    '<div class="note" style="margin-top:12px">Sur mobile, le manche en bas de l\'écran remplace le clavier : ' +
+    'sa direction donne le cap, son amplitude la vitesse.</div>');
 }
 
 // ---------- manette ----------
@@ -1007,7 +1545,7 @@ let jx = 0, jy = 0, jmag = 0, manual = false, btnAuto = null;   // une seule man
     knob.style.transform = `translate(${jx*R}px,${jy*R}px)`;
     if (jmag > .2) setManual();
   }
-  stick.addEventListener('pointerdown', e => { id = e.pointerId; stick.setPointerCapture(id); set(e); });
+  stick.addEventListener('pointerdown', e => { SND.boot(); id = e.pointerId; stick.setPointerCapture(id); set(e); });
   stick.addEventListener('pointermove', e => { if (e.pointerId===id) set(e); });
   const clear = e => { if (e.pointerId!==id) return; id=null; jx=jy=jmag=0; knob.style.transform=''; };
   stick.addEventListener('pointerup', clear);
@@ -1046,27 +1584,102 @@ btnAuto.className = 'btn on'; btnAuto.textContent = 'Auto';
 btnAuto.onclick = () => manual ? setAuto() : setManual();
 mid.appendChild(btnAuto);
 let SPEED = 1;
-[['×1',1],['×3',3],['×6',6]].forEach(([n,v],i) => {
+const spdBtns = [];
+[['×1',1],['×3',3],['×6',6]].forEach(([n,v]) => {
   const b = document.createElement('button');
-  b.className = 'btn' + (i===0?' on':''); b.textContent = n;
-  b.onclick = () => { SPEED = v;
-    [...mid.children].forEach(c => { if (c.textContent.startsWith('×')) c.classList.remove('on'); });
-    b.classList.add('on'); };
+  b.className = 'btn'; b.textContent = n; b.dataset.v = v;
+  b.onclick = () => setSpeed(v);
+  mid.appendChild(b); spdBtns.push(b);
+});
+function setSpeed(v){
+  SPEED = v;
+  spdBtns.forEach(b => b.classList.toggle('on', +b.dataset.v === v));
+}
+function cycleSpeed(){ setSpeed(SPEED === 1 ? 3 : SPEED === 3 ? 6 : 1); }
+setSpeed(1);
+[['🛒','shop'],['🌱','crop'],['⌨️','help']].forEach(([n,t]) => {
+  const b = document.createElement('button');
+  b.className = 'btn icon'; b.textContent = n;
+  b.onclick = () => openPanel(t);
   mid.appendChild(b);
 });
+
+// ---------- clavier : le jeu se joue aussi sans écran tactile ----------
+const keys = Object.create(null);
+let kbActive = false;
+const MOVE = ['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d','z','q',' '];
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  SND.boot();
+  if (k === 'escape'){ panelOpen() ? closePanel() : openPanel(panelTab); e.preventDefault(); return; }
+  if (panelOpen()) return;
+  if (MOVE.indexOf(k) >= 0){ e.preventDefault(); document.body.classList.add('kb'); }
+  if (!keys[k]){                                  // actions : au front montant seulement
+    if (k === 'v') manual ? setAuto() : setManual();
+    else if (k === 'b' || k === 'p') openPanel('shop');
+    else if (k === 'c') openPanel('crop');
+    else if (k === 'h') openPanel('help');
+    else if (k === 'x') cycleSpeed();
+    else if (k === 'n') toast(SND.toggle() ? '🔊 Son activé' : '🔇 Son coupé');
+    else if (k >= '1' && k <= '4') switchTo([0,1,2,4][+k-1]);
+  }
+  keys[k] = true;
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+addEventListener('blur', () => { for(const k in keys) keys[k] = false; });
+// le manche et le clavier alimentent les mêmes jx/jy/jmag
+function readKeys(){
+  let x = 0, y = 0;
+  if (keys.arrowup    || keys.w || keys.z) y -= 1;
+  if (keys.arrowdown  || keys.s)           y += 1;
+  if (keys.arrowleft  || keys.a || keys.q) x -= 1;
+  if (keys.arrowright || keys.d)           x += 1;
+  const brake = !!keys[' '], m = Math.hypot(x,y);
+  if (!m && !brake){
+    if (kbActive){ kbActive = false; jx = jy = jmag = 0; }
+    return;
+  }
+  kbActive = true; setManual();
+  if (m){ jx = x/m; jy = y/m; }
+  jmag = brake ? 0 : 1;
+}
 
 // ---------- boucle ----------
 const clock = new THREE.Clock();
 let jbx=0,jbvx=0,jbz=0,jbvz=0;
 const JK=40, JD=3.1;
 const elCoins=document.getElementById('coins'), elStock=document.getElementById('stock'),
-      elHop=document.getElementById('hop');
-startStage();
+      elHop=document.getElementById('hop'), elClock=document.getElementById('clock'),
+      elSky=document.getElementById('sky');
+let saveT = 0;
+(function boot(){
+  const had = restore();
+  applyCrop();
+  if (had && stage > 0) primeField(stage);   // on reprend la parcelle telle que l'étape la suppose
+  startStage(!!had);                         // à la reprise, la semence a déjà été payée
+  if (!contract) newContract(); else drawContract();
+  if (!had) setTimeout(() => openPanel('help'), 400);   // première partie : on montre les commandes
+})();
 
 (function loop(){
   requestAnimationFrame(loop);
-  const raw = Math.min(clock.getDelta(), .05), dt = raw*SPEED, now = clock.getElapsedTime();
+  const tick = Math.min(clock.getDelta(), .05), now = clock.getElapsedTime();
+  const raw = paused ? 0 : tick, dt = raw*SPEED;
   UW.t.value = now;
+  if (!paused) readKeys();
+
+  // --- journée, météo, lumière
+  weatherTick(dt);
+  dayT += dt/DAYLEN;
+  while (dayT >= 1){ dayT -= 1; day++; }
+  const sk = skyAt(dayT);
+  nightK = sk.nuit;
+  scene.background.setHex(sk.sky).multiplyScalar(.35 + .65*curDim);
+  hemi.color.setHex(sk.hs); hemi.groundColor.setHex(sk.hg);
+  hemi.intensity = sk.hi*(.45 + .55*curDim);
+  sun.color.setHex(sk.sc); sun.intensity = sk.si*curDim;
+  const glow = Math.max(nightK, 1 - curDim*1.05);          // phares : la nuit et sous l'averse
 
   jbvx += (-JK*jbx - JD*jbvx)*raw + (Math.sin(now*1.6)*.5 + Math.sin(now*2.7)*.3)*raw;
   jbvz += (-JK*jbz - JD*jbvz)*raw + (Math.sin(now*1.35+1.4)*.42)*raw;
@@ -1074,6 +1687,10 @@ startStage();
   UJ.bend.value.set(jbx,0,jbz);
   const flash = Math.max(0, Math.sin(now*6.2))**3;
   beacons.forEach(b => b.material.emissive.setRGB(flash, flash*.42, 0));
+  [worker, hauler].forEach(v => {
+    const L = v && v.g.userData.lamps; if (!L) return;
+    L.forEach(m => m.material.emissive.setRGB(glow, glow*.9, glow*.62));
+  });
 
   const S = STAGES[stage];
 
@@ -1081,7 +1698,7 @@ startStage();
     if (manual){
       const push = Math.max(0, (jmag - .12)/.88);              // zone morte au centre
       const wantH = jmag > .12 ? Math.atan2(jx, jy) : worker.heading;
-      step(worker, dt, wantH, push*MAXSPD, jmag > .12);
+      step(worker, dt, wantH, push*MAXSPD*mudK, jmag > .12);
     } else if (worker.done){
       const waiting = worker.kind === 'harvest' && worker.hop > 1;
       const dist = driveTo(worker, waiting ? worker.pos : GATE, dt, waiting);
@@ -1139,7 +1756,7 @@ startStage();
           if (Math.abs(lx) < q.W/2 && lz > q.near && lz < q.far){ p.g = 0; writePlant(k); cut++; }
         }
         if (cut){
-          worker.hop = Math.min(CAP, worker.hop + cut*.7);
+          worker.hop = Math.min(CAP, worker.hop + cut*crop().yieldK);
           applyTool(worker, i => setCell(i,0));
           laySwath(worker, 3);
           if (Math.random()<.3) popDust(worker.pos.x-Math.sin(worker.heading)*2.5,
@@ -1152,11 +1769,12 @@ startStage();
 
   // pousse continue
   let ripe = 0, sown = 0;
+  const growK = dt*GROWK*crop().grow, rainK = curRain*.009;
   for(let k=0;k<plants.length;k++){
     const p = plants[k], t = cell[p.ti];
     if (p.g > 0) sown++;
     if (t >= 2 && p.g > 0 && p.g < 1){   // l'engrais accélère fortement, il ne bloque plus
-      p.g = Math.min(1, p.g + (t===3 ? .032 : .006)*dt);
+      p.g = Math.min(1, p.g + ((t===3 ? .032 : .006) + rainK)*growK);
       writePlant(k);
     }
     if (p.g > .8) ripe++;
@@ -1174,6 +1792,7 @@ startStage();
   const combine = (worker && worker.kind === 'harvest') ? worker : null;
   if (combine && !hauler && (combine.hop > CAP*.5 || (combine.done && combine.hop > 1))){
     hauler = vehicle('trailer'); haulState = 'toCombine'; hauler.hop = 0; hauler.mul = 1.35;
+    hauler.cropId = crop().id; hauler.paid = 0;   // le chargement garde le prix de sa culture
   }
   if (combine && combine.g.userData.fill) combine.g.userData.fill.scale.y = .02 + combine.hop/CAP*.98;
   if (hauler){
@@ -1194,9 +1813,18 @@ startStage();
     } else if (haulState === 'dump'){
       driveTo(hauler, SILO, dt, true);
       const give = Math.min(hauler.hop, 90*dt);
-      hauler.hop -= give; stock += give; coins += give*9;
-      if (Math.random() < .12) floatCoin(SILO.x, SILO.z-2, '+'+Math.round(give*90));
-      if (hauler.hop <= .2) haulState = 'park';
+      if (give > 0){
+        const c = CROPS.find(x => x.id === hauler.cropId) || CROPS[0];
+        const pay = give*c.price*PRICEK;
+        hauler.hop -= give; stock += give; totalT += give; coins += pay;
+        hauler.paid += pay;
+        contractDeliver(c.id, give);
+        if (hauler.paid > 900){                  // une pièce qui monte par tranche encaissée
+          floatCoin(SILO.x, SILO.z-2, '+'+Math.round(hauler.paid));
+          hauler.paid = 0; sfx('coin');
+        }
+      }
+      if (hauler.hop <= .2){ haulState = 'park'; sfx('cash'); save(); }
     } else if (haulState === 'park'){
       if (driveTo(hauler, GATE, dt) < RMIN+1){ scene.remove(hauler.h); hauler = null; }
     } else if (!combine){ haulState = 'toSilo'; }
@@ -1216,6 +1844,10 @@ startStage();
     d.m.material.opacity = Math.max(0, .8 - d.t*1.5);
     if (d.m.position.y < .12 || d.t > .6) d.m.visible = false;
   });
+  RAIN.update(tick, curRain, camLook.x, camLook.z);
+  SND.rain(curRain);
+  SND.engine(worker ? worker.speed : (hauler ? hauler.speed : 0),
+             !!(worker || hauler) && !paused);
   TRACKS.update(raw);
   dust.forEach(d => {
     if(!d.m.visible) return;
@@ -1251,12 +1883,30 @@ startStage();
 
   elCoins.textContent = Math.floor(coins);
   elStock.textContent = Math.floor(stock);
-  elHop.textContent = combine ? Math.round(combine.hop/CAP*100) : 0;
+  elHop.textContent = combine ? Math.round(combine.hop/CAP*100) : (hauler ? Math.round(hauler.hop/TRCAP*100) : 0);
+  const hh = Math.floor(dayT*24), mm = Math.floor(dayT*1440 % 60);
+  elClock.textContent = (hh<10?'0':'') + hh + ':' + (mm<10?'0':'') + mm;
+  elSky.firstChild.nodeValue = WEATHER[wKey].emo + ' ';
+  saveT += tick;
+  if (saveT > 6){ saveT = 0; save(); }
 
   renderer.render(scene, camera);
 })();
 
+// sonde de mise au point : lecture seule, pratique pour vérifier une partie sans y jouer
+window.__FARM_DEBUG = () => ({
+  coins:Math.round(coins), stock:Math.round(stock), totalT:Math.round(totalT), harvests,
+  stage, etape:STAGES[stage].n, culture:crop().id, jour:day, heure:+(dayT*24).toFixed(2),
+  meteo:wKey, niveaux:Object.assign({}, lv), contrat:contract && {c:contract.crop, q:contract.qty, got:Math.round(contract.got)},
+  manuel:manual, pause:paused, vitesse:SPEED,
+  hop:worker ? Math.round(worker.hop) : 0, benne:hauler ? Math.round(hauler.hop) : -1
+});
+
 })();
+</script>
+<script>
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http'))
+    addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
 </script>
 </body>
 </html>
