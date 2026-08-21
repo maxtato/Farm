@@ -1530,10 +1530,10 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
     let diff = wantHeading - v.heading;
     while(diff> Math.PI) diff -= 6.28318;
     while(diff<-Math.PI) diff += 6.28318;
-    const rate = Math.min(1.9, v.speed/RMIN);                 // dθ/dt = v/R : à l'arrêt, il ne tourne pas
+    const rate = Math.min(TURNCAP, v.speed/RMIN + TURNFLOOR);  // dθ/dt = v/R, plus un pivot de base
     const turn = Math.max(-rate*dt, Math.min(rate*dt, diff));
     v.heading += turn; v.turnRate = turn/Math.max(dt,1e-4);
-    v.steerA += (Math.max(-.6,Math.min(.6,diff*1.4)) - v.steerA)*Math.min(1,dt*7);
+    v.steerA += (Math.max(-.6,Math.min(.6,diff*1.4)) - v.steerA)*Math.min(1,dt*14);
   } else {
     v.steerA += (0 - v.steerA)*Math.min(1,dt*6);
     v.turnRate *= .9;
@@ -1597,8 +1597,12 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
   }
 }
 // valeurs d'usine, puis valeurs courantes modulées par les améliorations et par la météo
-const MAXSPD0 = 7.6, RMIN0 = 2.8;   // vitesse de base ; rayon de braquage mini
-let MAXSPD = MAXSPD0, RMIN = RMIN0, ACC = 7.5, GROWK = 1, PRICEK = 1, mudK = 1;
+const MAXSPD0 = 7.6, RMIN0 = 1.5;   // vitesse de base ; rayon de braquage mini
+// Le braquage tenait de l'engin de chantier : plafonné à 1,9 rad/s sur un rayon de 2,8 m,
+// il fallait un virage large pour se retourner. On resserre le rayon, on relève le plafond,
+// et on ajoute un pivot minimal pour que l'engin réponde au manche même en roulant doucement.
+const TURNCAP = 4.6, TURNFLOOR = 1.6;
+let MAXSPD = MAXSPD0, RMIN = RMIN0, ACC = 10, GROWK = 1, PRICEK = 1, mudK = 1;
 function driveTo(v, target, dt, stop){
   const want = Math.atan2(target.x-v.pos.x, target.z-v.pos.z);
   let diff = want - v.heading;
@@ -1820,7 +1824,7 @@ const level = () => 1 + Math.floor(Math.sqrt(totalT/1500));
 function applyUpgrades(){
   MAXSPD = MAXSPD0*(1 + .11*lv.moteur);
   RMIN   = RMIN0  *(1 - .075*lv.boite);
-  ACC    = 7.5    *(1 + .16*lv.boite);
+  ACC    = 10     *(1 + .16*lv.boite);
   CAP    = Math.round(CAP0  *(1 + .28*lv.tremie));
   TRCAP  = Math.round(TRCAP0*(1 + .28*lv.tremie));
   GROWK  = 1 + .22*lv.semence;
@@ -2402,8 +2406,14 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
     if (manual){
       if (kbActive || ctrlMode === 'manche'){
         const push = Math.max(0, (jmag - .12)/.88);            // zone morte au centre
-        const wantH = jmag > .12 ? Math.atan2(jx, jy) : worker.heading;
-        step(worker, dt, wantH, push*MAXSPD*mudK, jmag > .12);
+        const turning = jmag > .12;
+        const wantH = turning ? Math.atan2(jx, jy) : worker.heading;
+        // demi-tour au manche : il lève le pied le temps de pivoter, puis relance
+        let d = wantH - worker.heading;
+        while(d >  Math.PI) d -= 6.28318;
+        while(d < -Math.PI) d += 6.28318;
+        const grip = .45 + .55*Math.max(0, Math.cos(d));
+        step(worker, dt, wantH, push*MAXSPD*mudK*grip, turning);
       } else {                                                 // parcours dessiné
         const t = pathState === 'route' ? PATH.target() : null;
         if (t){
@@ -2693,6 +2703,7 @@ window.__FARM_DEBUG = () => ({
   meteo:wKey, niveaux:Object.assign({}, lv), contrat:contract && {c:contract.crop, q:contract.qty, got:Math.round(contract.got)},
   manuel:manual, pause:paused, vitesse:SPEED,
   pilotage:ctrlMode, tracage:pathState, trace:PATH.count(), zoom:+zoom.toFixed(2),
+  cap:+(worker ? worker.heading : 0).toFixed(3), vit:+(worker ? worker.speed : 0).toFixed(2),
   posX:+worker?.pos.x.toFixed(1), posZ:+worker?.pos.z.toFixed(1),
   cly:+(worker ? worker.gy || 0 : 0).toFixed(3),
   hop:worker ? Math.round(worker.hop) : 0, benne:hauler ? Math.round(hauler.hop) : -1,
