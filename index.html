@@ -447,46 +447,16 @@ resize(); addEventListener('resize', resize);
 // les bandeaux changent de hauteur (contrat affiché, manette masquée) : on suit la scène
 if (window.ResizeObserver) new ResizeObserver(resize).observe(stageEl);
 
-// ---------- pincer pour zoomer : la carte reste manipulable au doigt ----------
-const _touches = new Map();
-let _pinchBase = 0, _pinchZoom = 1, _panX = 0, _panY = 0, _rotA = 0, _rotCum = 0;
-const pinching = () => _touches.size >= 2;
-(function(){
-  const el = stageEl;
-  el.addEventListener('pointerdown', e => { _touches.set(e.pointerId, e); }, true);
-  el.addEventListener('pointermove', e => {
-    if (!_touches.has(e.pointerId)) return;
-    _touches.set(e.pointerId, e);
-    if (_touches.size < 2){ _pinchBase = 0; return; }
-    const it = _touches.values(), a = it.next().value, b = it.next().value;
-    const d = Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
-    const mx = (a.clientX + b.clientX)/2, my = (a.clientY + b.clientY)/2;
-    const ang = Math.atan2(b.clientY-a.clientY, b.clientX-a.clientX);
-    if (!_pinchBase){ _pinchBase = d; _pinchZoom = zoom; _panX = mx; _panY = my;
-                      _rotA = ang; _rotCum = 0; }
-    else {
-      setZoom(_pinchZoom * d/_pinchBase);
-      // torsion : elle ne prend qu'au-delà d'un seuil, sinon un simple glissement
-      // ferait pivoter la vue à chaque fois
-      let da = ang - _rotA;
-      while (da >  Math.PI) da -= 6.28318;
-      while (da < -Math.PI) da += 6.28318;
-      _rotA = ang; _rotCum += da;
-      if (Math.abs(_rotCum) > .10) setYaw(YAW + da);
-      // le milieu des deux doigts entraîne la carte, dans le repère de la caméra
-      const k = VIEW/SH;
-      const sx = -(mx-_panX)*k, sy = (my-_panY)*k/Math.max(.35, Math.sin(PITCH));
-      const cy2 = Math.cos(YAW), sy2 = Math.sin(YAW);
-      camPan(sx*cy2 - sy*sy2, -sx*sy2 - sy*cy2);
-      _panX = mx; _panY = my;
-    }
-  }, true);
-  const drop = e => { _touches.delete(e.pointerId); if (_touches.size < 2) _pinchBase = 0; };
-  ['pointerup','pointercancel','pointerleave'].forEach(ev => el.addEventListener(ev, drop, true));
-  el.addEventListener('wheel', e => {            // à la souris, la molette fait le même office
-    e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.12 : 1/1.12));
-  }, { passive:false });
-})();
+// ---------- les doigts ----------
+// Tout passe par un seul gestionnaire, posé plus bas avec le reste des commandes. Deux
+// jeux d'écouteurs sur le même élément se marchaient dessus : l'un capturait le premier
+// doigt, l'autre attendait le second, et le pincement ne partait pas une fois sur deux.
+// Ici on ne garde que le registre partagé et la molette.
+const TOUCH = new Map();
+const pinching = () => TOUCH.size >= 2;
+stageEl.addEventListener('wheel', e => {       // à la souris, la molette fait le même office
+  e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.12 : 1/1.12));
+}, { passive:false });
 
 const hemi = new THREE.HemisphereLight('#fffaf0','#7d8b58',.95);   // lumière plate, papier
 scene.add(hemi);
@@ -2588,41 +2558,87 @@ function setPathState(st){ drawPathBtn(); }
   stick.addEventListener('pointercancel', clear);
 })();
 
-// --- Le doigt, en trois gestes et rien d'autre :
+// --- Le doigt, un seul gestionnaire pour tout :
 //   une tape sur un engin le sélectionne ;
 //   deux tapes sur le champ y envoient l'engin sélectionné ;
-//   un balayage lui dessine un parcours, qu'il suit et qui s'efface derrière lui.
-// Le tracé n'a plus besoin d'être armé : c'est le mouvement du doigt qui le distingue
-// d'une tape. À deux doigts, le champ appartient à la caméra.
+//   un balayage lui dessine un parcours, qu'il suit et qui s'efface derrière lui ;
+//   deux doigts appartiennent à la caméra — écarter zoome, glisser déplace, tourner pivote.
+// Un seul jeu d'écouteurs, aucune capture de pointeur, aucun pointerleave : ce sont eux qui
+// faisaient rater le pincement une fois sur deux.
 (function(){
-  const stage = document.getElementById('stage');
+  const el = document.getElementById('stage');
   const btn = document.getElementById('pathBtn');
-  const SEUIL = 14;                                   // px au-delà desquels c'est un balayage
-  let id = null, x0 = 0, y0 = 0, trace = false, tapT = 0, tapX = 0, tapY = 0;
-  btn.onclick = () => {                               // le bouton ne fait plus qu'arrêter
+  const SEUIL = 14;                                  // px au-delà desquels c'est un balayage
+  let mode = 'rien';                                 // 'rien' | 'trace' | 'camera'
+  let id1 = null, x0 = 0, y0 = 0;
+  let bD = 0, bZ = 1, bX = 0, bY = 0, bA = 0, cum = 0;
+  let tapT = 0, tapX = 0, tapY = 0;
+  const deux = () => { const it = TOUCH.values(); return [it.next().value, it.next().value]; };
+  function baseCam(){
+    const [a,b] = deux(); if (!a || !b) return;
+    bD = Math.hypot(a.x-b.x, a.y-b.y) || 1; bZ = zoom;
+    bX = (a.x+b.x)/2; bY = (a.y+b.y)/2;
+    bA = Math.atan2(b.y-a.y, b.x-a.x); cum = 0;
+  }
+  btn.onclick = () => {                              // le bouton ne fait qu'arrêter
     const v = pilote(); if (!v) return;
     traceClear(v); v.goto = null; v.speed = 0; setManual(); drawPathBtn();
   };
-  stage.addEventListener('pointerdown', e => {
-    if (paused || pinching()) return;
-    id = e.pointerId; x0 = e.clientX; y0 = e.clientY; trace = false;
-    try { stage.setPointerCapture(e.pointerId); } catch(err){}
+  el.addEventListener('pointerdown', e => {
+    if (paused) return;
+    TOUCH.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if (TOUCH.size === 1){ id1 = e.pointerId; x0 = e.clientX; y0 = e.clientY; mode = 'rien'; }
+    else if (TOUCH.size === 2){
+      // un deuxième doigt : c'était un pincement, pas un tracé. On efface ce qu'on venait
+      // de poser, sinon l'engin part sur un bout de trajet qu'on n'a jamais voulu.
+      if (mode === 'trace'){ const v = pilote(); if (v) traceClear(v); }
+      mode = 'camera'; baseCam();
+    }
   });
-  stage.addEventListener('pointermove', e => {
-    if (id !== e.pointerId) return;
-    if (pinching()){ id = null; return; }              // un deuxième doigt : c'est la carte
-    if (!trace && Math.hypot(e.clientX-x0, e.clientY-y0) < SEUIL) return;
-    const v = pilote(); if (!v){ id = null; return; }
-    if (!trace){                                       // le balayage commence : on repart à zéro
-      trace = true; traceClear(v); v.goto = null; setManual();
+  el.addEventListener('pointermove', e => {
+    if (!TOUCH.has(e.pointerId)) return;
+    TOUCH.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    if (TOUCH.size >= 2){
+      if (mode !== 'camera'){ mode = 'camera'; baseCam(); return; }
+      const [a,b] = deux(); if (!a || !b) return;
+      const d = Math.hypot(a.x-b.x, a.y-b.y) || 1;
+      const mx = (a.x+b.x)/2, my = (a.y+b.y)/2;
+      const ang = Math.atan2(b.y-a.y, b.x-a.x);
+      setZoom(bZ * d/bD);
+      // la torsion ne prend qu'au-delà d'un seuil : sinon un simple glissement pivoterait
+      let da = ang - bA;
+      while (da >  Math.PI) da -= 6.28318;
+      while (da < -Math.PI) da += 6.28318;
+      bA = ang; cum += da;
+      if (Math.abs(cum) > .10) setYaw(YAW + da);
+      // le milieu des deux doigts entraîne la carte, dans le repère de la caméra
+      const k = VIEW/SH;
+      const sx = -(mx-bX)*k, sy = (my-bY)*k/Math.max(.35, Math.sin(PITCH));
+      const cy = Math.cos(YAW), sn = Math.sin(YAW);
+      camPan(sx*cy - sy*sn, -sx*sn - sy*cy);
+      bX = mx; bY = my;
+      return;
+    }
+    if (e.pointerId !== id1 || mode === 'camera') return;
+    if (mode !== 'trace' && Math.hypot(e.clientX-x0, e.clientY-y0) < SEUIL) return;
+    const v = pilote(); if (!v) return;
+    if (mode !== 'trace'){                           // le balayage commence : on repart à zéro
+      mode = 'trace'; traceClear(v); v.goto = null; setManual();
       const q = screenToWorld(x0, y0); if (q) traceAdd(v, q);
     }
     const p = screenToWorld(e.clientX, e.clientY); if (p) traceAdd(v, p);
   });
-  stage.addEventListener('pointerup', e => {
-    if (id !== e.pointerId) return;
-    id = null;
-    if (trace){ drawPathBtn(); return; }
+  function fin(e){
+    if (!TOUCH.has(e.pointerId)) return;
+    TOUCH.delete(e.pointerId);
+    if (TOUCH.size >= 2){ baseCam(); return; }
+    if (TOUCH.size === 1){                           // il reste un doigt du pincement
+      const r = TOUCH.entries().next().value;
+      id1 = r[0]; x0 = r[1].x; y0 = r[1].y; mode = 'camera';
+      return;                                        // il ne tracera rien : le geste est fini
+    }
+    const etait = mode; mode = 'rien'; id1 = null;
+    if (etait !== 'rien'){ drawPathBtn(); return; }
     // c'était une tape : sur un engin elle sélectionne, sur le champ elle vise
     const cible = vehicleAt(e.clientX, e.clientY);
     if (cible){ tapT = 0; if (cible !== pilote()) selectVeh(cible.kind); return; }
@@ -2633,8 +2649,8 @@ function setPathState(st){ drawPathBtn(); }
       const v = pilote(); if (!v) return;
       traceClear(v); v.goto = p; setManual(); pingSol(p.x, p.z); drawPathBtn();
     } else { tapT = now; tapX = e.clientX; tapY = e.clientY; }
-  });
-  stage.addEventListener('pointercancel', e => { if (id === e.pointerId) id = null; });
+  }
+  ['pointerup','pointercancel'].forEach(ev => el.addEventListener(ev, fin));
 })();
 // Repère de sélection : un petit triangle planté au-dessus de l'engin conduit. Il tourne
 // avec la caméra pour rester de face, et bat doucement pour se distinguer du décor.
@@ -2890,7 +2906,18 @@ function dodge(v, want, portee){
 // ---------- pilotage d'un engin de la flotte ----------
 // Ordre de priorité : le tracé dessiné, puis le point désigné au double-appui, puis le
 // manche si c'est l'engin conduit, puis le pilote automatique si c'est celui du chantier.
+// Une trémie pleine, c'est un chantier à l'arrêt : la moissonneuse ne doit pas continuer
+// à tourner sur le champ en coupant dans le vide. Elle se range sur place et attend d'être
+// vidée, puis reprend son parcours là où elle l'avait laissé — il n'est pas effacé.
+// Le manche reste prioritaire, pour qu'on puisse toujours aller la chercher soi-même.
+// La benne, elle, n'est jamais bloquée : pleine, il faut justement pouvoir l'amener au silo.
+function pleine(v){ return v.kind === 'harvest' && v.hop >= CAP - .5; }
 function driveOne(v, conduit, chantier, dt){
+  if (pleine(v)){
+    if (conduit && manual && jmag > .12){ driveManual(v, dt); return; }
+    step(v, dt, v.heading, 0, false);
+    return;
+  }
   if (v.path && v.head < v.path.length){ followPath(v, dt); return; }
   if (v.goto){
     // `stop` mettrait la consigne de vitesse à zéro : on roule jusqu'au point, on ne s'y gare pas
