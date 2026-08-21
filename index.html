@@ -130,6 +130,7 @@
          transition:transform .06s; }
   .big i { font-style:normal; font-size:clamp(17px,2.9vh,22px); line-height:1; }
   .big span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .big .sw { flex:0 0 auto; font-size:clamp(13px,2.1vh,16px); opacity:.42; margin-left:-2px; }
   .big:active { transform:translateY(3px); box-shadow:0 1px 0 var(--creamD); }
   .big:disabled { opacity:.5; box-shadow:0 4px 0 var(--creamD); }
   #vehBtn.alt { background:linear-gradient(180deg,#ffdd77,var(--gold));
@@ -950,25 +951,26 @@ function parcelY(x,z){
   const k = Math.min(1, d/1.15), sm = k*k*(3-2*k);
   return (LIP + soilBump(x,z)) * sm;
 }
-// Le fond de parcelle : ce que la dernière moisson a laissé. La terre brune du départ
-// n'avait aucun sens — un champ au repos, c'est du chaume qui a séché, pas de la glaise.
-// C'est le motif M5 « Menue paille », le même que celui déposé par la moissonneuse.
-function soilTex(){
-  // Chaume clair, le motif retenu pour l'ouverture de partie. Vu de la caméra de jeu la
-  // tuile est réduite d'un facteur sept : les brins dessinés à la taille du nuancier
-  // disparaissent au filtrage et il ne reste que le fond, marron et nu. On garde donc la
-  // recette et on la dessine plus grande et plus dense, pour que le chaume tienne à
-  // distance. Pas de bandes de rouleau ici : sur une surface aussi large leur couture se
-  // verrait d'un bout à l'autre du champ.
-  const [c,x] = cv(), R = rng(1028679);
-  x.fillStyle = '#a3905c'; x.fillRect(0,0,TS,TS);
-  speck(x, R,150,['rgba(198,182,132,.34)'],2.4,6.6);
-  for(let i=0;i<330;i++){
-    const px=R()*TS, py=R()*TS, a=R()*6.28, L=10+R()*20, w=3.6+R()*2.8;
-    straw(x, R, px+1.4, py+2, a, L, w, 'rgba(112,92,48,.3)');
-    straw(x, R, px, py, a, L, w,
-          R()>.45 ? 'rgba(244,226,150,.85)' : 'rgba(206,180,104,.7)');
+// « Chaume clair » : le seul et même dessin pour le sol de départ et pour ce que la
+// moissonneuse laisse derrière elle. Les deux doivent se superposer sans se distinguer,
+// donc une seule recette, une seule graine, et la même échelle au sol.
+// Chaque brin portait son ombre : à trois cents brins cela faisait autant de mouchetures
+// sombres et le champ paraissait sali. Le relief se rend maintenant par quatre tons de
+// paille, du plus clair au plus mat, sans aucun trait sombre.
+// Pas de bandes de rouleau non plus : sur une surface aussi large leur couture se lisait
+// d'un bout à l'autre du champ.
+const CUT_TONS = ['#f6e59d', '#e6d089', '#cdb271', '#b39c64'];
+function drawCut(x, R){
+  x.fillStyle = '#ab9862'; x.fillRect(0,0,TS,TS);
+  speck(x, R,130,['rgba(214,199,150,.34)','rgba(186,170,118,.3)'],1.8,5.2);
+  for(let i=0;i<300;i++){
+    const px=R()*TS, py=R()*TS, a=R()*6.28, L=7+R()*15, w=2.6+R()*2.2;
+    straw(x, R, px, py, a, L, w, CUT_TONS[(R()*CUT_TONS.length)|0]);
   }
+}
+function soilTex(){
+  const [c,x] = cv();
+  drawCut(x, rng(1028679));
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
@@ -978,7 +980,7 @@ function soilTex(){
   const pos = [], uvs = [], col = [], tri = [];
   const px = new Float32Array(W*W), pz = new Float32Array(W*W), idx = new Int32Array(W*W);
   const push = (x,y,z,shade) => {
-    pos.push(x,y,z); uvs.push((x-X0)/3.4, (z-Z0)/3.4); col.push(shade,shade,shade);
+    pos.push(x,y,z); uvs.push((x-X0)/2.2, (z-Z0)/2.2); col.push(shade,shade,shade);
     return pos.length/3 - 1;
   };
   for(let j=0;j<=N;j++) for(let i=0;i<=N;i++){
@@ -1126,15 +1128,8 @@ const SWATH = (function(){
   }
   // 4. moissonné — « Menue paille » (M5), débris nettement plus longs et plus jaunes
   function texCut(){
-    const [c,x] = cv(), R = rng(1028679);
-    x.fillStyle='#a3905c'; x.fillRect(0,0,TS,TS); bands(x,.03);
-    speck(x, R,110,['rgba(198,182,132,.34)'],1.6,4.4);
-    for(let i=0;i<200;i++){
-      const px=R()*TS, py=R()*TS, a=R()*6.28, L=6+R()*13;
-      straw(x, R, px+1, py+1.4, a, L, 2.4+R()*2, 'rgba(96,78,38,.35)');
-      straw(x, R, px, py, a, L, 2.4+R()*2,
-            R()>.45 ? 'rgba(244,226,150,.85)' : 'rgba(206,180,104,.7)');
-    }
+    const [c,x] = cv();
+    drawCut(x, rng(1028679));                          // strictement le sol de départ
     return finish(c);
   }
   const TEX = [texTilled(), texSown(), texWet(), texCut()];
@@ -2511,34 +2506,41 @@ function cycleSpeed(){ setSpeed(SPEED === 1 ? 3 : SPEED === 3 ? 6 : 1); }
 setSpeed(1);
 
 // ---------- passage d'un engin à l'autre : la benne ne vient que si on va la chercher ----------
-function haulerNeeded(){ return !!hauler || !!(worker && worker.kind === 'harvest'); }
+// Le bouton n'était vivant qu'à la moisson : partout ailleurs il paraissait cassé. La
+// benne s'attelle désormais quand on veut — elle attend au portail si on n'en a pas
+// l'usage tout de suite. Le bouton ne se ferme que dans le seul cas sans issue : on
+// conduit la benne alors qu'aucun engin de chantier n'est en piste.
+function canSwitch(){ return driven === 'worker' || !!worker; }
 const VEHICO = { prep:'🚜', sow:'🌱', fert:'💧', harvest:'🌾', trailer:'🛻' };
 function drawVeh(){
-  const swap = haulerNeeded();
   const cur = driven === 'hauler' ? 'trailer' : (worker ? worker.kind : null);
-  elVehBtn.disabled = !swap;
+  const libre = canSwitch();
+  elVehBtn.disabled = !libre;
   elVehBtn.classList.toggle('alt', driven === 'hauler');
   const n = cur === 'trailer' ? 'Benne' : cur === 'harvest' ? 'Moissonneuse'
           : cur === 'prep' ? 'Déchaumeuse' : cur === 'sow' ? 'Semoir'
           : cur === 'fert' ? 'Pulvérisateur' : 'Au repos';
-  elVehBtn.innerHTML = '<i>' + (VEHICO[cur] || '🚜') + '</i><span>' + n + '</span>';
+  elVehBtn.innerHTML = '<i>' + (VEHICO[cur] || '🚜') + '</i><span>' + n + '</span>'
+                     + (libre ? '<b class="sw">⇄</b>' : '');
+  elVehBtn.title = libre ? 'Changer d\u2019engin' : n;
 }
 function drawCropBtn(){
   elCropBtn.innerHTML = '<i>' + crop().emo + '</i><span>' + crop().n + '</span>';
 }
 function switchVehicle(){
-  if (!haulerNeeded()) return;
+  if (!canSwitch()) return;
   if (driven === 'worker'){
     if (!hauler){
       hauler = vehicle('trailer');
       hauler.pos.copy(GATE); hauler.heading = Math.PI;
       hauler.h.position.set(GATE.x, 0, GATE.z);
       hauler.hop = 0; hauler.paid = 0; hauler.cropId = crop().id;
-      toast('Benne attelée — conduis-la sous la goulotte');
+      toast(worker && worker.kind === 'harvest'
+            ? 'Benne attelée — conduis-la sous la goulotte'
+            : 'Benne attelée — elle sort du portail');
     }
     driven = 'hauler';
   } else {
-    if (!worker) return;
     driven = 'worker';
   }
   setManual(); setPathState('pret'); sfx('stage'); drawVeh();
