@@ -40,6 +40,20 @@ l'ajout à l'écran d'accueil est perdu.
 Sur mobile, le manche virtuel en bas de l'écran remplace le clavier et les
 boutons du bandeau font le reste.
 
+## L'écran
+
+La page est une colonne : bandeau d'informations en haut, aire de jeu au milieu,
+bandeau de commandes en bas. Le rendu 3D ne dessine que dans le rectangle
+central, donc rien du HUD ne passe jamais devant la parcelle — seuls les gains
+et les confettis traversent. La caméra garde une échelle constante (~13 px par
+mètre) quelle que soit la hauteur des bandeaux.
+
+- **En haut** : trésorerie, stock livré, météo et heure, niveau ; le chemin des
+  cinq étapes du cycle ; le contrat en cours et sa barre d'avancement.
+- **En bas** : le chantier du moment, une jauge qui suit l'avancement réel
+  (sol travaillé, semé, fertilisé, maturité, puis remplissage de trémie), les
+  boutons de chantier et de réglage, et la manette virtuelle.
+
 ## Ce qu'il y a dans la partie
 
 - **Trois cultures.** Le blé est gratuit et rustique ; le colza pousse moins vite
@@ -56,7 +70,11 @@ boutons du bandeau font le reste.
   le ciel, lève le vent dans les épis et ralentit un peu les engins dans la boue.
 - **Sauvegarde automatique** dans le navigateur : trésorerie, améliorations,
   cultures débloquées, contrat en cours, jour et étape.
-- **Son synthétisé** à la volée (moteur, pluie, encaissements) — aucun fichier audio.
+- **Son synthétisé** à la volée (moteur, pluie, encaissements, clics) — aucun fichier audio.
+- **Des gains qui se voient.** Le grain jaillit de la vis vers la benne pendant le
+  transfert ; à l'encaissement, des pièces partent du silo et filent jusqu'au
+  compteur, qui rebondit. Fin d'étape, contrat rempli et passage de niveau
+  déclenchent confettis et fenêtre de récompense.
 
 ## Sous le capot
 

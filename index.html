@@ -1361,9 +1361,12 @@ function paySeed(){
   save();
 }
 function nextStage(){
+  const fini = STAGES[stage];
   stage = (stage+1) % STAGES.length;
   if (stage === 0) harvests++;      // on vient de boucler un cycle entier
   startStage(); sfx('stage'); save();
+  toast(fini.ic + ' ' + fini.n + ' — terminé !', 'good');
+  confetti(stage === 0 ? 34 : 14);
 }
 function switchTo(i){
   if (i === stage) return;
@@ -1434,12 +1437,20 @@ function sfx(k){
   addEventListener(ev, () => SND.boot(), { passive:true }));
 
 // grands nombres : 57 600 ne tient pas dans une pastille, 57,6 k oui
+const dec1 = v => v.toFixed(1).replace('.0','').replace('.', ',');
 function fmt(n){
   n = Math.floor(n);
   if (n < 10000) return n.toLocaleString('fr-FR');
-  if (n < 1000000) return (n/1000).toFixed(n < 100000 ? 1 : 0).replace('.', ',') + ' k';
-  return (n/1000000).toFixed(1).replace('.', ',') + ' M';
+  if (n < 100000) return dec1(n/1000) + ' k';
+  if (n < 1000000) return Math.round(n/1000) + ' k';
+  return dec1(n/1000000) + ' M';
 }
+
+// chaque bouton répond : sans retour sonore, l'interface reste plate
+addEventListener('pointerdown', e => {
+  if (e.target.closest && e.target.closest('.btn, .tab, .buy, #sheetX'))
+    SND.blip(720, 940, .06, 'triangle', .09);
+}, true);
 
 // ---------- messages fugaces ----------
 const toastEl = document.getElementById('toast');
@@ -1502,7 +1513,7 @@ function contractDeliver(cropId, t){
   if (contract.got >= contract.qty){
     coins += contract.reward;
     toast('Contrat rempli : +' + fmt(contract.reward) + ' 🪙', 'good');
-    sfx('cash');
+    confetti(26); sfx('cash');
     contract = null; drawContract(); save();
     setTimeout(newContract, 1400);
   } else drawContract();
@@ -2062,13 +2073,13 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
       driveTo(hauler, side, dt, hauler.pos.distanceTo(side) < 3.4);
       const give = Math.min(combine.hop, 55*dt, TRCAP-hauler.hop);
       combine.hop -= give; hauler.hop += give;
-      if (give > 0){
+      // débit calé sur le temps, pas sur l'image : sinon le jet sature à 60 fps
+      if (give > 0 && Math.random() < Math.min(.9, dt*26)){
         const ch = combine.heading;
-        for(let i=0;i<2;i++)
-          popGrain(combine.pos.x + Math.cos(ch)*2.9 - Math.sin(ch)*1.2, 3.5,
-                   combine.pos.z - Math.sin(ch)*2.9 - Math.cos(ch)*1.2,
-                   hauler.pos.x - Math.sin(hauler.heading)*3.3,
-                   hauler.pos.z - Math.cos(hauler.heading)*3.3);
+        popGrain(combine.pos.x + Math.cos(ch)*2.9 - Math.sin(ch)*1.2, 3.5,
+                 combine.pos.z - Math.sin(ch)*2.9 - Math.cos(ch)*1.2,
+                 hauler.pos.x - Math.sin(hauler.heading)*3.3,
+                 hauler.pos.z - Math.cos(hauler.heading)*3.3);
       }
       if (Math.random() < .04) popDust(hauler.pos.x, hauler.pos.z-2);
       if (hauler.hop >= TRCAP-.5 || (combine.done && combine.hop <= .5)) haulState = 'toSilo';
@@ -2131,9 +2142,9 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   // caméra quasi figée : elle ne bouge que si l'engin sort d'une zone morte centrale
   const foc = worker || hauler;
   if (foc){
-    const a = innerWidth/innerHeight;
-    const mx = (VIEW*a/2) * .74;                       // marge horizontale avant décrochage
-    const mz = (VIEW/Math.sin(PITCH)/2) * .74;         // idem en profondeur (axe écran vertical)
+    const a = SW/SH;
+    const mx = (VIEW*a/2) * .42;                       // marge horizontale avant décrochage
+    const mz = (VIEW/Math.sin(PITCH)/2) * .42;         // idem en profondeur (axe écran vertical)
     const dx = foc.pos.x - camLook.x, dz = foc.pos.z - camLook.z;
     let tx = camLook.x, tz = camLook.z;
     if (dx >  mx) tx = foc.pos.x - mx;
@@ -2143,9 +2154,9 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
     // recadrage doux, et uniquement sur l'axe qui a décroché
     camLook.x += (tx - camLook.x) * Math.min(1, raw*2.0);
     camLook.z += (tz - camLook.z) * Math.min(1, raw*2.0);
-    // on garde la parcelle dans le cadre : pas de vue sur le vide
-    camLook.x = Math.max(X0 - 4, Math.min(X0 + P + 4, camLook.x));
-    camLook.z = Math.max(Z0 - 4, Math.min(Z0 + P + 10, camLook.z));
+    // large assez pour suivre l'engin dans les fourrières et jusqu'au silo
+    camLook.x = Math.max(X0 - 10, Math.min(X0 + P + 10, camLook.x));
+    camLook.z = Math.max(Z0 - 14, Math.min(YARD + 8, camLook.z));
   }
   camera.position.copy(camLook).add(camOff);
   camera.lookAt(camLook);
@@ -2193,7 +2204,9 @@ window.__FARM_DEBUG = () => ({
   stage, etape:STAGES[stage].n, culture:crop().id, jour:day, heure:+(dayT*24).toFixed(2),
   meteo:wKey, niveaux:Object.assign({}, lv), contrat:contract && {c:contract.crop, q:contract.qty, got:Math.round(contract.got)},
   manuel:manual, pause:paused, vitesse:SPEED,
-  hop:worker ? Math.round(worker.hop) : 0, benne:hauler ? Math.round(hauler.hop) : -1
+  hop:worker ? Math.round(worker.hop) : 0, benne:hauler ? Math.round(hauler.hop) : -1,
+  navette:haulState, grain:grains.reduce((n,d)=>n+(d.m.visible?1:0),0),
+  vole:document.querySelectorAll('#fx .fly').length
 });
 
 })();
