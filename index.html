@@ -162,14 +162,31 @@
 
   /* ---------- manette ---------- */
   #pad { display:flex; justify-content:center; }
-  #padStick, #padCap, #padPath { display:none; width:100%; justify-content:center; }
+  #padStick, #padPath { display:none; width:100%; justify-content:center; }
   #pad.manche #padStick { display:flex; }
-  #pad.cap    #padCap   { display:flex; gap:6px; }
-  #pad.trace  #padPath  { display:flex; gap:8px; align-items:center; }
+  #pad.trace  #padPath  { display:flex; flex-direction:column; align-items:center; gap:7px; }
   body.kb #pad.manche { display:none; }
-  #padPath .hint { flex:1; font-size:var(--fsm); opacity:.82; line-height:1.3; }
-  #padPath .btn  { flex:0 0 96px; }
-  .btn.cap i { font-size:clamp(15px, 2.6vh, 19px); }
+  /* le bouton de tracé occupe la place du manche : la carte reste libre au doigt */
+  #pathBtn{
+    width:clamp(72px,13vh,104px); aspect-ratio:1; border-radius:50%; border:none; padding:0;
+    display:grid; place-items:center; color:var(--ink);
+    background:linear-gradient(180deg,#ffdd77,var(--gold));
+    box-shadow:0 5px 0 var(--goldD), 0 8px 14px rgba(0,0,0,.34);
+    transition:transform .08s ease;
+  }
+  #pathBtn svg{ width:56%; height:56%; grid-area:1/1; }
+  #pathBtn #icoStop{ display:none; }
+  #pathBtn:active{ transform:translateY(3px); box-shadow:0 2px 0 var(--goldD); }
+  #pathBtn:focus-visible{ outline:3px solid var(--cream); outline-offset:3px; }
+  #pathBtn.armed{ animation:armPulse 1.4s ease-in-out infinite; }
+  @keyframes armPulse{ 0%,100%{ box-shadow:0 5px 0 var(--goldD), 0 0 0 0 rgba(255,201,60,.5); }
+                       50%{ box-shadow:0 5px 0 var(--goldD), 0 0 0 12px rgba(255,201,60,0); } }
+  #pathBtn.rolling{ background:linear-gradient(180deg,#ff8a72,var(--rust)); color:#fff;
+                    box-shadow:0 5px 0 var(--rustD), 0 8px 14px rgba(0,0,0,.34); }
+  #pathBtn.rolling #icoDraw{ display:none; }
+  #pathBtn.rolling #icoStop{ display:block; }
+  @media (prefers-reduced-motion:reduce){ #pathBtn.armed{ animation:none; } }
+  #padPath .cap{ font-size:var(--fsm); opacity:.85; text-align:center; }
   #stick { position:relative; width:clamp(82px, 15vh, 116px); aspect-ratio:1; border-radius:50%;
            background:radial-gradient(circle at 50% 38%, rgba(0,0,0,.28), rgba(0,0,0,.46));
            border:4px solid rgba(255,255,255,.22); touch-action:none;
@@ -272,15 +289,18 @@
     <div id="acts"></div>
     <div id="pad">
       <div id="padStick"><div id="stick"><div id="knob"></div></div></div>
-      <div id="padCap">
-        <button class="btn cap" id="capSpeed"><i>🚦</i><span>Arrêt</span></button>
-        <button class="btn cap" id="capLeft"><i>↰</i><span>15°</span></button>
-        <button class="btn cap" id="capU"><i>↻</i><span>Demi-tour</span></button>
-        <button class="btn cap" id="capRight"><i>↱</i><span>15°</span></button>
-      </div>
       <div id="padPath">
-        <div class="hint" id="pathHint">Dessine le parcours avec ton doigt sur le champ.</div>
-        <button class="btn" id="pathClear"><i>🧹</i><span>Effacer</span></button>
+        <button id="pathBtn" aria-label="Tracer un parcours">
+          <svg id="icoDraw" viewBox="0 0 44 44" aria-hidden="true">
+            <path d="M7 30c5-12 10 6 15-6s9 8 15-6" fill="none" stroke="currentColor"
+                  stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="7" cy="30" r="3.4" fill="currentColor"/>
+          </svg>
+          <svg id="icoStop" viewBox="0 0 44 44" aria-hidden="true">
+            <rect x="14" y="14" width="16" height="16" rx="3" fill="currentColor"/>
+          </svg>
+        </button>
+        <div class="cap" id="pathCap">Tracer un parcours</div>
       </div>
     </div>
   </footer>
@@ -329,19 +349,51 @@ const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 app.appendChild(renderer.domElement);
+let zoom = 1;                           // facteur de rapprochement, piloté à deux doigts
+function applyCamera(){
+  const a = SW/SH;
+  VIEW = Math.max(22, Math.min(42, SH/13));
+  VIEW = Math.min(VIEW, 72/a) / zoom;   // écran très large : on ne montre pas toute la ferme d'un coup
+  camera.left=-VIEW*a/2; camera.right=VIEW*a/2; camera.top=VIEW/2; camera.bottom=-VIEW/2;
+  camera.updateProjectionMatrix();
+}
 function resize(){
   const r = stageEl.getBoundingClientRect();
   SW = Math.max(1, Math.round(r.width)); SH = Math.max(1, Math.round(r.height));
   SX = r.left; SY = r.top;
-  const a = SW/SH;
-  VIEW = Math.max(22, Math.min(42, SH/13));
-  VIEW = Math.min(VIEW, 72/a);          // écran très large : on ne montre pas toute la ferme d'un coup
-  camera.left=-VIEW*a/2; camera.right=VIEW*a/2; camera.top=VIEW/2; camera.bottom=-VIEW/2;
-  camera.updateProjectionMatrix(); renderer.setSize(SW, SH);
+  applyCamera(); renderer.setSize(SW, SH);
+}
+function setZoom(z){
+  const nz = Math.max(.55, Math.min(2.6, z));
+  if (Math.abs(nz - zoom) < 1e-4) return;
+  zoom = nz; applyCamera();
 }
 resize(); addEventListener('resize', resize);
 // les bandeaux changent de hauteur (contrat affiché, manette masquée) : on suit la scène
 if (window.ResizeObserver) new ResizeObserver(resize).observe(stageEl);
+
+// ---------- pincer pour zoomer : la carte reste manipulable au doigt ----------
+const _touches = new Map();
+let _pinchBase = 0, _pinchZoom = 1;
+const pinching = () => _touches.size >= 2;
+(function(){
+  const el = stageEl;
+  el.addEventListener('pointerdown', e => { _touches.set(e.pointerId, e); }, true);
+  el.addEventListener('pointermove', e => {
+    if (!_touches.has(e.pointerId)) return;
+    _touches.set(e.pointerId, e);
+    if (_touches.size < 2){ _pinchBase = 0; return; }
+    const it = _touches.values(), a = it.next().value, b = it.next().value;
+    const d = Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
+    if (!_pinchBase){ _pinchBase = d; _pinchZoom = zoom; }
+    else setZoom(_pinchZoom * d/_pinchBase);
+  }, true);
+  const drop = e => { _touches.delete(e.pointerId); if (_touches.size < 2) _pinchBase = 0; };
+  ['pointerup','pointercancel','pointerleave'].forEach(ev => el.addEventListener(ev, drop, true));
+  el.addEventListener('wheel', e => {            // à la souris, la molette fait le même office
+    e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.12 : 1/1.12));
+  }, { passive:false });
+})();
 
 const hemi = new THREE.HemisphereLight('#ffffff','#4e8a34',.88);   // lumière plate comme la réf
 scene.add(hemi);
@@ -2110,29 +2162,42 @@ function drawHelp(){
   elBody.insertAdjacentHTML('beforeend',
     '<div class="note" style="margin-top:12px">Sans clavier, le poste de commande en bas de l\'écran prend le ' +
     'relais. Trois modes au choix dans <b>Réglages</b> : le <b>manche</b> (direction = cap, amplitude = vitesse), ' +
-    '<b>cap et allure</b> (on règle une fois, l\'engin tient la ligne seul) et <b>parcours</b> (on dessine le ' +
-    'trajet au doigt sur le champ et l\'engin le suit).</div>');
+    'et <b>parcours</b> : un bouton arme le tracé, on dessine le trajet sur le champ, et l\'engin part dès ' +
+    'qu\'on lève le doigt. Le même bouton l\'arrête. Hors tracé, le champ se pince à deux doigts pour zoomer.</div>');
 }
 
 // ---------- manette ----------
 let jx = 0, jy = 0, jmag = 0, manual = false, btnAuto = null;   // une seule manette : angle = cap, amplitude = vitesse
 // trois façons de conduire : au manche, au cap et à l'allure, ou sur un parcours dessiné
 const CTRL = [
-  { id:'manche', n:'Manche',         emo:'🕹️', d:'La direction donne le cap, l\'amplitude la vitesse.' },
-  { id:'cap',    n:'Cap et allure',  emo:'🧭', d:'On règle l\'allure et le cap : l\'engin tient la ligne tout seul.' },
-  { id:'trace',  n:'Parcours',       emo:'✏️', d:'On dessine le trajet sur le champ, l\'engin le suit.' }
+  { id:'manche', n:'Manche',   emo:'🕹️', d:'La direction donne le cap, l\'amplitude la vitesse.' },
+  { id:'trace',  n:'Parcours', emo:'✏️', d:'Un bouton arme le tracé, l\'engin suit le trajet dessiné.' }
 ];
-const CAPSP = [0, .34, .68, 1], CAPN = ['Arrêt','Lent','Normal','Rapide'];
-let ctrlMode = 'manche', capLvl = 0, capH = Math.PI;
+let ctrlMode = 'manche';
+// Le tracé passe par trois temps, et on ne dessine que dans le deuxième :
+// hors de là le doigt appartient à la carte, pour la déplacer ou la zoomer.
+let pathState = 'pret';                 // 'pret' | 'dessin' | 'route'
 // le poste de commande visible suit le mode choisi
 function applyCtrl(){
-  const pad = document.getElementById('pad');
-  pad.className = ctrlMode;
-  if (ctrlMode !== 'trace') PATH.clear();
-  if (ctrlMode === 'cap' && worker) capH = worker.heading;
-  const b = document.getElementById('capSpeed');
-  if (b) b.querySelector('span').textContent = CAPN[capLvl];
-  if (b) b.classList.toggle('on', capLvl > 0);
+  document.getElementById('pad').className = ctrlMode;
+  if (ctrlMode !== 'trace') setPathState('pret');
+  else drawPathBtn();
+}
+const PATHTXT = { pret:'Tracer un parcours', dessin:'Dessine sur le champ', route:'Arrêter l\'engin' };
+function drawPathBtn(){
+  const b = document.getElementById('pathBtn'), c = document.getElementById('pathCap');
+  if (!b) return;
+  b.classList.toggle('armed', pathState === 'dessin');
+  b.classList.toggle('rolling', pathState === 'route');
+  b.setAttribute('aria-label', PATHTXT[pathState]);
+  c.textContent = pathState === 'route'
+    ? PATHTXT.route + ' · ' + PATH.count() + ' points'
+    : PATHTXT[pathState];
+}
+function setPathState(st){
+  pathState = st;
+  if (st !== 'route') PATH.clear();
+  drawPathBtn();
 }
 (function(){
   const stick = document.getElementById('stick'), knob = document.getElementById('knob');
@@ -2153,50 +2218,38 @@ function applyCtrl(){
   stick.addEventListener('pointercancel', clear);
 })();
 
-// --- cap et allure : on règle une fois, l'engin tient la ligne sans rien maintenir
-(function(){
-  const sp = document.getElementById('capSpeed');
-  sp.onclick = () => {
-    capLvl = (capLvl+1) % CAPSP.length;
-    sp.querySelector('span').textContent = CAPN[capLvl];
-    sp.classList.toggle('on', capLvl > 0);
-    if (capLvl > 0){ if (!manual) capH = worker ? worker.heading : capH; setManual(); }
-  };
-  const nudge = a => { capH += a; setManual(); if (capLvl === 0){ capLvl = 2; sp.querySelector('span').textContent = CAPN[2]; sp.classList.add('on'); } };
-  // maintenir enchaîne les crans, taper en donne un seul
-  function hold(el, a){
-    let t = null, rep = null;
-    const go = () => { nudge(a); };
-    el.addEventListener('pointerdown', e => {
-      e.preventDefault(); go();
-      t = setTimeout(() => { rep = setInterval(go, 150); }, 420);
-    });
-    const stop = () => { clearTimeout(t); clearInterval(rep); t = rep = null; };
-    ['pointerup','pointercancel','pointerleave'].forEach(ev => el.addEventListener(ev, stop));
-  }
-  hold(document.getElementById('capLeft'),  -Math.PI/12);
-  hold(document.getElementById('capRight'),  Math.PI/12);
-  document.getElementById('capU').onclick = () => nudge(Math.PI);
-})();
-
-// --- parcours dessiné : le doigt trace, l'engin suit
+// --- parcours dessiné : un bouton arme le tracé, le lâcher lance l'engin
 (function(){
   const stage = document.getElementById('stage');
-  let drawing = false;
+  const btn = document.getElementById('pathBtn');
+  let drawId = null;
+  btn.onclick = () => {
+    if (pathState === 'pret')        setPathState('dessin');
+    else if (pathState === 'dessin') setPathState('pret');
+    else { setPathState('pret');                       // on stoppe : l'engin s'arrête net
+           if (worker){ worker.speed = 0; setManual(); } }
+  };
   stage.addEventListener('pointerdown', e => {
-    if (ctrlMode !== 'trace' || paused) return;
+    if (ctrlMode !== 'trace' || paused || pathState !== 'dessin') return;
+    if (pinching()) return;
     const p = screenToWorld(e.clientX, e.clientY); if (!p) return;
-    drawing = true; stage.setPointerCapture(e.pointerId);
+    drawId = e.pointerId; stage.setPointerCapture(e.pointerId);
     PATH.start(p); setManual();
   });
   stage.addEventListener('pointermove', e => {
-    if (!drawing) return;
+    if (drawId !== e.pointerId) return;
+    if (pinching()){ abort(); return; }               // un deuxième doigt : c'est un zoom, pas un tracé
     const p = screenToWorld(e.clientX, e.clientY); if (p) PATH.add(p);
   });
-  const end = () => { drawing = false; };
-  stage.addEventListener('pointerup', end);
-  stage.addEventListener('pointercancel', end);
-  document.getElementById('pathClear').onclick = () => PATH.clear();
+  function abort(){ drawId = null; PATH.clear(); drawPathBtn(); }
+  function finish(e){
+    if (drawId !== e.pointerId) return;
+    drawId = null;
+    if (PATH.count() > 1) setPathState('route');       // le tracé est fini : l'engin part
+    else { PATH.clear(); drawPathBtn(); }
+  }
+  stage.addEventListener('pointerup', finish);
+  stage.addEventListener('pointercancel', e => { if (drawId === e.pointerId) abort(); });
 })();
 function setManual(){
   if (manual) return;
@@ -2301,7 +2354,7 @@ const elCoins=document.getElementById('coins'), elStock=document.getElementById(
       elClock=document.getElementById('clock'), elWIcon=document.getElementById('wIcon'),
       elLvl=document.getElementById('lvl'), elGauge=document.getElementById('gauge'),
       elGVal=document.getElementById('gval'), chipLvl=document.getElementById('chipLvl'),
-      elPathHint=document.getElementById('pathHint');
+      elPathCap=document.getElementById('pathCap');
 let saveT = 0, lastCoins = -1, lastLvl = 0;
 (function boot(){
   const had = restore();
@@ -2351,12 +2404,13 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
         const push = Math.max(0, (jmag - .12)/.88);            // zone morte au centre
         const wantH = jmag > .12 ? Math.atan2(jx, jy) : worker.heading;
         step(worker, dt, wantH, push*MAXSPD*mudK, jmag > .12);
-      } else if (ctrlMode === 'cap'){
-        step(worker, dt, capH, CAPSP[capLvl]*MAXSPD*mudK, capLvl > 0);
       } else {                                                 // parcours dessiné
-        const t = PATH.target();
+        const t = pathState === 'route' ? PATH.target() : null;
         if (t){
-          if (driveTo(worker, t, dt) < 2) PATH.advance();
+          if (driveTo(worker, t, dt) < 2){
+            PATH.advance();
+            if (!PATH.count()) setPathState('pret');           // arrivé au bout : l'engin s'arrête
+          }
         } else step(worker, dt, worker.heading, 0, false);
       }
     } else if (worker.done){
@@ -2622,11 +2676,9 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   elGVal.textContent = gl;
   elGauge.classList.toggle('full', gf > .985);
 
-  if (ctrlMode === 'trace'){
-    const n = PATH.count();
-    const txt = n ? 'Parcours en cours — ' + n + ' points restants.'
-                  : 'Dessine le parcours avec ton doigt sur le champ.';
-    if (elPathHint.textContent !== txt) elPathHint.textContent = txt;
+  if (ctrlMode === 'trace' && pathState === 'route'){
+    const txt = PATHTXT.route + ' · ' + PATH.count() + ' points';
+    if (elPathCap.textContent !== txt) elPathCap.textContent = txt;
   }
   saveT += tick;
   if (saveT > 6){ saveT = 0; save(); }
@@ -2640,7 +2692,7 @@ window.__FARM_DEBUG = () => ({
   stage, etape:STAGES[stage].n, culture:crop().id, jour:day, heure:+(dayT*24).toFixed(2),
   meteo:wKey, niveaux:Object.assign({}, lv), contrat:contract && {c:contract.crop, q:contract.qty, got:Math.round(contract.got)},
   manuel:manual, pause:paused, vitesse:SPEED,
-  pilotage:ctrlMode, allure:capLvl, cap:+capH.toFixed(3), trace:PATH.count(),
+  pilotage:ctrlMode, tracage:pathState, trace:PATH.count(), zoom:+zoom.toFixed(2),
   posX:+worker?.pos.x.toFixed(1), posZ:+worker?.pos.z.toFixed(1),
   cly:+(worker ? worker.gy || 0 : 0).toFixed(3),
   hop:worker ? Math.round(worker.hop) : 0, benne:hauler ? Math.round(hauler.hop) : -1,
