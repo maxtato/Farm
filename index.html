@@ -1319,12 +1319,14 @@ function tuftCorn(leaf, stemCol, cob){                      // maïs : une canne
 // Avant le labour, la parcelle ne montre plus aucun motif peint : uniquement ce dépôt,
 // les tiges de la récolte précédente qui ont séché sur place.
 function tuftStraw(){
-  const p = [], col = '#f5e08c', colD = '#c9a94e', colP = '#e2cb6e';
-  for(let k=0;k<10;k++){
-    const a = k*1.11 + (k%3)*.42, L = .46 + (k%4)*.15, r = .07 + (k%4)*.075;
-    const g = new THREE.CylinderGeometry(.042,.032,L,4); g.rotateZ(Math.PI/2);
+  // Le dépôt laissé par la moisson : des brins deux fois plus longs et plus épais qu'avant,
+  // étalés plus large. À la distance de la caméra les précédents se perdaient dans le sol.
+  const p = [], col = '#f7e598', colD = '#cfae52', colP = '#e8d178';
+  for(let k=0;k<12;k++){
+    const a = k*1.11 + (k%3)*.42, L = .92 + (k%4)*.28, r = .13 + (k%4)*.12;
+    const g = new THREE.CylinderGeometry(.075,.055,L,4); g.rotateZ(Math.PI/2);
     p.push({ g, c: k%3 === 0 ? col : k%3 === 1 ? colD : colP,
-             m: MX(Math.cos(a)*r, .045 + (k%3)*.03, Math.sin(a)*r, 0, a, .05 + (k%2)*.06) });
+             m: MX(Math.cos(a)*r, .07 + (k%3)*.05, Math.sin(a)*r, 0, a, .06 + (k%2)*.08) });
   }
   return merge(p);
 }
@@ -1651,6 +1653,27 @@ function popGrain(x,y,z,tx,tz){
   d.vz = (tz-z)/T + (Math.random()-.5)*.6;
   d.vy = (1.2-y)/T + 4.6*T/2;
 }
+// Traits de vitesse : de fines lignes claires posées au sol de part et d'autre de l'engin,
+// qui s'effacent en un tiers de seconde. Elles ne se déclenchent que quand l'élan de ligne
+// droite est installé — c'est ce qui rend la vitesse lisible sur un plan aussi éloigné.
+const streakGeo = (function(){ const g = new THREE.PlaneGeometry(1,.3); g.rotateX(-Math.PI/2); return g; })();
+const streaks = [];
+for(let i=0;i<30;i++){
+  const m = new THREE.Mesh(streakGeo, new THREE.MeshBasicMaterial({
+    color:'#fffbe8', transparent:true, opacity:0, depthWrite:false }));
+  m.visible = false; m.renderOrder = 3; scene.add(m); streaks.push({ m, t:0, life:.3, a:.5 });
+}
+function popStreak(x,z,hd,lat,len,fort){
+  const d = streaks.find(d=>!d.m.visible); if(!d) return;
+  const sn = Math.sin(hd), cs = Math.cos(hd);
+  const px = x + cs*lat, pz = z - sn*lat;
+  d.m.visible = true; d.t = 0; d.life = .26 + Math.random()*.12;
+  d.a = .42 + .4*fort;
+  d.m.position.set(px, parcelY(px,pz) + .06, pz);
+  d.m.rotation.y = hd + Math.PI/2;      // le trait file dans l'axe de marche, pas en travers
+  d.m.scale.set(len, 1, .85 + Math.random()*.6);
+  d.m.material.opacity = d.a;
+}
 function popDust(x,z){
   const d = dust.find(d=>!d.m.visible); if(!d) return;
   d.m.visible = true; d.t = 0; d.vy = .8+Math.random();
@@ -1667,7 +1690,8 @@ function vehicle(kind){
   g.userData.brakes = brakeLights; g.userData.lamps = headlamps; g.userData.beacons = beacons;
   return { kind, g, h, pos:GATE.clone(), heading:Math.PI, speed:0, steerA:0, turnRate:0,
            bob:Math.random()*3, trk:0, laneI:0, lanes:null, done:false, hop:0,
-           sus:0, susV:0, pit:0, pitV:0, rol:0, rolV:0, lastS:0, wph:Math.random()*6 };
+           sus:0, susV:0, pit:0, pitV:0, rol:0, rolV:0, lastS:0, wph:Math.random()*6,
+           sq:0, sqV:0, line:0, strk:0 };
 }
 // un engin qui quitte la parcelle rend aussi sa mémoire : sans ça, chaque cycle
 // laissait derrière lui roues, disques et cuves sur le GPU
@@ -1739,7 +1763,13 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
     v.steerA += (0 - v.steerA)*Math.min(1,dt*6);
     v.turnRate *= .9; v.wRate = (v.wRate || 0)*.9;
   }
-  v.speed += (wantSpeed - v.speed)*Math.min(1, dt*ACC);   // reprise beaucoup plus vive
+  // Prime de ligne droite : l'élan se construit tant que l'engin tient son cap et se perd
+  // dès qu'il braque. Quelques secondes de passage droit et il file près d'un tiers plus
+  // vite ; le moindre coup de manche le ramène à son allure de travail.
+  const tenu = turnable ? Math.max(0, 1 - Math.abs(v.turnRate)/1.1) : 1;
+  const vise = wantSpeed > .5 ? tenu : 0;
+  v.line += (vise - v.line)*Math.min(1, dt*(vise > v.line ? 1.5 : 5));
+  v.speed += (wantSpeed*(1 + LINEK*v.line) - v.speed)*Math.min(1, dt*ACC);
   v.pos.x += Math.sin(v.heading)*v.speed*dt;
   v.pos.z += Math.cos(v.heading)*v.speed*dt;
   const d = v.g.userData;
@@ -1780,9 +1810,21 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
   const acc = (v.speed - v.lastS)/Math.max(dt,1e-4); v.lastS = v.speed;
   v.pitV += (-K*v.pit - D*v.pitV - acc*.05 + bump*.06)*dt;   // plongée au freinage, cabrage à l'accél.
   v.pit = Math.max(-.09, Math.min(.09, v.pit + v.pitV*dt));
-  v.rolV += (-K*v.rol - D*v.rolV - v.turnRate*v.speed*.075
-             + Math.sin(v.wph + 2.1)*1.3*sf*v.soil)*dt;       // balancement du voile, sur la terre seule
-  v.rol = Math.max(-.16, Math.min(.16, v.rol + v.rolV*dt));
+  // Le penchant en virage, franchement plus marqué : la caisse s'incline vers l'extérieur
+  // de la courbe, d'autant plus qu'on va vite, et revient en oscillant une fois redressé.
+  v.rolV += (-K*v.rol - D*v.rolV - v.turnRate*v.speed*.155
+             + Math.sin(v.wph + 2.1)*1.3*sf*v.soil)*dt;
+  v.rol = Math.max(-.26, Math.min(.26, v.rol + v.rolV*dt));
+  // Carrosserie molle : elle se tasse et s'étire en hauteur, entretenue par les cahots, par
+  // les reprises et par un rebond continu tant qu'elle roule. Le volume se conserve — ce qui
+  // s'écrase en hauteur s'élargit d'autant, sinon l'engin maigrit au lieu de rebondir.
+  // Le ressort n'encaisse que les à-coups : cahots et reprises. Le balancement d'une caisse
+  // molle, lui, est appliqué directement — passé par le ressort il était excité bien
+  // au-dessus de sa fréquence propre et n'en sortait qu'un pour cent.
+  const K3 = 52, D3 = 5.8;                                   // ~1,15 Hz, bien élastique
+  v.sqV += (-K3*v.sq - D3*v.sqV - v.susV*4 - acc*.3)*dt;
+  v.sq = Math.max(-.16, Math.min(.16, v.sq + v.sqV*dt));
+  v.wob = Math.sin(v.bob*1.5)*.075*sf;                       // ~2,5 Hz à pleine allure
   // la terre est en surépaisseur : l'engin y monte, et se cabre sur la rampe du bord
   const sn2 = Math.sin(v.heading), cs2 = Math.cos(v.heading);
   const gy = parcelY(v.pos.x, v.pos.z);
@@ -1795,6 +1837,19 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
   v.h.rotation.y = v.heading;
   v.g.position.y = v.sus;
   v.g.rotation.set(v.pit + v.slope, 0, v.rol);
+  const sy = 1 + v.sq + (v.wob||0), sxz = 1/Math.sqrt(sy);
+  v.g.scale.set(sxz, sy, sxz);
+  // les traits filent au sol dès que l'élan de ligne droite est pris
+  if (v.line > .34 && v.speed > 4){
+    v.strk += dt*(8 + 22*v.line);
+    while (v.strk >= 1){
+      v.strk -= 1;
+      const cote = Math.random() < .5 ? -1 : 1;
+      popStreak(v.pos.x, v.pos.z, v.heading,
+                cote*(1.9 + Math.random()*2.6),
+                4.2 + Math.random()*5 + v.line*4, v.line);
+    }
+  } else v.strk = 0;
   const br = v.g.userData.brakes;
   if (br){                                                   // feux stop au ralentissement
     const on = (wantSpeed < v.speed - .25) ? 1 : .18;
@@ -1810,6 +1865,7 @@ const MAXSPD0 = 7.6, RMIN0 = 2.0;   // vitesse de base ; rayon de braquage mini
 // vitesse angulaire met un peu plus longtemps à s'établir. Le demi-tour reste court, mais
 // l'entrée en courbe ne casse plus la trajectoire.
 const TURNCAP = 4.3, TURNFLOOR = 1.7;
+const LINEK = .48;                  // jusqu'à +48 % d'allure sur un long passage droit
 let MAXSPD = MAXSPD0, RMIN = RMIN0, ACC = 10, GROWK = 1, PRICEK = 1, mudK = 1;
 function driveTo(v, target, dt, stop){
   const want = Math.atan2(target.x-v.pos.x, target.z-v.pos.z);
@@ -2520,16 +2576,21 @@ function cycleSpeed(){ setSpeed(SPEED === 1 ? 3 : SPEED === 3 ? 6 : 1); }
 setSpeed(1);
 
 // ---------- passage d'un engin à l'autre : la benne ne vient que si on va la chercher ----------
-// Le bouton n'était vivant qu'à la moisson : partout ailleurs il paraissait cassé. La
-// benne s'attelle désormais quand on veut — elle attend au portail si on n'en a pas
-// l'usage tout de suite. Le bouton ne se ferme que dans le seul cas sans issue : on
-// conduit la benne alors qu'aucun engin de chantier n'est en piste.
-function canSwitch(){ return driven === 'worker' || !!worker; }
+// Le bouton fait le tour de tous les engins de la ferme, pas seulement de la benne :
+// déchaumeuse, semoir, pulvérisateur, moissonneuse, benne, puis on repart au début.
+// Choisir un engin de chantier place la parcelle à l'étape correspondante, exactement
+// comme si on avait touché l'étape dans le suivi du haut. « Pousse » n'a pas d'engin :
+// elle n'est pas dans le tour.
+const VEH_CYCLE = [
+  { id:'prep', st:0 }, { id:'sow', st:1 }, { id:'fert', st:2 },
+  { id:'harvest', st:4 }, { id:'trailer', st:-1 }
+];
+function canSwitch(){ return true; }
 const VEHICO = { prep:'🚜', sow:'🌱', fert:'💧', harvest:'🌾', trailer:'🛻' };
 function drawVeh(){
   const cur = driven === 'hauler' ? 'trailer' : (worker ? worker.kind : null);
-  const libre = canSwitch();
-  elVehBtn.disabled = !libre;
+  const libre = true;
+  elVehBtn.disabled = false;
   elVehBtn.classList.toggle('alt', driven === 'hauler');
   const n = cur === 'trailer' ? 'Benne' : cur === 'harvest' ? 'Moissonneuse'
           : cur === 'prep' ? 'Déchaumeuse' : cur === 'sow' ? 'Semoir'
@@ -2542,8 +2603,10 @@ function drawCropBtn(){
   elCropBtn.innerHTML = '<i>' + crop().emo + '</i><span>' + crop().n + '</span>';
 }
 function switchVehicle(){
-  if (!canSwitch()) return;
-  if (driven === 'worker'){
+  const cur = driven === 'hauler' ? 'trailer' : (worker ? worker.kind : null);
+  const i = VEH_CYCLE.findIndex(e => e.id === cur);
+  const nxt = VEH_CYCLE[(i + 1) % VEH_CYCLE.length];
+  if (nxt.id === 'trailer'){
     if (!hauler){
       hauler = vehicle('trailer');
       hauler.pos.copy(GATE); hauler.heading = Math.PI;
@@ -2556,6 +2619,8 @@ function switchVehicle(){
     driven = 'hauler';
   } else {
     driven = 'worker';
+    if (stage !== nxt.st) switchTo(nxt.st);
+    else if (!worker) startStage(true);
   }
   setManual(); setPathState('pret'); sfx('stage'); drawVeh();
 }
@@ -2886,6 +2951,14 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
     d.m.material.opacity = Math.max(0,.65-d.t*.8);
     if (d.t>.85) d.m.visible = false;
   });
+  streaks.forEach(d => {                       // le trait s'allonge un peu et s'efface
+    if(!d.m.visible) return;
+    d.t += dt;
+    const k = d.t/d.life;
+    d.m.scale.x *= 1 + dt*1.6;
+    d.m.material.opacity = Math.max(0, d.a*(1-k)*(1-k));
+    if (d.t > d.life) d.m.visible = false;
+  });
 
   // caméra : suit l'engin piloté
   // caméra quasi figée : elle ne bouge que si l'engin sort d'une zone morte centrale
@@ -2963,6 +3036,10 @@ window.__FARM_DEBUG = () => ({
   allure:+(worker && worker.grip !== undefined ? worker.grip : 1).toFixed(2),
   posX:+worker?.pos.x.toFixed(1), posZ:+worker?.pos.z.toFixed(1),
   cly:+(worker ? worker.gy || 0 : 0).toFixed(3), surTerre:+(worker ? worker.soil || 0 : 0).toFixed(2),
+  elan:+((driven==='hauler'&&hauler?hauler:worker) ? ((driven==='hauler'&&hauler?hauler:worker).line||0) : 0).toFixed(2),
+  ecrase:+((driven==='hauler'&&hauler?hauler:worker) ? (((driven==='hauler'&&hauler?hauler:worker).sq||0)+((driven==='hauler'&&hauler?hauler:worker).wob||0)) : 0).toFixed(3),
+  penche:+((driven==='hauler'&&hauler?hauler:worker) ? ((driven==='hauler'&&hauler?hauler:worker).rol||0) : 0).toFixed(3),
+  traits:streaks.reduce((n,d)=>n+(d.m.visible?1:0),0),
   hop:worker ? Math.round(worker.hop) : 0,
   incl:Math.round(PITCH*180/Math.PI),
   conduit:driven, benneLa:!!hauler, benne:hauler ? Math.round(hauler.hop) : -1,
