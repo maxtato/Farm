@@ -12,134 +12,257 @@
 <link rel="apple-touch-icon" href="icon.svg">
 <title>Ferme — cycle complet</title>
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html,body { height:100%; overflow:hidden; background:#3f8a22; }
-  body { font-family:-apple-system,"Segoe UI",system-ui,sans-serif; font-weight:800;
-         touch-action:none; user-select:none; }
-  #app { position:fixed; inset:0; }
+  *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  :root{
+    --soil:#3d2b17; --soilD:#2a1d0f;
+    --bark:#25341a; --barkL:#374a26; --barkE:#4d6733;
+    --cream:#fff5e0; --creamD:#f2e2bd; --ink:#42301a; --inkSoft:#7a6440;
+    --gold:#ffc93c; --goldD:#c07f0c;
+    --grass:#4cb44e; --grassD:#2d7a2f;
+    --rust:#e2593f; --rustD:#a83422;
+    --sky:#4fa9de; --skyD:#2b7cad;
+    --plum:#a374de; --plumD:#6f43a8;
+  }
+
+  html,body { height:100%; overflow:hidden; background:var(--bark); }
+  body { font-family:-apple-system,"Segoe UI Rounded","Segoe UI",system-ui,sans-serif; font-weight:800;
+         touch-action:none; user-select:none; color:var(--cream); }
+
+  /* ---------- ossature : bandeaux pleins, scène au milieu ---------- */
+  #ui { position:fixed; inset:0; display:flex; flex-direction:column; }
+  #stage { position:relative; flex:1 1 auto; min-height:0; overflow:hidden; background:#54a52e; }
+  #app { position:absolute; inset:0; }
   canvas { display:block; }
-  #fx { position:fixed; inset:0; pointer-events:none; overflow:hidden; z-index:5; }
-  .float { position:absolute; display:flex; align-items:center; gap:5px; color:#fff; font-size:19px;
-           font-weight:900; text-shadow:0 2px 0 rgba(0,0,0,.4); white-space:nowrap;
-           transform:translate(-50%,-50%); will-change:transform,opacity; }
-  .float .c { width:22px; height:22px; border-radius:50%;
-              background:radial-gradient(circle at 34% 30%, #ffd764, #e39b1c); border:2px solid #b8790f; }
-  .hud { position:fixed; z-index:10; }
-  #top { top:calc(env(safe-area-inset-top) + 12px); left:12px; right:12px; display:flex; gap:7px; }
-  .pill { background:rgba(14,20,14,.78); color:#fff; border-radius:14px; padding:8px 11px;
-          display:flex; align-items:center; gap:7px; font-size:14px; box-shadow:0 3px 0 rgba(0,0,0,.3); }
-  #stack { top:calc(env(safe-area-inset-top) + 58px); left:12px; right:12px;
-           display:flex; flex-direction:column; gap:6px; pointer-events:none; }
-  #steps { display:flex; gap:4px; }
-  .st { flex:1; background:rgba(14,20,14,.6); color:#fff; border-radius:9px; padding:6px 3px;
-        font-size:10px; font-weight:800; text-align:center; opacity:.42; }
-  .st.on { background:#efb833; color:#2a2213; opacity:1; }
-  .st b { display:block; font-size:12px; }
-  #mid { display:flex; gap:6px; flex-wrap:wrap; }
-  .btn { background:rgba(14,20,14,.82); color:#fff; border:none; border-radius:13px; padding:9px 12px;
-         font-size:12.5px; font-weight:800; font-family:inherit; box-shadow:0 4px 0 rgba(0,0,0,.3);
-         pointer-events:auto; }
-  .btn:active { transform:translateY(3px); box-shadow:0 1px 0 rgba(0,0,0,.3); }
-  .btn.on { background:#efb833; color:#2a2213; }
-  #now { position:fixed; z-index:10; left:12px; right:12px; bottom:calc(env(safe-area-inset-bottom) + 198px);
-         color:#fff; font-size:12px; text-align:center; text-shadow:0 2px 3px rgba(0,0,0,.5); }
 
-  /* manette */
-  #stick { position:fixed; z-index:12; left:50%; margin-left:-79px;
-           bottom:calc(env(safe-area-inset-bottom) + 22px); width:158px; height:158px;
-           border-radius:50%; background:rgba(14,20,14,.42);
-           border:3px solid rgba(255,255,255,.28); touch-action:none; }
-  #knob { position:absolute; left:50%; top:50%; width:66px; height:66px; margin:-33px 0 0 -33px;
-          border-radius:50%; background:#efb833; border:3px solid rgba(0,0,0,.35);
-          box-shadow:0 4px 0 rgba(0,0,0,.3); }
-  body.kb #stick { display:none; }
+  #top, #bot { flex:0 0 auto; position:relative; z-index:2;
+               background:linear-gradient(180deg, var(--barkL), var(--bark)); }
+  #top { padding:calc(env(safe-area-inset-top) + 8px) 10px 9px;
+         box-shadow:0 5px 0 rgba(0,0,0,.28), 0 14px 22px rgba(0,0,0,.3); }
+  #top::after, #bot::before { content:''; position:absolute; left:0; right:0; height:4px;
+         background:repeating-linear-gradient(90deg, var(--barkE) 0 14px, #5d7b3d 14px 28px); }
+  #top::after { bottom:0; }
+  #bot::before { top:0; }
+  #bot { padding:10px 10px calc(env(safe-area-inset-bottom) + 8px);
+         box-shadow:0 -5px 0 rgba(0,0,0,.28), 0 -14px 22px rgba(0,0,0,.3);
+         display:flex; flex-direction:column; gap:8px; }
 
-  /* bandeau contrat */
-  #contract { background:rgba(14,20,14,.78); color:#fff; border-radius:13px; padding:7px 11px;
-              font-size:12px; box-shadow:0 3px 0 rgba(0,0,0,.3); display:none; }
+  /* ---------- pastilles d'info ---------- */
+  .chips { display:flex; gap:7px; }
+  .chip { flex:1 1 0; min-width:0; display:flex; align-items:center; gap:6px;
+          background:var(--cream); color:var(--ink); border-radius:999px;
+          padding:5px 10px 5px 5px; box-shadow:0 3px 0 rgba(0,0,0,.34); }
+  .chip .tok { flex:0 0 auto; width:26px; height:26px; border-radius:50%; display:grid; place-items:center;
+               font-size:15px; background:var(--goldD); box-shadow:inset 0 -2px 0 rgba(0,0,0,.22); }
+  .chip b { font-size:14px; font-weight:900; letter-spacing:-.3px; overflow:hidden;
+            text-overflow:ellipsis; white-space:nowrap; }
+  .chip em { font-style:normal; font-size:11px; opacity:.62; margin-left:-3px; }
+  .chip.c-wheat .tok { background:#e2a92c; }
+  .chip.c-sky   .tok { background:var(--skyD); }
+  .chip.c-lvl   .tok { background:var(--plumD); }
+  .chip.pop { animation:pop .34s cubic-bezier(.2,1.5,.4,1); }
+  @keyframes pop { 0%{transform:scale(1)} 40%{transform:scale(1.16)} 100%{transform:scale(1)} }
+
+  /* ---------- suivi du cycle ---------- */
+  #steps { display:flex; align-items:flex-start; margin-top:8px; }
+  .step { flex:1 1 0; display:flex; flex-direction:column; align-items:center; gap:3px;
+          position:relative; opacity:.5; }
+  .step::before { content:''; position:absolute; top:15px; left:-50%; width:100%; height:5px;
+                  background:rgba(0,0,0,.3); border-radius:3px; z-index:0; }
+  .step:first-child::before { display:none; }
+  .step.done::before, .step.on::before { background:var(--gold); }
+  .step i { position:relative; z-index:1; width:31px; height:31px; border-radius:50%;
+            display:grid; place-items:center; font-size:15px; font-style:normal;
+            background:var(--bark); border:3px solid rgba(0,0,0,.3); }
+  .step span { font-size:9px; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; }
+  .step.done { opacity:.92; }
+  .step.done i { background:var(--grassD); border-color:var(--grass); }
+  .step.on { opacity:1; }
+  .step.on i { background:var(--gold); border-color:#fff0bd; color:var(--ink);
+               transform:scale(1.16); animation:beat 1.5s ease-in-out infinite; }
+  .step.on span { color:var(--gold); }
+  @keyframes beat { 0%,100%{transform:scale(1.16)} 50%{transform:scale(1.28)} }
+
+  /* ---------- contrat ---------- */
+  #contract { display:none; margin-top:9px; background:rgba(0,0,0,.3); border-radius:13px;
+              padding:7px 11px 8px; font-size:11.5px; }
   #contract.on { display:block; }
-  .btn.icon { font-size:15px; padding:8px 11px; }
-  #contract .bar { height:6px; border-radius:4px; background:rgba(255,255,255,.16); margin-top:5px; }
-  #contract .bar i { display:block; height:100%; border-radius:4px; background:#efb833; width:0; }
+  #contract .hd { display:flex; align-items:center; gap:6px; }
+  #contract .hd b { color:var(--gold); }
+  #contract .hd .sp { flex:1; }
+  #contract .bar { height:8px; border-radius:5px; background:rgba(0,0,0,.42); margin-top:5px;
+                   overflow:hidden; box-shadow:inset 0 2px 0 rgba(0,0,0,.25); }
+  #contract .bar i { display:block; height:100%; border-radius:5px; width:0;
+                     background:linear-gradient(180deg,#ffe07a,var(--gold));
+                     transition:width .3s ease-out; }
 
-  /* messages fugaces */
-  #toast { position:fixed; z-index:20; left:50%; transform:translateX(-50%);
-           bottom:calc(env(safe-area-inset-bottom) + 196px);
-           display:flex; flex-direction:column; align-items:center; gap:6px; pointer-events:none; }
-  #toast div { background:rgba(14,20,14,.86); color:#fff; border-radius:12px; padding:8px 14px;
-               font-size:13px; box-shadow:0 3px 0 rgba(0,0,0,.3); animation:tin .3s ease-out; }
-  #toast div.bad { background:rgba(150,32,20,.9); }
-  #toast div.good { background:rgba(28,110,44,.92); }
-  @keyframes tin { from { opacity:0; transform:translateY(10px); } }
+  /* ---------- bandeau bas ---------- */
+  #jobrow { display:flex; align-items:center; gap:9px; }
+  #job { flex:1 1 auto; min-width:0; font-size:11.5px; line-height:1.25; opacity:.9; }
+  #job b { color:var(--gold); }
+  #gauge { flex:0 0 132px; height:26px; border-radius:999px; background:rgba(0,0,0,.4);
+           box-shadow:inset 0 2px 0 rgba(0,0,0,.3); position:relative; overflow:hidden; }
+  #gauge i { position:absolute; inset:2px auto 2px 2px; width:0; border-radius:999px;
+             background:linear-gradient(180deg,#8fe36a,var(--grassD)); transition:width .2s linear; }
+  #gauge.full i { background:linear-gradient(180deg,#ffb36a,var(--rustD)); }
+  #gauge.full { animation:beat2 .8s ease-in-out infinite; }
+  @keyframes beat2 { 0%,100%{transform:scale(1)} 50%{transform:scale(1.045)} }
+  #gauge span { position:absolute; inset:0; display:grid; place-items:center; font-size:11px;
+                font-weight:900; text-shadow:0 1px 2px rgba(0,0,0,.6); }
 
-  /* panneau (boutique / cultures / aide / pause) */
-  #ovl { position:fixed; inset:0; z-index:30; background:rgba(8,14,8,.72); display:none;
-         align-items:center; justify-content:center; padding:16px; }
+  #acts { display:flex; flex-direction:column; gap:7px; }
+  .actrow { display:flex; gap:6px; }
+
+  /* ---------- boutons épais ---------- */
+  .btn { flex:1 1 0; min-width:0; background:var(--cream); color:var(--ink); border:none;
+         border-radius:14px; padding:7px 5px 8px; font-family:inherit; font-weight:900;
+         font-size:11.5px; line-height:1.15; box-shadow:0 4px 0 var(--creamD), 0 6px 8px rgba(0,0,0,.28);
+         display:flex; flex-direction:column; align-items:center; gap:2px; transition:transform .06s; }
+  .btn i { font-style:normal; font-size:16px; line-height:1; }
+  .btn:active { transform:translateY(3px); box-shadow:0 1px 0 var(--creamD); }
+  .btn.on { background:linear-gradient(180deg,#ffdd77,var(--gold)); box-shadow:0 4px 0 var(--goldD), 0 6px 8px rgba(0,0,0,.28); }
+  .btn.dark { background:var(--barkL); color:var(--cream); box-shadow:0 4px 0 rgba(0,0,0,.42); }
+  .btn.wide { flex:2 1 0; }
+
+  /* ---------- effets volants ---------- */
+  #fx { position:fixed; inset:0; pointer-events:none; overflow:hidden; z-index:6; }
+  .float { position:absolute; display:flex; align-items:center; gap:6px; color:#fff; font-size:21px;
+           font-weight:900; text-shadow:0 3px 0 rgba(0,0,0,.45); white-space:nowrap;
+           transform:translate(-50%,-50%); will-change:transform,opacity; }
+  .float .c { width:24px; height:24px; border-radius:50%;
+              background:radial-gradient(circle at 34% 30%, #ffe38a, #e39b1c); border:2px solid #a86c07; }
+  .fly { position:absolute; width:19px; height:19px; border-radius:50%; margin:-9px 0 0 -9px;
+         background:radial-gradient(circle at 34% 30%, #ffe38a, #e39b1c); border:2px solid #a86c07;
+         box-shadow:0 2px 5px rgba(0,0,0,.35); will-change:transform,opacity; }
+  .conf { position:absolute; width:9px; height:14px; border-radius:2px; will-change:transform,opacity; }
+
+  /* ---------- messages ---------- */
+  #toast { position:fixed; z-index:20; left:50%; transform:translateX(-50%); top:23%;
+           display:flex; flex-direction:column; align-items:center; gap:7px; pointer-events:none; }
+  #toast div { background:var(--cream); color:var(--ink); border-radius:14px; padding:9px 16px;
+               font-size:13px; font-weight:900; box-shadow:0 5px 0 rgba(0,0,0,.3);
+               animation:tin .34s cubic-bezier(.2,1.4,.4,1); }
+  #toast div.bad  { background:var(--rust); color:#fff; box-shadow:0 5px 0 var(--rustD); }
+  #toast div.good { background:var(--grass); color:#fff; box-shadow:0 5px 0 var(--grassD); }
+  @keyframes tin { from { opacity:0; transform:translateY(14px) scale(.9); } }
+
+  /* ---------- manette ---------- */
+  #pad { display:flex; justify-content:center; }
+  body.kb #pad { display:none; }
+  #stick { position:relative; width:116px; height:116px; border-radius:50%;
+           background:radial-gradient(circle at 50% 38%, rgba(0,0,0,.28), rgba(0,0,0,.46));
+           border:4px solid rgba(255,255,255,.22); touch-action:none;
+           box-shadow:inset 0 4px 10px rgba(0,0,0,.4); }
+  #knob { position:absolute; left:50%; top:50%; width:56px; height:56px; margin:-28px 0 0 -28px;
+          border-radius:50%; background:linear-gradient(180deg,#ffdd77,var(--gold));
+          border:3px solid rgba(0,0,0,.32); box-shadow:0 4px 0 var(--goldD); }
+
+  /* ---------- fenêtres ---------- */
+  #ovl { position:fixed; inset:0; z-index:30; background:rgba(12,20,10,.68); display:none;
+         align-items:center; justify-content:center; padding:16px; backdrop-filter:blur(2px); }
   #ovl.on { display:flex; }
-  #sheet { width:100%; max-width:440px; max-height:86vh; display:flex; flex-direction:column;
-           background:#1a2118; border:3px solid rgba(255,255,255,.12); border-radius:20px;
-           box-shadow:0 10px 0 rgba(0,0,0,.35); overflow:hidden; }
-  #sheetHead { display:flex; align-items:center; gap:10px; padding:13px 14px 10px;
-               color:#fff; font-size:17px; }
+  #sheet { width:100%; max-width:430px; max-height:88vh; display:flex; flex-direction:column;
+           background:var(--cream); color:var(--ink); border:4px solid #fff; border-radius:26px;
+           box-shadow:0 12px 0 rgba(0,0,0,.32), 0 24px 44px rgba(0,0,0,.42); overflow:hidden;
+           animation:sheetIn .3s cubic-bezier(.2,1.35,.4,1); }
+  @keyframes sheetIn { from { opacity:0; transform:scale(.86) translateY(18px); } }
+  #sheetHead { position:relative; display:flex; align-items:center; gap:10px; padding:13px 16px 12px;
+               background:linear-gradient(180deg,#ffdd77,var(--gold)); color:var(--ink);
+               font-size:19px; font-weight:900; box-shadow:0 3px 0 rgba(0,0,0,.14); }
   #sheetHead .sp { flex:1; }
-  #tabs { display:flex; gap:6px; padding:0 14px 10px; }
-  #tabs .btn { flex:1; padding:8px 6px; font-size:12px; }
-  #body { overflow-y:auto; padding:0 14px 16px; -webkit-overflow-scrolling:touch; }
-  .card { background:rgba(255,255,255,.06); border-radius:14px; padding:11px 12px; margin-bottom:8px;
-          display:flex; align-items:center; gap:11px; color:#fff; }
-  .card .ic { font-size:26px; width:34px; text-align:center; }
+  #sheetX { flex:0 0 auto; width:34px; height:34px; border-radius:50%; border:none; font-size:16px;
+            font-family:inherit; font-weight:900; background:var(--rust); color:#fff;
+            box-shadow:0 3px 0 var(--rustD); display:grid; place-items:center; }
+  #sheetX:active { transform:translateY(2px); box-shadow:0 1px 0 var(--rustD); }
+  #tabs { display:flex; gap:6px; padding:11px 14px 4px; }
+  #tabs .tab { flex:1 1 0; border:none; border-radius:13px; padding:9px 4px; font-family:inherit;
+               font-weight:900; font-size:11.5px; background:var(--creamD); color:var(--inkSoft);
+               box-shadow:0 3px 0 rgba(0,0,0,.14); }
+  #tabs .tab.on { background:var(--ink); color:var(--cream); box-shadow:0 3px 0 rgba(0,0,0,.3); }
+  #body { overflow-y:auto; padding:10px 14px 18px; -webkit-overflow-scrolling:touch; }
+
+  .card { background:#fff; border-radius:18px; padding:11px; margin-bottom:9px;
+          display:flex; align-items:center; gap:11px; box-shadow:0 3px 0 rgba(0,0,0,.12); }
+  .card .ic { flex:0 0 auto; width:46px; height:46px; border-radius:14px; display:grid; place-items:center;
+              font-size:24px; background:var(--creamD); box-shadow:inset 0 -3px 0 rgba(0,0,0,.1); }
   .card .tx { flex:1; min-width:0; }
-  .card .tx b { display:block; font-size:14px; }
-  .card .tx span { display:block; font-size:11.5px; opacity:.72; font-weight:700; margin-top:2px; }
-  .card .lv { display:flex; gap:3px; margin-top:5px; }
-  .card .lv i { width:15px; height:6px; border-radius:3px; background:rgba(255,255,255,.2); }
-  .card .lv i.f { background:#efb833; }
-  .card.sel { background:rgba(239,184,51,.2); box-shadow:inset 0 0 0 2px #efb833; }
-  .buy { background:#2f8f3d; color:#fff; border:none; border-radius:11px; padding:9px 11px;
-         font-size:12px; font-weight:800; font-family:inherit; box-shadow:0 3px 0 rgba(0,0,0,.35);
-         white-space:nowrap; }
-  .buy:disabled { background:#3a423a; color:rgba(255,255,255,.42); box-shadow:none; }
-  .buy.max { background:#3a423a; color:rgba(255,255,255,.5); box-shadow:none; }
-  .note { color:rgba(255,255,255,.66); font-size:12px; line-height:1.55; font-weight:700; margin:2px 0 10px; }
-  .keys { display:grid; grid-template-columns:auto 1fr; gap:5px 11px; color:#fff;
-          font-size:12.5px; align-items:center; }
-  .keys kbd { background:rgba(255,255,255,.12); border-radius:7px; padding:4px 7px;
-              font-family:inherit; font-size:11.5px; white-space:nowrap; text-align:center; }
-  .stats { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:10px; }
-  .stats div { background:rgba(255,255,255,.06); border-radius:12px; padding:9px 11px; color:#fff; }
-  .stats b { display:block; font-size:17px; }
-  .stats span { font-size:11px; opacity:.7; }
+  .card .tx b { display:block; font-size:14.5px; }
+  .card .tx span { display:block; font-size:11px; color:var(--inkSoft); margin-top:2px; line-height:1.35; }
+  .card .lv { display:flex; gap:3px; margin-top:6px; }
+  .card .lv i { width:16px; height:7px; border-radius:4px; background:var(--creamD); }
+  .card .lv i.f { background:var(--gold); box-shadow:inset 0 -1px 0 rgba(0,0,0,.15); }
+  .card.sel { background:linear-gradient(180deg,#fff8e2,#ffeeba); box-shadow:0 0 0 3px var(--gold), 0 3px 0 rgba(0,0,0,.12); }
+  .card.sel .ic { background:var(--gold); }
+
+  .buy { flex:0 0 auto; border:none; border-radius:13px; padding:10px 12px; font-family:inherit;
+         font-weight:900; font-size:12px; white-space:nowrap; color:#fff;
+         background:linear-gradient(180deg,#6bd06d,var(--grass)); box-shadow:0 4px 0 var(--grassD); }
+  .buy:active { transform:translateY(3px); box-shadow:0 1px 0 var(--grassD); }
+  .buy:disabled { background:var(--creamD); color:#b3a184; box-shadow:0 4px 0 #ddcaa4; }
+  .buy.max { background:var(--creamD); color:var(--inkSoft); box-shadow:0 4px 0 #ddcaa4; }
+  .buy.gold { background:linear-gradient(180deg,#ffdd77,var(--gold)); color:var(--ink); box-shadow:0 4px 0 var(--goldD); }
+
+  .note { color:var(--inkSoft); font-size:12px; line-height:1.55; font-weight:700; margin:2px 2px 11px; }
+  .note b { color:var(--ink); }
+  .keys { display:grid; grid-template-columns:auto 1fr; gap:7px 11px; align-items:center;
+          font-size:12.5px; background:#fff; border-radius:18px; padding:13px;
+          box-shadow:0 3px 0 rgba(0,0,0,.12); }
+  .keys kbd { background:var(--ink); color:var(--cream); border-radius:8px; padding:5px 8px;
+              font-family:inherit; font-size:11px; white-space:nowrap; text-align:center;
+              box-shadow:0 2px 0 rgba(0,0,0,.35); }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:11px; }
+  .stats div { background:#fff; border-radius:16px; padding:10px 12px; box-shadow:0 3px 0 rgba(0,0,0,.12); }
+  .stats b { display:block; font-size:18px; }
+  .stats span { font-size:11px; color:var(--inkSoft); }
+
+  /* passage de niveau */
+  #sheet.party { border-color:var(--gold); }
+  .party-head { background:linear-gradient(180deg,var(--plum),var(--plumD)) !important; color:#fff !important; }
+  .prize { text-align:center; background:#fff; border-radius:20px; padding:20px 14px;
+           box-shadow:0 3px 0 rgba(0,0,0,.12); margin-bottom:11px; }
+  .prize .big { display:flex; align-items:center; justify-content:center; gap:11px;
+                font-size:40px; font-weight:900; letter-spacing:-1px; }
+  .prize .big .c { width:44px; height:44px; border-radius:50%;
+                   background:radial-gradient(circle at 34% 30%, #ffe38a, #e39b1c); border:3px solid #a86c07; }
+  .prize p { color:var(--inkSoft); font-size:12.5px; margin-top:7px; }
+  .full-btn { width:100%; padding:14px; font-size:15px; border-radius:16px; }
 </style>
 </head>
 <body>
-<div id="app"></div>
+<div id="ui">
+  <header id="top">
+    <div class="chips">
+      <div class="chip c-gold" id="chipCoins"><span class="tok">🪙</span><b id="coins">0</b></div>
+      <div class="chip c-wheat"><span class="tok">🌾</span><b id="stock">0</b><em>t</em></div>
+      <div class="chip c-sky"><span class="tok" id="wIcon">☀️</span><b id="clock">08:00</b></div>
+      <div class="chip c-lvl" id="chipLvl"><span class="tok">⭐</span><b id="lvl">1</b></div>
+    </div>
+    <div id="steps"></div>
+    <div id="contract"></div>
+  </header>
+
+  <div id="stage"><div id="app"></div></div>
+
+  <footer id="bot">
+    <div id="jobrow">
+      <div id="job">—</div>
+      <div id="gauge"><i></i><span id="gval">0 %</span></div>
+    </div>
+    <div id="acts"></div>
+    <div id="pad"><div id="stick"><div id="knob"></div></div></div>
+  </footer>
+</div>
+
 <div id="fx"></div>
-
-<div id="top" class="hud">
-  <div class="pill">🪙 <span id="coins">0</span></div>
-  <div class="pill">🌾 <span id="stock">0</span> t</div>
-  <div class="pill">🚜 <span id="hop">0</span>%</div>
-  <div class="pill" id="sky">☀️ <span id="clock">08:00</span></div>
-</div>
-<div id="stack" class="hud">
-  <div id="steps"></div>
-  <div id="mid"></div>
-  <div id="contract"></div>
-</div>
-<div id="now">—</div>
 <div id="toast"></div>
-
-<div id="stick"><div id="knob"></div></div>
 
 <div id="ovl">
   <div id="sheet">
     <div id="sheetHead"><span id="sheetTitle">Boutique</span><span class="sp"></span>
-      <button class="btn" id="sheetX">✕</button></div>
+      <button id="sheetX">✕</button></div>
     <div id="tabs"></div>
     <div id="body"></div>
   </div>
 </div>
-
 
 <script src="vendor/three.min.js"></script>
 <script>
@@ -157,11 +280,14 @@ const C = {
 };
 
 const app = document.getElementById('app'), fx = document.getElementById('fx');
+const stageEl = document.getElementById('stage');
+let SW = 1, SH = 1, SX = 0, SY = 0;      // rectangle de l'aire de jeu, en pixels écran
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#54a52e');
 
 // ---------- caméra : même angle qu'avant, mais elle suit l'engin (le terrain ne tient plus à l'écran)
-const PITCH = 56*Math.PI/180, VIEW = 56;   // cadrage large : on voit une vraie portion de parcelle
+const PITCH = 56*Math.PI/180;
+let VIEW = 34;      // hauteur de monde visible : ajustée pour garder ~13 px par mètre
 const camera = new THREE.OrthographicCamera(-1,1,1,-1,1,400);
 const camOff = new THREE.Vector3(0, 150*Math.sin(PITCH), 150*Math.cos(PITCH));
 const camLook = new THREE.Vector3(0,1,0);   // point visé, quasi fixe
@@ -170,11 +296,17 @@ renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 app.appendChild(renderer.domElement);
 function resize(){
-  const a = innerWidth/innerHeight;
+  const r = stageEl.getBoundingClientRect();
+  SW = Math.max(1, Math.round(r.width)); SH = Math.max(1, Math.round(r.height));
+  SX = r.left; SY = r.top;
+  VIEW = Math.max(22, Math.min(42, SH/13));
+  const a = SW/SH;
   camera.left=-VIEW*a/2; camera.right=VIEW*a/2; camera.top=VIEW/2; camera.bottom=-VIEW/2;
-  camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight);
+  camera.updateProjectionMatrix(); renderer.setSize(SW, SH);
 }
 resize(); addEventListener('resize', resize);
+// les bandeaux changent de hauteur (contrat affiché, manette masquée) : on suit la scène
+if (window.ResizeObserver) new ResizeObserver(resize).observe(stageEl);
 
 const hemi = new THREE.HemisphereLight('#ffffff','#4e8a34',.88);   // lumière plate comme la réf
 scene.add(hemi);
@@ -465,7 +597,7 @@ function build(kind){
     rbox(2.1,.2,.36, C.dark, 0,3.92,1.42, g, .06);          // barre d'éclairage sur le toit
     for(let i=0;i<5;i++) rbox(.3,.2,.12, C.lamp, -.8+i*.4,3.92,1.6, g, .04);
     lamps(2.2,3.5,1.78,g);
-    cyl(.24,.24,4.2,8, C.metal, -2,3.3,-1.2, g).rotation.z = Math.PI/2.6;
+    cyl(.24,.24,4.2,8, C.metal, 2,3.3,-1.2, g).rotation.z = -Math.PI/2.6;   // du côté où la benne se range
     rbox(6,.7,1.3, C.metal, 0,1,3.1, g, .14);
     rbox(6,.34,.5, C.dark, 0,.6,3.6, g, .08);
     const r = reel(5.7,.72,5, 0,1.8,3.4, g, C.gold);
@@ -506,7 +638,12 @@ function cellIndex(x,z){
   if (ix<0||jz<0||ix>=NS||jz>=NS) return -1;
   return jz*NS+ix;
 }
-function setCell(i,s2){ if (i<0 || cell[i]===s2) return false; cell[i] = s2; return true; }
+const cellN = [NS*NS, 0, 0, 0];               // combien de cellules dans chaque état
+function setCell(i,s2){
+  if (i<0 || cell[i]===s2) return false;
+  cellN[cell[i]]--; cellN[s2]++; cell[i] = s2; return true;
+}
+function fillCells(s2){ cell.fill(s2); for(let k=0;k<4;k++) cellN[k] = k===s2 ? NS*NS : 0; }
 
 (function ground(){
   const c = document.createElement('canvas'); c.width=c.height=256;
@@ -936,19 +1073,60 @@ const TRACKS = (function(){
 
 // ---------- effets ----------
 const proj = new THREE.Vector3();
+// coordonnées écran d'un point du monde, dans le repère de la fenêtre
+function toScreen(x,y,z){
+  proj.set(x,y,z).project(camera);
+  const m = 34;                       // un gain né hors cadre reste au bord de l'aire de jeu
+  return { x:Math.max(SX+m, Math.min(SX+SW-m, SX + (proj.x*.5+.5)*SW)),
+           y:Math.max(SY+m, Math.min(SY+SH-m, SY + (-proj.y*.5+.5)*SH)) };
+}
 function floatCoin(x,z,val){
-  proj.set(x,1.6,z).project(camera);
+  const s = toScreen(x,1.6,z);
   const el = document.createElement('div'); el.className = 'float';
   el.innerHTML = '<span class="c"></span>'+val;
-  el.style.cssText += `left:${(proj.x*.5+.5)*innerWidth}px;top:${(-proj.y*.5+.5)*innerHeight}px;opacity:0`;
+  el.style.cssText += `left:${s.x}px;top:${s.y}px;opacity:0`;
   fx.appendChild(el);
   requestAnimationFrame(() => {
     el.style.transition = 'transform .95s cubic-bezier(.2,.7,.3,1), opacity .95s ease-out';
     el.style.opacity = '1';
-    el.style.transform = `translate(calc(-50% + ${(Math.random()-.5)*40}px), calc(-50% - 70px))`;
+    el.style.transform = `translate(calc(-50% + ${(Math.random()-.5)*40}px), calc(-50% - 78px)) scale(1.12)`;
     setTimeout(()=>{ el.style.opacity='0'; }, 520);
   });
   setTimeout(()=>el.remove(), 1500);
+}
+// une pièce qui part du silo et file jusqu'au compteur : le geste qui rend l'encaissement lisible
+const chipCoins = document.getElementById('chipCoins');
+function flyCoin(x,z,delay){
+  const from = toScreen(x,1.4,z);
+  const el = document.createElement('div'); el.className = 'fly';
+  el.style.cssText += `left:${from.x}px;top:${from.y}px;opacity:0`;
+  fx.appendChild(el);
+  const r = chipCoins.getBoundingClientRect();
+  const dx = r.left + 22 - from.x, dy = r.top + r.height/2 - from.y;
+  setTimeout(() => {
+    el.style.opacity = '1';
+    el.style.transition = 'transform .62s cubic-bezier(.5,-0.35,.6,1), opacity .62s ease-in';
+    el.style.transform = `translate(${dx}px, ${dy}px) scale(.55)`;
+    setTimeout(() => { el.remove(); popChip(chipCoins); }, 600);
+  }, delay||0);
+}
+function popChip(el){ el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+function confetti(n){
+  const cols = ['#ffc93c','#4cb44e','#e2593f','#4fa9de','#a374de','#fff5e0'];
+  for(let i=0;i<n;i++){
+    const el = document.createElement('div'); el.className = 'conf';
+    const x = innerWidth*(.2+Math.random()*.6), y = innerHeight*.32;
+    el.style.cssText = `left:${x}px;top:${y}px;background:${cols[i%cols.length]};` +
+                       `transform:rotate(${Math.random()*360}deg)`;
+    fx.appendChild(el);
+    requestAnimationFrame(() => {
+      el.style.transition = 'transform 1.5s cubic-bezier(.25,.7,.5,1), opacity 1.5s ease-in';
+      el.style.transform = `translate(${(Math.random()-.5)*380}px, ${220+Math.random()*300}px) ` +
+                           `rotate(${Math.random()*900-450}deg)`;
+      el.style.opacity = '0';
+    });
+    setTimeout(()=>el.remove(), 1700);
+  }
 }
 const dustGeo = new THREE.SphereGeometry(.3,6,5), dust = [];
 for(let i=0;i<26;i++){
@@ -970,6 +1148,22 @@ function popSpray(x,y,z,ax,az){
   d.vx = ax*.6 + (Math.random()-.5)*.5;
   d.vz = az*.6 + (Math.random()-.5)*.5;
   d.vy = -.4 - Math.random()*.4;
+}
+const grainGeo = new THREE.SphereGeometry(.11,5,4), grains = [];
+for(let i=0;i<44;i++){
+  const m = new THREE.Mesh(grainGeo, new THREE.MeshLambertMaterial({color:'#f0c74a'}));
+  m.visible = false; scene.add(m); grains.push({m,t:0,vx:0,vy:0,vz:0});
+}
+// le grain part de la vis et retombe dans la benne : c'est là que la moisson se voit
+function popGrain(x,y,z,tx,tz){
+  const d = grains.find(d=>!d.m.visible); if(!d) return;
+  const T = .55;
+  d.m.visible = true; d.t = 0;
+  d.m.position.set(x,y,z);
+  d.m.scale.setScalar(.7+Math.random()*.7);
+  d.vx = (tx-x)/T + (Math.random()-.5)*.6;
+  d.vz = (tz-z)/T + (Math.random()-.5)*.6;
+  d.vy = (1.2-y)/T + 4.6*T/2;
 }
 function popDust(x,z){
   const d = dust.find(d=>!d.m.visible); if(!d) return;
@@ -1125,26 +1319,29 @@ function applyTool(v, fn){
 
 // ---------- cycle ----------
 const STAGES = [
-  { k:'prep',    n:'Préparer',  d:'Déchaumeuse — travail du sol' },
-  { k:'sow',     n:'Semer',     d:'Semoir — mise en terre' },
-  { k:'fert',    n:'Engrais',   d:'Pulvérisateur — rampes déployées' },
-  { k:'grow',    n:'Pousse',    d:'Le blé mûrit' },
-  { k:'harvest', n:'Moisson',   d:'Moissonneuse — le tracteur vient au transfert' }
+  { k:'prep',    n:'Préparer', ic:'🚜', d:'Déchaumeuse — travail du sol' },
+  { k:'sow',     n:'Semer',    ic:'🌱', d:'Semoir — mise en terre' },
+  { k:'fert',    n:'Engrais',  ic:'💧', d:'Pulvérisateur — rampes déployées' },
+  { k:'grow',    n:'Pousse',   ic:'🌿', d:'La culture mûrit' },
+  { k:'harvest', n:'Moisson',  ic:'🌾', d:'Moissonneuse — la benne vient au transfert' }
 ];
 let stage = 0, worker = null, hauler = null, haulState = '', coins = 0, stock = 0;
 const CAP0 = 130, TRCAP0 = 300;
 let CAP = CAP0, TRCAP = TRCAP0;
-const elNow = document.getElementById('now');
+const elNow = document.getElementById('job');
 
 function refreshNow(){
   const s = STAGES[stage];
-  elNow.textContent = crop().emo + ' ' + crop().n + ' — ' + s.n + ' — ' + s.d;
+  elNow.innerHTML = '<b>' + crop().emo + ' ' + crop().n + ' · ' + s.n + '</b><br>' + s.d;
 }
 function startStage(skipSeed){
   const s = STAGES[stage];
   if (stage === 0) SWATH.reset();   // nouveau cycle : la parcelle repart du sol nu
   if (s.k === 'sow' && !skipSeed) paySeed();   // la semence se règle au moment de la mettre en terre
-  document.querySelectorAll('#steps .st').forEach((e,i) => e.classList.toggle('on', i===stage));
+  document.querySelectorAll('#steps .step').forEach((e,i) => {
+    e.classList.toggle('on', i === stage);
+    e.classList.toggle('done', i < stage);
+  });
   refreshNow();
   if (s.k === 'grow'){ worker = null; return; }
   worker = vehicle(s.k);
@@ -1236,6 +1433,14 @@ function sfx(k){
 ['pointerdown','keydown','touchstart'].forEach(ev =>
   addEventListener(ev, () => SND.boot(), { passive:true }));
 
+// grands nombres : 57 600 ne tient pas dans une pastille, 57,6 k oui
+function fmt(n){
+  n = Math.floor(n);
+  if (n < 10000) return n.toLocaleString('fr-FR');
+  if (n < 1000000) return (n/1000).toFixed(n < 100000 ? 1 : 0).replace('.', ',') + ' k';
+  return (n/1000000).toFixed(1).replace('.', ',') + ' M';
+}
+
 // ---------- messages fugaces ----------
 const toastEl = document.getElementById('toast');
 function toast(msg, cls){
@@ -1286,16 +1491,17 @@ function drawContract(){
   const c = CROPS.find(x => x.id === contract.crop);
   const f = Math.min(1, contract.got/contract.qty);
   elContract.classList.add('on');
-  elContract.innerHTML = '📋 Contrat — livrer <b>' + contract.qty + ' t</b> de ' + c.emo + ' ' + c.n +
-    ' · récompense <b>' + contract.reward + '</b> 🪙<div class="bar"><i style="width:' +
-    (f*100).toFixed(1) + '%"></i></div>';
+  elContract.innerHTML =
+    '<div class="hd">📋 <span>' + c.emo + ' <b>' + Math.floor(contract.got) + '</b> / ' +
+    contract.qty + ' t</span><span class="sp"></span><span>🪙 <b>' + fmt(contract.reward) + '</b></span></div>' +
+    '<div class="bar"><i style="width:' + (f*100).toFixed(1) + '%"></i></div>';
 }
 function contractDeliver(cropId, t){
   if (!contract || contract.crop !== cropId) return;
   contract.got += t;
   if (contract.got >= contract.qty){
     coins += contract.reward;
-    toast('Contrat rempli : +' + contract.reward + ' 🪙', 'good');
+    toast('Contrat rempli : +' + fmt(contract.reward) + ' 🪙', 'good');
     sfx('cash');
     contract = null; drawContract(); save();
     setTimeout(newContract, 1400);
@@ -1411,7 +1617,7 @@ function paintParcel(layer){
 function primeField(st){
   SWATH.reset();
   const state = [0,1,2,3,3][st], g0 = [0,0,.05,.34,1][st], layer = [-1,0,1,2,2][st];
-  cell.fill(state);
+  fillCells(state);
   if (layer >= 0) paintParcel(layer);
   for(let k=0;k<plants.length;k++) plants[k].g = g0;
   redrawPlants();
@@ -1427,7 +1633,13 @@ function openPanel(tab){
   panelTab = tab || panelTab; paused = true;
   ovl.classList.add('on'); drawPanel();
 }
-function closePanel(){ paused = false; ovl.classList.remove('on'); save(); }
+function closePanel(){
+  if (panelTab === 'level' && prize > 0){       // refermer vaut encaisser : le bonus n'est jamais perdu
+    coins += prize; prize = 0; popChip(chipCoins); sfx('coin');
+  }
+  if (panelTab === 'level') panelTab = 'shop';
+  paused = false; ovl.classList.remove('on'); save();
+}
 document.getElementById('sheetX').onclick = closePanel;
 ovl.addEventListener('pointerdown', e => { if (e.target === ovl) closePanel(); });
 
@@ -1439,21 +1651,26 @@ function canChangeCrop(){
 }
 function statsHTML(){
   return '<div class="stats">' +
-    '<div><b>' + Math.floor(coins) + ' 🪙</b><span>trésorerie</span></div>' +
-    '<div><b>Niveau ' + level() + '</b><span>' + Math.floor(totalT) + ' t livrées</span></div>' +
+    '<div><b>' + fmt(coins) + ' 🪙</b><span>trésorerie</span></div>' +
+    '<div><b>Niveau ' + level() + '</b><span>' + fmt(totalT) + ' t livrées</span></div>' +
     '<div><b>Jour ' + day + '</b><span>' + WEATHER[wKey].emo + ' ' + WEATHER[wKey].n + '</span></div>' +
     '<div><b>' + harvests + '</b><span>récoltes bouclées</span></div></div>';
 }
 function drawPanel(){
+  if (panelTab === 'level') return drawLevel(lvlShown);
   elTabs.innerHTML = '';
+  elTabs.style.display = '';
+  document.getElementById('sheet').classList.remove('party');
+  document.getElementById('sheetHead').classList.remove('party-head');
   TABS.forEach(([id,n]) => {
     const b = document.createElement('button');
-    b.className = 'btn' + (id === panelTab ? ' on' : ''); b.textContent = n;
+    b.className = 'tab' + (id === panelTab ? ' on' : ''); b.textContent = n;
     b.onclick = () => { panelTab = id; drawPanel(); };
     elTabs.appendChild(b);
   });
   elTitle.textContent = panelTab === 'shop' ? 'Boutique' : panelTab === 'crop' ? 'Cultures' : 'Aide';
   elBody.innerHTML = '';
+  elBody.scrollTop = 0;
   if (panelTab === 'shop') drawShop();
   else if (panelTab === 'crop') drawCrops();
   else drawHelp();
@@ -1476,7 +1693,7 @@ function drawShop(){
     const c = card(u.emo, u.n, u.d, bars);
     const b = document.createElement('button');
     b.className = 'buy' + (maxed ? ' max' : '');
-    b.textContent = maxed ? 'max' : cost + ' 🪙';
+    b.textContent = maxed ? 'max' : fmt(cost) + ' 🪙';
     b.disabled = maxed || coins < cost;
     b.onclick = () => {
       if (coins < cost || maxed){ sfx('deny'); return; }
@@ -1486,8 +1703,7 @@ function drawShop(){
     c.appendChild(b); elBody.appendChild(c);
   });
   const r = document.createElement('div');
-  r.className = 'note';
-  r.innerHTML = '<button class="btn" id="wipe">↺ Nouvelle partie</button>';
+  r.innerHTML = '<button class="buy max full-btn" id="wipe">↺ Nouvelle partie</button>';
   elBody.appendChild(r);
   document.getElementById('wipe').onclick = () => {
     if (confirm('Effacer la sauvegarde et repartir de zéro ?')) wipe();
@@ -1500,13 +1716,14 @@ function drawCrops(){
     : 'La parcelle est déjà en culture — tu pourras changer au prochain déchaumage.') + '</div>');
   CROPS.forEach((c,i) => {
     const have = owned[c.id];
-    const sub = c.d + ' · ' + c.price + ' 🪙/t' + (c.seed ? ' · semence ' + c.seed + ' 🪙' : ' · semence offerte');
+    const sub = c.d + ' · ' + c.price + ' 🪙/t' +
+                (c.seed ? ' · semence ' + fmt(c.seed) + ' 🪙' : ' · semence offerte');
     const el = card(c.emo, c.n, sub);
     if (i === cropI) el.classList.add('sel');
     const b = document.createElement('button');
     b.className = 'buy';
     if (!have){
-      b.textContent = c.unlock + ' 🪙';
+      b.textContent = fmt(c.unlock) + ' 🪙';
       b.disabled = coins < c.unlock;
       b.onclick = () => {
         if (coins < c.unlock){ sfx('deny'); return; }
@@ -1526,6 +1743,29 @@ function drawCrops(){
     }
     el.appendChild(b); elBody.appendChild(el);
   });
+}
+let lvlShown = 1, prize = 0;
+function levelUp(n){
+  prize = n*750;
+  panelTab = 'level'; paused = true;
+  ovl.classList.add('on'); drawLevel(n);
+  confetti(40); sfx('cash');
+}
+function drawLevel(n){
+  document.getElementById('sheet').classList.add('party');
+  document.getElementById('sheetHead').classList.add('party-head');
+  elTitle.textContent = 'Niveau ' + n + ' !';
+  elTabs.innerHTML = ''; elTabs.style.display = 'none';
+  elBody.innerHTML =
+    '<div class="prize"><div class="big"><span class="c"></span>' + fmt(prize) + '</div>' +
+    '<p>' + fmt(totalT) + ' tonnes livrées depuis le début. Le domaine grandit.</p></div>';
+  const b = document.createElement('button');
+  b.className = 'buy gold full-btn'; b.textContent = 'Encaisser';
+  b.onclick = () => {
+    coins += prize; prize = 0; popChip(chipCoins); sfx('coin');
+    panelTab = 'shop'; closePanel(); save();
+  };
+  elBody.appendChild(b);
 }
 function drawHelp(){
   elBody.insertAdjacentHTML('beforeend',
@@ -1554,7 +1794,7 @@ function drawHelp(){
 let jx = 0, jy = 0, jmag = 0, manual = false, btnAuto = null;   // une seule manette : angle = cap, amplitude = vitesse
 (function(){
   const stick = document.getElementById('stick'), knob = document.getElementById('knob');
-  const R = 50; let id = null;
+  const R = 42; let id = null;
   function set(e){
     const r = stick.getBoundingClientRect();
     let dx = e.clientX - (r.left+r.width/2), dy = e.clientY - (r.top+r.height/2);
@@ -1588,39 +1828,36 @@ function setAuto(){
 const stepsEl = document.getElementById('steps');
 STAGES.forEach((s,i) => {
   const e = document.createElement('div');
-  e.className = 'st'; e.innerHTML = '<b>'+(i+1)+'</b>'+s.n;
+  e.className = 'step';
+  e.innerHTML = '<i>' + s.ic + '</i><span>' + s.n + '</span>';
   stepsEl.appendChild(e);
 });
-const mid = document.getElementById('mid');
-[['Sol',0],['Semis',1],['Engrais',2],['Moisson',4]].forEach(([n,i]) => {
+const acts = document.getElementById('acts');
+function actRow(){ const d = document.createElement('div'); d.className = 'actrow'; acts.appendChild(d); return d; }
+function mkBtn(row, ico, label, fn, cls){
   const b = document.createElement('button');
-  b.className = 'btn'; b.textContent = n; b.onclick = () => switchTo(i);
-  mid.appendChild(b);
-});
-btnAuto = document.createElement('button');
-btnAuto.className = 'btn on'; btnAuto.textContent = 'Auto';
-btnAuto.onclick = () => manual ? setAuto() : setManual();
-mid.appendChild(btnAuto);
+  b.className = 'btn' + (cls ? ' ' + cls : '');
+  b.innerHTML = '<i>' + ico + '</i>' + label;
+  b.onclick = fn; row.appendChild(b); return b;
+}
+const rowJobs = actRow();
+[['🚜','Sol',0],['🌱','Semis',1],['💧','Engrais',2],['🌾','Moisson',4]]
+  .forEach(([ic,n,i]) => mkBtn(rowJobs, ic, n, () => switchTo(i)));
+const rowTools = actRow();
+btnAuto = mkBtn(rowTools, '🤖', 'Auto', () => manual ? setAuto() : setManual());
+btnAuto.classList.add('on');
 let SPEED = 1;
-const spdBtns = [];
-[['×1',1],['×3',3],['×6',6]].forEach(([n,v]) => {
-  const b = document.createElement('button');
-  b.className = 'btn'; b.textContent = n; b.dataset.v = v;
-  b.onclick = () => setSpeed(v);
-  mid.appendChild(b); spdBtns.push(b);
-});
+const btnSpeed = mkBtn(rowTools, '⏩', '×1', () => cycleSpeed());
 function setSpeed(v){
   SPEED = v;
-  spdBtns.forEach(b => b.classList.toggle('on', +b.dataset.v === v));
+  btnSpeed.innerHTML = '<i>⏩</i>×' + v;
+  btnSpeed.classList.toggle('on', v > 1);
 }
 function cycleSpeed(){ setSpeed(SPEED === 1 ? 3 : SPEED === 3 ? 6 : 1); }
 setSpeed(1);
-[['🛒','shop'],['🌱','crop'],['⌨️','help']].forEach(([n,t]) => {
-  const b = document.createElement('button');
-  b.className = 'btn icon'; b.textContent = n;
-  b.onclick = () => openPanel(t);
-  mid.appendChild(b);
-});
+mkBtn(rowTools, '🛒', 'Boutique', () => openPanel('shop'));
+mkBtn(rowTools, '🌿', 'Cultures', () => openPanel('crop'));
+mkBtn(rowTools, '❔', 'Aide',     () => openPanel('help'));
 
 // ---------- clavier : le jeu se joue aussi sans écran tactile ----------
 const keys = Object.create(null);
@@ -1668,9 +1905,10 @@ const clock = new THREE.Clock();
 let jbx=0,jbvx=0,jbz=0,jbvz=0;
 const JK=40, JD=3.1;
 const elCoins=document.getElementById('coins'), elStock=document.getElementById('stock'),
-      elHop=document.getElementById('hop'), elClock=document.getElementById('clock'),
-      elSky=document.getElementById('sky');
-let saveT = 0;
+      elClock=document.getElementById('clock'), elWIcon=document.getElementById('wIcon'),
+      elLvl=document.getElementById('lvl'), elGauge=document.getElementById('gauge'),
+      elGVal=document.getElementById('gval'), chipLvl=document.getElementById('chipLvl');
+let saveT = 0, lastCoins = -1, lastLvl = 0;
 (function boot(){
   const had = restore();
   applyCrop();
@@ -1824,6 +2062,14 @@ let saveT = 0;
       driveTo(hauler, side, dt, hauler.pos.distanceTo(side) < 3.4);
       const give = Math.min(combine.hop, 55*dt, TRCAP-hauler.hop);
       combine.hop -= give; hauler.hop += give;
+      if (give > 0){
+        const ch = combine.heading;
+        for(let i=0;i<2;i++)
+          popGrain(combine.pos.x + Math.cos(ch)*2.9 - Math.sin(ch)*1.2, 3.5,
+                   combine.pos.z - Math.sin(ch)*2.9 - Math.cos(ch)*1.2,
+                   hauler.pos.x - Math.sin(hauler.heading)*3.3,
+                   hauler.pos.z - Math.cos(hauler.heading)*3.3);
+      }
       if (Math.random() < .04) popDust(hauler.pos.x, hauler.pos.z-2);
       if (hauler.hop >= TRCAP-.5 || (combine.done && combine.hop <= .5)) haulState = 'toSilo';
     } else if (haulState === 'toSilo'){
@@ -1837,8 +2083,9 @@ let saveT = 0;
         hauler.hop -= give; stock += give; totalT += give; coins += pay;
         hauler.paid += pay;
         contractDeliver(c.id, give);
-        if (hauler.paid > 900){                  // une pièce qui monte par tranche encaissée
-          floatCoin(SILO.x, SILO.z-2, '+'+Math.round(hauler.paid));
+        if (hauler.paid > 700){                  // une tranche encaissée : le gain part vers le compteur
+          floatCoin(SILO.x, SILO.z-2, '+' + fmt(hauler.paid));
+          for(let i=0;i<4;i++) flyCoin(SILO.x, SILO.z-2, i*70);
           hauler.paid = 0; sfx('coin');
         }
       }
@@ -1855,6 +2102,12 @@ let saveT = 0;
     if (left === 0) combine.done = true;
   }
 
+  grains.forEach(d => {
+    if(!d.m.visible) return;
+    d.t += dt; d.vy -= 9.2*dt;
+    d.m.position.x += d.vx*dt; d.m.position.y += d.vy*dt; d.m.position.z += d.vz*dt;
+    if (d.m.position.y < 1.1 || d.t > .8) d.m.visible = false;
+  });
   spray.forEach(d => {
     if(!d.m.visible) return;
     d.t += dt; d.vy -= 7*dt;
@@ -1899,12 +2152,35 @@ let saveT = 0;
   sun.position.set(camLook.x+12, 32, camLook.z+18);
   sun.target.position.copy(camLook); sun.target.updateMatrixWorld();
 
-  elCoins.textContent = Math.floor(coins);
-  elStock.textContent = Math.floor(stock);
-  elHop.textContent = combine ? Math.round(combine.hop/CAP*100) : (hauler ? Math.round(hauler.hop/TRCAP*100) : 0);
+  const shownCoins = Math.floor(coins);
+  if (shownCoins !== lastCoins){
+    if (shownCoins > lastCoins) popChip(chipCoins);
+    lastCoins = shownCoins; elCoins.textContent = fmt(shownCoins);
+  }
+  elStock.textContent = fmt(stock);
+  const lvNow = level();
+  if (lvNow !== lastLvl){
+    elLvl.textContent = lvNow; popChip(chipLvl);
+    if (lvNow > lastLvl && lastLvl > 0){ lvlShown = lvNow; levelUp(lvNow); }
+    lastLvl = lvNow;
+  }
   const hh = Math.floor(dayT*24), mm = Math.floor(dayT*1440 % 60);
   elClock.textContent = (hh<10?'0':'') + hh + ':' + (mm<10?'0':'') + mm;
-  elSky.firstChild.nodeValue = WEATHER[wKey].emo + ' ';
+  elWIcon.textContent = WEATHER[wKey].emo;
+
+  // la jauge suit le chantier en cours : sol travaillé, puis maturité, puis trémie
+  let gf = 0, gl = '';
+  const NC = NS*NS;
+  if (S.k === 'prep'){       gf = (cellN[1]+cellN[2]+cellN[3])/NC; gl = 'Sol ' + Math.round(gf*100) + ' %'; }
+  else if (S.k === 'sow'){   gf = (cellN[2]+cellN[3])/NC;          gl = 'Semis ' + Math.round(gf*100) + ' %'; }
+  else if (S.k === 'fert'){  gf = cellN[3]/NC;                     gl = 'Engrais ' + Math.round(gf*100) + ' %'; }
+  else if (S.k === 'grow'){  gf = sown ? ripe/sown : 0;            gl = 'Maturité ' + Math.round(gf*100) + ' %'; }
+  else {                     gf = combine ? combine.hop/CAP : (hauler ? hauler.hop/TRCAP : 0);
+                             gl = (combine ? 'Trémie ' : 'Benne ') + Math.round(gf*100) + ' %'; }
+  elGauge.firstElementChild.style.width = (gf*100).toFixed(1) + '%';
+  elGVal.textContent = gl;
+  elGauge.classList.toggle('full', gf > .985);
+
   saveT += tick;
   if (saveT > 6){ saveT = 0; save(); }
 
