@@ -388,10 +388,16 @@ scene.background = new THREE.Color('#54a52e');
 
 // ---------- caméra : même angle qu'avant, mais elle suit l'engin (le terrain ne tient plus à l'écran)
 let PITCH = 56*Math.PI/180;   // inclinaison de la caméra, réglable à deux doigts
-let VIEW = 34;      // hauteur de monde visible : ajustée pour garder ~13 px par mètre
-const camera = new THREE.OrthographicCamera(-1,1,1,-1,1,400);
-const camOff = new THREE.Vector3(0, 150*Math.sin(PITCH), 150*Math.cos(PITCH));
-function applyPitch(){ camOff.set(0, 150*Math.sin(PITCH), 150*Math.cos(PITCH)); }
+let VIEW = 34;      // hauteur de monde visible au point visé
+// Caméra en perspective. En projection orthogonale, incliner la caméra ne changeait que
+// l'écrasement du sol : les bâtiments et les engins gardaient la même taille au premier
+// plan comme au fond, et rien ne fuyait. Une ouverture de 34° donne la fuite qu'on attend
+// d'une vue inclinée, sans déformer les bords comme le ferait un grand angle.
+const FOV = 34;
+const camera = new THREE.PerspectiveCamera(FOV, 1, 1, 400);
+let camDist = 150;                      // reculée pour cadrer VIEW mètres au point visé
+const camOff = new THREE.Vector3();
+function applyPitch(){ camOff.set(0, camDist*Math.sin(PITCH), camDist*Math.cos(PITCH)); }
 const camLook = new THREE.Vector3(0,1,0);   // point visé, quasi fixe
 const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
@@ -402,8 +408,13 @@ function applyCamera(){
   const a = SW/SH;
   VIEW = Math.max(26, Math.min(50, SH/10.5));
   VIEW = Math.min(VIEW, 86/a) / zoom;   // écran très large : on ne montre pas toute la ferme d'un coup
-  camera.left=-VIEW*a/2; camera.right=VIEW*a/2; camera.top=VIEW/2; camera.bottom=-VIEW/2;
+  // le recul se déduit du cadrage voulu : au point visé, on voit toujours VIEW mètres
+  camDist = (VIEW/2) / Math.tan(FOV*Math.PI/360);
+  camera.aspect = a;
+  camera.near = Math.max(.5, camDist*.04);
+  camera.far  = camDist + 320;
   camera.updateProjectionMatrix();
+  applyPitch();
 }
 function resize(){
   const r = stageEl.getBoundingClientRect();
@@ -468,7 +479,7 @@ const hemi = new THREE.HemisphereLight('#ffffff','#4e8a34',.88);   // lumière p
 scene.add(hemi);
 const sun = new THREE.DirectionalLight('#fff6de',.5);
 sun.castShadow = true; sun.shadow.mapSize.set(1024,1024);
-Object.assign(sun.shadow.camera,{left:-20,right:20,top:20,bottom:-20,near:1,far:90});
+Object.assign(sun.shadow.camera,{left:-30,right:30,top:30,bottom:-30,near:1,far:110});
 scene.add(sun, sun.target);
 
 // ---------- matériaux ----------
@@ -1719,14 +1730,14 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
     // et se referme en douceur, sans l'à-coup d'un braquage instantané
     const want = Math.max(-rate, Math.min(rate, diff/Math.max(dt,1e-4)));
     if (v.wRate === undefined) v.wRate = 0;
-    v.wRate += (want - v.wRate)*Math.min(1, dt*11);
+    v.wRate += (want - v.wRate)*Math.min(1, dt*8);
     let turn = v.wRate*dt;
     if (Math.abs(turn) > Math.abs(diff)) turn = diff;          // sans jamais dépasser la consigne
     v.heading += turn; v.turnRate = turn/Math.max(dt,1e-4);
     v.steerA += (Math.max(-.6,Math.min(.6,diff*1.4)) - v.steerA)*Math.min(1,dt*10);
   } else {
     v.steerA += (0 - v.steerA)*Math.min(1,dt*6);
-    v.turnRate *= .9; v.wRate = (v.wRate || 0)*.88;
+    v.turnRate *= .9; v.wRate = (v.wRate || 0)*.9;
   }
   v.speed += (wantSpeed - v.speed)*Math.min(1, dt*ACC);   // reprise beaucoup plus vive
   v.pos.x += Math.sin(v.heading)*v.speed*dt;
@@ -1791,11 +1802,14 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
   }
 }
 // valeurs d'usine, puis valeurs courantes modulées par les améliorations et par la météo
-const MAXSPD0 = 7.6, RMIN0 = 1.7;   // vitesse de base ; rayon de braquage mini
+const MAXSPD0 = 7.6, RMIN0 = 2.0;   // vitesse de base ; rayon de braquage mini
 // Le braquage tenait de l'engin de chantier : plafonné à 1,9 rad/s sur un rayon de 2,8 m,
 // il fallait un virage large pour se retourner. On resserre le rayon, on relève le plafond,
 // et on ajoute un pivot minimal pour que l'engin réponde au manche même en roulant doucement.
-const TURNCAP = 5.4, TURNFLOOR = 2.2;
+// Un cran plus rond encore : plafond et pivot de base abaissés, rayon mini élargi, et la
+// vitesse angulaire met un peu plus longtemps à s'établir. Le demi-tour reste court, mais
+// l'entrée en courbe ne casse plus la trajectoire.
+const TURNCAP = 4.3, TURNFLOOR = 1.7;
 let MAXSPD = MAXSPD0, RMIN = RMIN0, ACC = 10, GROWK = 1, PRICEK = 1, mudK = 1;
 function driveTo(v, target, dt, stop){
   const want = Math.atan2(target.x-v.pos.x, target.z-v.pos.z);
