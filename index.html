@@ -22,6 +22,11 @@
     --rust:#e2593f; --rustD:#a83422;
     --sky:#4fa9de; --skyD:#2b7cad;
     --plum:#a374de; --plumD:#6f43a8;
+    /* tout le chrome se mesure en hauteur d'écran : sur un petit téléphone,
+       des tailles fixes ne laissaient qu'un tiers de l'écran au jeu */
+    --sd:clamp(25px, 4vh, 31px);        /* diamètre d'une étape */
+    --gap:clamp(5px, 1vh, 8px);
+    --fsm:clamp(9.5px, 1.5vh, 11.5px);  /* petit texte */
   }
 
   html,body { height:100%; overflow:hidden; background:var(--bark); }
@@ -36,26 +41,31 @@
 
   #top, #bot { flex:0 0 auto; position:relative; z-index:2;
                background:linear-gradient(180deg, var(--barkL), var(--bark)); }
-  #top { padding:calc(env(safe-area-inset-top) + 8px) 10px 9px;
+  /* sur grand écran, le contenu des bandeaux reste groupé au centre */
+  #top > *, #bot > * { width:100%; max-width:580px; margin-left:auto; margin-right:auto; }
+  #top { padding:calc(env(safe-area-inset-top) + var(--gap)) 10px var(--gap);
          box-shadow:0 5px 0 rgba(0,0,0,.28), 0 14px 22px rgba(0,0,0,.3); }
   #top::after, #bot::before { content:''; position:absolute; left:0; right:0; height:4px;
          background:repeating-linear-gradient(90deg, var(--barkE) 0 14px, #5d7b3d 14px 28px); }
   #top::after { bottom:0; }
   #bot::before { top:0; }
-  #bot { padding:10px 10px calc(env(safe-area-inset-bottom) + 8px);
+  #bot { padding:var(--gap) 10px calc(env(safe-area-inset-bottom) + var(--gap));
          box-shadow:0 -5px 0 rgba(0,0,0,.28), 0 -14px 22px rgba(0,0,0,.3);
-         display:flex; flex-direction:column; gap:8px; }
+         display:flex; flex-direction:column; gap:var(--gap); }
 
   /* ---------- pastilles d'info ---------- */
-  .chips { display:flex; gap:7px; }
-  .chip { flex:1 1 0; min-width:0; display:flex; align-items:center; gap:6px;
+  /* les pastilles se dimensionnent sur leur contenu : à quatre sur 360 px de large,
+     une largeur égale les tronquait toutes */
+  .chips { display:flex; gap:5px; justify-content:space-between; }
+  .chip { flex:0 1 auto; min-width:0; display:flex; align-items:center; gap:5px;
           background:var(--cream); color:var(--ink); border-radius:999px;
-          padding:5px 10px 5px 5px; box-shadow:0 3px 0 rgba(0,0,0,.34); }
-  .chip .tok { flex:0 0 auto; width:26px; height:26px; border-radius:50%; display:grid; place-items:center;
-               font-size:15px; background:var(--goldD); box-shadow:inset 0 -2px 0 rgba(0,0,0,.22); }
-  .chip b { font-size:14px; font-weight:900; letter-spacing:-.3px; overflow:hidden;
-            text-overflow:ellipsis; white-space:nowrap; }
-  .chip em { font-style:normal; font-size:11px; opacity:.62; margin-left:-3px; }
+          padding:4px 9px 4px 4px; box-shadow:0 3px 0 rgba(0,0,0,.34); }
+  .chip .tok { flex:0 0 auto; width:clamp(20px, min(4vh, 7vw), 30px); aspect-ratio:1; border-radius:50%;
+               display:grid; place-items:center; font-size:clamp(11px, min(2vh, 3.6vw), 15px);
+               background:var(--goldD); box-shadow:inset 0 -2px 0 rgba(0,0,0,.22); }
+  .chip b { font-size:clamp(10.5px, min(1.9vh, 3.5vw), 14px); font-weight:900;
+            letter-spacing:-.3px; white-space:nowrap; }
+  .chip em { font-style:normal; font-size:.78em; opacity:.62; margin-left:-2px; }
   .chip.c-wheat .tok { background:#e2a92c; }
   .chip.c-sky   .tok { background:var(--skyD); }
   .chip.c-lvl   .tok { background:var(--plumD); }
@@ -63,17 +73,18 @@
   @keyframes pop { 0%{transform:scale(1)} 40%{transform:scale(1.16)} 100%{transform:scale(1)} }
 
   /* ---------- suivi du cycle ---------- */
-  #steps { display:flex; align-items:flex-start; margin-top:8px; }
+  #steps { display:flex; align-items:flex-start; margin-top:var(--gap); }
   .step { flex:1 1 0; display:flex; flex-direction:column; align-items:center; gap:3px;
           position:relative; opacity:.5; }
-  .step::before { content:''; position:absolute; top:15px; left:-50%; width:100%; height:5px;
+  .step::before { content:''; position:absolute; top:calc(var(--sd)/2 - 2px); left:-50%; width:100%; height:5px;
                   background:rgba(0,0,0,.3); border-radius:3px; z-index:0; }
   .step:first-child::before { display:none; }
   .step.done::before, .step.on::before { background:var(--gold); }
-  .step i { position:relative; z-index:1; width:31px; height:31px; border-radius:50%;
-            display:grid; place-items:center; font-size:15px; font-style:normal;
+  .step i { position:relative; z-index:1; width:var(--sd); height:var(--sd); border-radius:50%;
+            display:grid; place-items:center; font-size:clamp(12px, 2vh, 15px); font-style:normal;
             background:var(--bark); border:3px solid rgba(0,0,0,.3); }
-  .step span { font-size:9px; text-transform:uppercase; letter-spacing:.3px; white-space:nowrap; }
+  .step span { font-size:clamp(7.5px, 1.25vh, 9px); text-transform:uppercase;
+               letter-spacing:.3px; white-space:nowrap; }
   .step.done { opacity:.92; }
   .step.done i { background:var(--grassD); border-color:var(--grass); }
   .step.on { opacity:1; }
@@ -83,8 +94,8 @@
   @keyframes beat { 0%,100%{transform:scale(1.16)} 50%{transform:scale(1.28)} }
 
   /* ---------- contrat ---------- */
-  #contract { display:none; margin-top:9px; background:rgba(0,0,0,.3); border-radius:13px;
-              padding:7px 11px 8px; font-size:11.5px; }
+  #contract { display:none; margin-top:var(--gap); background:rgba(0,0,0,.3); border-radius:13px;
+              padding:6px 11px 7px; font-size:var(--fsm); }
   #contract.on { display:block; }
   #contract .hd { display:flex; align-items:center; gap:6px; }
   #contract .hd b { color:var(--gold); }
@@ -97,27 +108,31 @@
 
   /* ---------- bandeau bas ---------- */
   #jobrow { display:flex; align-items:center; gap:9px; }
-  #job { flex:1 1 auto; min-width:0; font-size:11.5px; line-height:1.25; opacity:.9; }
+  #job { flex:1 1 auto; min-width:0; font-size:var(--fsm); line-height:1.25; opacity:.9; }
   #job b { color:var(--gold); }
-  #gauge { flex:0 0 132px; height:26px; border-radius:999px; background:rgba(0,0,0,.4);
+  #gauge { flex:0 0 128px; height:clamp(21px, 3.3vh, 26px); border-radius:999px; background:rgba(0,0,0,.4);
            box-shadow:inset 0 2px 0 rgba(0,0,0,.3); position:relative; overflow:hidden; }
   #gauge i { position:absolute; inset:2px auto 2px 2px; width:0; border-radius:999px;
              background:linear-gradient(180deg,#8fe36a,var(--grassD)); transition:width .2s linear; }
   #gauge.full i { background:linear-gradient(180deg,#ffb36a,var(--rustD)); }
   #gauge.full { animation:beat2 .8s ease-in-out infinite; }
   @keyframes beat2 { 0%,100%{transform:scale(1)} 50%{transform:scale(1.045)} }
-  #gauge span { position:absolute; inset:0; display:grid; place-items:center; font-size:11px;
+  #gauge span { position:absolute; inset:0; display:grid; place-items:center; font-size:clamp(9.5px, 1.5vh, 11px);
                 font-weight:900; text-shadow:0 1px 2px rgba(0,0,0,.6); }
 
-  #acts { display:flex; flex-direction:column; gap:7px; }
+  #acts { display:flex; flex-direction:column; gap:6px; }
   .actrow { display:flex; gap:6px; }
 
   /* ---------- boutons épais ---------- */
   .btn { flex:1 1 0; min-width:0; background:var(--cream); color:var(--ink); border:none;
-         border-radius:14px; padding:7px 5px 8px; font-family:inherit; font-weight:900;
-         font-size:11.5px; line-height:1.15; box-shadow:0 4px 0 var(--creamD), 0 6px 8px rgba(0,0,0,.28);
+         border-radius:14px; padding:clamp(5px,.9vh,7px) 5px clamp(6px,1vh,8px);
+         font-family:inherit; font-weight:900;
+         font-size:var(--fsm); line-height:1.15; box-shadow:0 4px 0 var(--creamD), 0 6px 8px rgba(0,0,0,.28);
          display:flex; flex-direction:column; align-items:center; gap:2px; transition:transform .06s; }
-  .btn i { font-style:normal; font-size:16px; line-height:1; }
+  .btn i { font-style:normal; font-size:clamp(13px, 2.2vh, 16px); line-height:1; }
+  /* écran court : la rangée de réglages passe en icônes seules */
+  @media (max-height: 720px){ .actrow.tools .btn span { display:none; }
+                              .actrow.tools .btn.keep span { display:block; } }
   .btn:active { transform:translateY(3px); box-shadow:0 1px 0 var(--creamD); }
   .btn.on { background:linear-gradient(180deg,#ffdd77,var(--gold)); box-shadow:0 4px 0 var(--goldD), 0 6px 8px rgba(0,0,0,.28); }
   .btn.dark { background:var(--barkL); color:var(--cream); box-shadow:0 4px 0 rgba(0,0,0,.42); }
@@ -148,11 +163,11 @@
   /* ---------- manette ---------- */
   #pad { display:flex; justify-content:center; }
   body.kb #pad { display:none; }
-  #stick { position:relative; width:116px; height:116px; border-radius:50%;
+  #stick { position:relative; width:clamp(82px, 15vh, 116px); aspect-ratio:1; border-radius:50%;
            background:radial-gradient(circle at 50% 38%, rgba(0,0,0,.28), rgba(0,0,0,.46));
            border:4px solid rgba(255,255,255,.22); touch-action:none;
            box-shadow:inset 0 4px 10px rgba(0,0,0,.4); }
-  #knob { position:absolute; left:50%; top:50%; width:56px; height:56px; margin:-28px 0 0 -28px;
+  #knob { position:absolute; left:26%; top:26%; width:48%; height:48%;
           border-radius:50%; background:linear-gradient(180deg,#ffdd77,var(--gold));
           border:3px solid rgba(0,0,0,.32); box-shadow:0 4px 0 var(--goldD); }
 
@@ -299,8 +314,9 @@ function resize(){
   const r = stageEl.getBoundingClientRect();
   SW = Math.max(1, Math.round(r.width)); SH = Math.max(1, Math.round(r.height));
   SX = r.left; SY = r.top;
-  VIEW = Math.max(22, Math.min(42, SH/13));
   const a = SW/SH;
+  VIEW = Math.max(22, Math.min(42, SH/13));
+  VIEW = Math.min(VIEW, 72/a);          // écran très large : on ne montre pas toute la ferme d'un coup
   camera.left=-VIEW*a/2; camera.right=VIEW*a/2; camera.top=VIEW/2; camera.bottom=-VIEW/2;
   camera.updateProjectionMatrix(); renderer.setSize(SW, SH);
 }
@@ -1805,9 +1821,10 @@ function drawHelp(){
 let jx = 0, jy = 0, jmag = 0, manual = false, btnAuto = null;   // une seule manette : angle = cap, amplitude = vitesse
 (function(){
   const stick = document.getElementById('stick'), knob = document.getElementById('knob');
-  const R = 42; let id = null;
+  let id = null;
   function set(e){
     const r = stick.getBoundingClientRect();
+    const R = r.width*.36;                       // la course suit la taille réelle du manche
     let dx = e.clientX - (r.left+r.width/2), dy = e.clientY - (r.top+r.height/2);
     const m = Math.hypot(dx,dy) || 1, k = Math.min(1, m/R);
     jx = dx/m*k; jy = dy/m*k; jmag = k;
@@ -1848,20 +1865,20 @@ function actRow(){ const d = document.createElement('div'); d.className = 'actro
 function mkBtn(row, ico, label, fn, cls){
   const b = document.createElement('button');
   b.className = 'btn' + (cls ? ' ' + cls : '');
-  b.innerHTML = '<i>' + ico + '</i>' + label;
+  b.innerHTML = '<i>' + ico + '</i><span>' + label + '</span>';
   b.onclick = fn; row.appendChild(b); return b;
 }
 const rowJobs = actRow();
 [['🚜','Sol',0],['🌱','Semis',1],['💧','Engrais',2],['🌾','Moisson',4]]
   .forEach(([ic,n,i]) => mkBtn(rowJobs, ic, n, () => switchTo(i)));
-const rowTools = actRow();
+const rowTools = actRow(); rowTools.classList.add('tools');
 btnAuto = mkBtn(rowTools, '🤖', 'Auto', () => manual ? setAuto() : setManual());
 btnAuto.classList.add('on');
 let SPEED = 1;
-const btnSpeed = mkBtn(rowTools, '⏩', '×1', () => cycleSpeed());
+const btnSpeed = mkBtn(rowTools, '⏩', '×1', () => cycleSpeed(), 'keep');
 function setSpeed(v){
   SPEED = v;
-  btnSpeed.innerHTML = '<i>⏩</i>×' + v;
+  btnSpeed.innerHTML = '<i>⏩</i><span>×' + v + '</span>';
   btnSpeed.classList.toggle('on', v > 1);
 }
 function cycleSpeed(){ setSpeed(SPEED === 1 ? 3 : SPEED === 3 ? 6 : 1); }
