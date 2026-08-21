@@ -197,14 +197,10 @@
 
   /* ---------- manette ---------- */
   #pad { display:flex; justify-content:center; }
-  #pathBtn svg{ width:60%; height:60%; grid-area:1/1; }
-  #pathBtn #icoStop{ display:none; }
-  #pathBtn.armed{ background:linear-gradient(180deg,#ecc87a,var(--gold)); color:var(--ink);
-                  box-shadow:0 3px 0 var(--goldD); animation:armPulse 1.4s ease-in-out infinite; }
-  #pathBtn.rolling{ background:linear-gradient(180deg,#d98a72,var(--rust)); color:#fff;
-                    box-shadow:0 3px 0 var(--rustD); animation:none; }
-  #pathBtn.rolling #icoDraw{ display:none; }
-  #pathBtn.rolling #icoStop{ display:block; }
+  #pathBtn svg{ width:52%; height:52%; }
+  #pathBtn{ opacity:.45; }                       /* rien à arrêter : le bouton s'efface */
+  #pathBtn.rolling{ opacity:1; background:linear-gradient(180deg,#d98a72,var(--rust));
+                    color:#fff; box-shadow:0 3px 0 var(--rustD); }
   #btnCam.free{ background:linear-gradient(180deg,#ecc87a,var(--gold)); color:var(--ink);
                 box-shadow:0 3px 0 var(--goldD); }
   #padStick { display:flex; width:100%; justify-content:center; }
@@ -317,12 +313,7 @@
     <div id="padrow">
       <div class="corner">
         <button class="mini" id="btnShop" aria-label="Boutique">🛒</button>
-        <button class="mini" id="pathBtn" aria-label="Tracer un parcours">
-          <svg id="icoDraw" viewBox="0 0 44 44" aria-hidden="true">
-            <path d="M7 30c5-12 10 6 15-6s9 8 15-6" fill="none" stroke="currentColor"
-                  stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="7" cy="30" r="3.6" fill="currentColor"/>
-          </svg>
+        <button class="mini" id="pathBtn" aria-label="Arrêter l'engin">
           <svg id="icoStop" viewBox="0 0 44 44" aria-hidden="true">
             <rect x="13" y="13" width="18" height="18" rx="3" fill="currentColor"/>
           </svg>
@@ -391,18 +382,23 @@ const FOV = 34;
 const camera = new THREE.PerspectiveCamera(FOV, 1, 1, 400);
 let camDist = 150;                      // reculée pour cadrer VIEW mètres au point visé
 const camOff = new THREE.Vector3();
-function applyPitch(){ camOff.set(0, camDist*Math.sin(PITCH), camDist*Math.cos(PITCH)); }
+function applyPitch(){
+  const h = camDist*Math.sin(PITCH), r = camDist*Math.cos(PITCH);
+  camOff.set(Math.sin(YAW)*r, h, Math.cos(YAW)*r);
+}
 const camLook = new THREE.Vector3(0,1,0);   // point visé
 // La carte se manipule au doigt : deux doigts la déplacent, l'écartement la zoome. Elle
 // cesse alors de suivre l'engin — c'est voulu, on va regarder ailleurs — et une pastille
 // permet de revenir dessus.
-let camFree = false;
-function camFollow(){ camFree = false; const b = document.getElementById('btnCam'); if (b) b.classList.remove('free'); }
+// La caméra ne suit plus personne : elle reste où on l'a laissée. Deux doigts la
+// déplacent, l'écartement la zoome, la torsion la fait tourner autour de son point visé.
+let YAW = 0;
+function camFollow(){ const v = pilote(); if (v) camLook.set(v.pos.x, 1, v.pos.z); }
 function camPan(dx, dz){
-  camLook.x = Math.max(X0-40, Math.min(X0+P+40, camLook.x + dx));
-  camLook.z = Math.max(Z0-40, Math.min(Z0+P+50, camLook.z + dz));
-  if (!camFree){ camFree = true; const b = document.getElementById('btnCam'); if (b) b.classList.add('free'); }
+  camLook.x = Math.max(X0-60, Math.min(X0+P+60, camLook.x + dx));
+  camLook.z = Math.max(Z0-60, Math.min(Z0+P+70, camLook.z + dz));
 }
+function setYaw(a){ YAW = a; applyPitch(); }
 const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -453,7 +449,7 @@ if (window.ResizeObserver) new ResizeObserver(resize).observe(stageEl);
 
 // ---------- pincer pour zoomer : la carte reste manipulable au doigt ----------
 const _touches = new Map();
-let _pinchBase = 0, _pinchZoom = 1, _panX = 0, _panY = 0;
+let _pinchBase = 0, _pinchZoom = 1, _panX = 0, _panY = 0, _rotA = 0, _rotCum = 0;
 const pinching = () => _touches.size >= 2;
 (function(){
   const el = stageEl;
@@ -465,13 +461,23 @@ const pinching = () => _touches.size >= 2;
     const it = _touches.values(), a = it.next().value, b = it.next().value;
     const d = Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
     const mx = (a.clientX + b.clientX)/2, my = (a.clientY + b.clientY)/2;
-    if (!_pinchBase){ _pinchBase = d; _pinchZoom = zoom; _panX = mx; _panY = my; }
+    const ang = Math.atan2(b.clientY-a.clientY, b.clientX-a.clientX);
+    if (!_pinchBase){ _pinchBase = d; _pinchZoom = zoom; _panX = mx; _panY = my;
+                      _rotA = ang; _rotCum = 0; }
     else {
       setZoom(_pinchZoom * d/_pinchBase);
-      // le milieu des deux doigts entraîne la carte, comme sur un plan
-      // à l'écran un pixel vaut VIEW/SH mètres, et le sol est incliné de PITCH
+      // torsion : elle ne prend qu'au-delà d'un seuil, sinon un simple glissement
+      // ferait pivoter la vue à chaque fois
+      let da = ang - _rotA;
+      while (da >  Math.PI) da -= 6.28318;
+      while (da < -Math.PI) da += 6.28318;
+      _rotA = ang; _rotCum += da;
+      if (Math.abs(_rotCum) > .10) setYaw(YAW + da);
+      // le milieu des deux doigts entraîne la carte, dans le repère de la caméra
       const k = VIEW/SH;
-      camPan(-(mx-_panX)*k, -(my-_panY)*k/Math.max(.35, Math.sin(PITCH)));
+      const sx = -(mx-_panX)*k, sy = (my-_panY)*k/Math.max(.35, Math.sin(PITCH));
+      const cy2 = Math.cos(YAW), sy2 = Math.sin(YAW);
+      camPan(sx*cy2 - sy*sy2, -sx*sy2 - sy*cy2);
       _panX = mx; _panY = my;
     }
   }, true);
@@ -490,6 +496,56 @@ Object.assign(sun.shadow.camera,{left:-30,right:30,top:30,bottom:-30,near:1,far:
 scene.add(sun, sun.target);
 
 // ---------- matériaux ----------
+// ---------- la touche du feutre ----------
+// Dans le modèle rien n'est en aplat : la couleur est plus dense là où l'outil a repassé,
+// plus claire ailleurs, avec le grain du papier par-dessus. On l'obtient en modulant la
+// couleur diffuse par un bruit doux — deux octaves larges pour les passages, une fine pour
+// le grain — plus des dépôts sombres là où le pigment s'accumule.
+const GOU_FN = `
+  varying vec2 vGouP;
+  float gouH(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453123); }
+  float gouN(vec2 p){
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f*f*(3.0-2.0*f);
+    return mix(mix(gouH(i), gouH(i+vec2(1.0,0.0)), u.x),
+               mix(gouH(i+vec2(0.0,1.0)), gouH(i+vec2(1.0,1.0)), u.x), u.y);
+  }`;
+function chainCompile(m, fn){
+  const prev = m.onBeforeCompile;
+  m.onBeforeCompile = s => { if (prev) prev(s); fn(s); };
+  m.needsUpdate = true;
+  return m;
+}
+// monde : le motif est fixé au terrain, il ne glisse pas quand la caméra bouge.
+// objet : le motif est peint sur la pièce, il la suit — c'est ce qu'il faut pour un engin.
+function gouache(m, force, monde){
+  const a = (force === undefined ? 1 : force).toFixed(3);
+  const src = monde
+    ? `#ifdef USE_INSTANCING
+         vec4 gouW = modelMatrix * instanceMatrix * vec4(transformed, 1.0);
+       #else
+         vec4 gouW = modelMatrix * vec4(transformed, 1.0);
+       #endif
+       vGouP = gouW.xz + gouW.y*vec2(0.63,-0.47);`
+    : `vGouP = position.xz + position.y*vec2(0.71,-0.53);`;
+  return chainCompile(m, sh => {
+    sh.vertexShader = 'varying vec2 vGouP;\n' + sh.vertexShader.replace(
+      '#include <begin_vertex>', '#include <begin_vertex>\n' + src);
+    sh.fragmentShader = GOU_FN + '\n' + sh.fragmentShader.replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+       {
+         vec2 gp = vGouP * 1.15;
+         float gl1 = gouN(gp*0.42), gl2 = gouN(gp*1.35), gl3 = gouN(gp*6.5);
+         float lav = (gl1*0.5 + gl2*0.34 + gl3*0.16) - 0.5;
+         diffuseColor.rgb *= 1.0 + lav * 0.52 * ${a};
+         float dep = smoothstep(0.58, 0.94, gouN(gp*0.72 + 11.3));
+         diffuseColor.rgb *= 1.0 - dep * 0.17 * ${a};
+         float bord = smoothstep(0.72, 0.99, gouN(gp*2.1 + 47.7));
+         diffuseColor.rgb += bord * 0.055 * ${a};
+       }`);
+  });
+}
 const matS = {}, matJ = {}, geoC = {};
 const UJ = { bend:{value:new THREE.Vector3()}, h:{value:4.5} };
 let JELLY = false;
@@ -510,7 +566,8 @@ function mat(c){
   const T = JELLY ? matJ : matS;
   if (T[c]) return T[c];
   const m = new THREE.MeshLambertMaterial({color:c});
-  return T[c] = JELLY ? jelly(m) : m;
+  if (JELLY) jelly(m);
+  return T[c] = gouache(m, 1);      // peinte sur la pièce : le motif suit l'engin
 }
 function rrShape(w,h,r){
   const s = new THREE.Shape(), x=-w/2, y=-h/2;
@@ -923,9 +980,10 @@ function fillCells(s2){ cell.fill(s2); for(let k=0;k<4;k++) cellN[k] = k===s2 ? 
   const t = new THREE.CanvasTexture(c);
   t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(20,20);
   t.center.set(.5,.5); t.rotation = Math.PI/4.2;
-  const g = new THREE.Mesh(new THREE.PlaneGeometry(400,400), new THREE.MeshLambertMaterial({map:t}));
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(400,400),
+                           gouache(new THREE.MeshLambertMaterial({map:t}), .75, true));
   g.rotation.x = -Math.PI/2; g.receiveShadow = true; g.renderOrder = -13; scene.add(g);
-  const y = new THREE.Mesh(new THREE.PlaneGeometry(80,16), new THREE.MeshLambertMaterial({color:'#c3bd97'}));
+  const y = new THREE.Mesh(new THREE.PlaneGeometry(80,16), gouache(new THREE.MeshLambertMaterial({color:'#c3bd97'}), .8, true));
   y.rotation.x = -Math.PI/2; y.position.set(0,.01,YARD+4); y.receiveShadow = true; y.renderOrder = -12; scene.add(y);
 })();
 
@@ -1045,6 +1103,7 @@ function soilTex(){
   geo.computeVertexNormals();
   const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
     map:soilTex(), vertexColors:true, side:THREE.DoubleSide }));
+  gouache(m.material, .8, true);
   m.receiveShadow = true; m.renderOrder = -11; scene.add(m);
 })();
 // mottes : de petits volumes posés sur la terre, plus denses près des bords
@@ -1073,7 +1132,8 @@ function semerMottes(){
 // contour réel qui le découpe, au pixel près, dans le fragment shader.
 function clipToParcel(m){
   const L = X0.toFixed(3), Rr = (X0+P).toFixed(3), B = Z0.toFixed(3), T = (Z0+P).toFixed(3);
-  m.onBeforeCompile = sh => {
+  gouache(m, .8, true);
+  chainCompile(m, sh => {
     sh.vertexShader = 'varying vec3 vWP;\n' + sh.vertexShader.replace(
       '#include <fog_vertex>',
       '#include <fog_vertex>\n  vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
@@ -1089,7 +1149,7 @@ function clipToParcel(m){
       '  float _b = vWP.z - (' + B + ' - ewob(vWP.x, 4.1));\n' +
       '  float _t = (' + T + ' + ewob(vWP.x, 5.7)) - vWP.z;\n' +
       '  if (min(min(_l,_r), min(_b,_t)) <= 0.0) discard;');
-  };
+  });
   return m;
 }
 
@@ -1289,7 +1349,8 @@ function tuftE(head, stemCol){
 const UW = { t:{value:0}, amp:{value:.1}, h:{value:2.1} };
 function windMat(){
   const m = new THREE.MeshLambertMaterial({ vertexColors:true });
-  m.onBeforeCompile = s => {
+  gouache(m, .55, true);
+  chainCompile(m, s => {
     s.uniforms.uTime = UW.t; s.uniforms.uAmp = UW.amp; s.uniforms.uH = UW.h;
     s.vertexShader = 'uniform float uTime;uniform float uAmp;uniform float uH;\n' + s.vertexShader
       .replace('#include <begin_vertex>', `
@@ -1306,7 +1367,7 @@ function windMat(){
         transformed.x += dot(W, ix)/max(dot(ix,ix),1e-4);
         transformed.z += dot(W, iz)/max(dot(iz,iz),1e-4);
       `);
-  };
+  });
   return m;
 }
 const CN = 9, CH = P/CN;                                    // 9×9 tuiles : le GPU n'affiche que celles à l'écran
@@ -1411,7 +1472,7 @@ chunks.forEach(c => {
   c.young = new THREE.InstancedMesh(cropGeo(CROPS[0])._y, windMat(), Math.max(1,c.list.length));
   c.ripe  = new THREE.InstancedMesh(cropGeo(CROPS[0])._r, windMat(), Math.max(1,c.list.length));
   c.straw = new THREE.InstancedMesh(geoStraw,
-    new THREE.MeshLambertMaterial({ vertexColors:true }), Math.max(1,c.list.length));
+    gouache(new THREE.MeshLambertMaterial({ vertexColors:true }), .5, true), Math.max(1,c.list.length));
   c.straw.position.set(c.cx,0,c.cz); c.straw.receiveShadow = true;
   c.straw.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(c.straw);
   [c.young,c.ripe].forEach(m => {
@@ -1555,7 +1616,9 @@ function traceLeft(v){ return v && v.path ? Math.max(0, v.path.length - v.head) 
 function followPath(v, dt){
   const t = v.path[v.head];
   if (!t){ traceClear(v); return; }
-  if (driveTo(v, t, dt) < 2){
+  v.bloque = v.speed < 1.2 ? (v.bloque || 0) + dt : 0;
+  if (v.bloque > 2.5){ v.bloque = 0; v.head++; traceDraw(v); return; }  // coincé : on saute le point
+  if (driveTo(v, t, dt) < 2.6){
     v.head++;
     if (v.head > 80){ v.path.splice(0, v.head); v.head = 0; }   // on ne garde pas le passé
     if (v.head >= v.path.length){ traceClear(v); if (v === pilote()) setPathState('pret'); }
@@ -1909,7 +1972,8 @@ const TURNCAP = 4.3, TURNFLOOR = 1.7;
 const LINEK = .48;                  // jusqu'à +48 % d'allure sur un long passage droit
 let MAXSPD = MAXSPD0, RMIN = RMIN0, ACC = 10, GROWK = 1, PRICEK = 1, mudK = 1;
 function driveTo(v, target, dt, stop){
-  const want = dodge(v, Math.atan2(target.x-v.pos.x, target.z-v.pos.z));
+  const dbut = Math.hypot(target.x-v.pos.x, target.z-v.pos.z);
+  const want = dodge(v, Math.atan2(target.x-v.pos.x, target.z-v.pos.z), dbut);
   let diff = want - v.heading;
   while(diff> Math.PI) diff -= 6.28318;
   while(diff<-Math.PI) diff += 6.28318;
@@ -2043,7 +2107,7 @@ function nextStage(){
   if (fleet[fini.k]) fleet[fini.k].done = true;
   if (suivait){
     const k = STAGES[stage].k;
-    if (KINDS.includes(k)){ driven = k; syncFleet(); drawVeh(); camFollow(); }
+    if (KINDS.includes(k)){ driven = k; syncFleet(); drawVeh(); }
   }
   toast(fini.ic + ' ' + fini.n + ' — terminé !', 'good');
   confetti(stage === 0 ? 34 : 14);
@@ -2474,12 +2538,14 @@ function drawCtrl(){
     '<div class="note">Trois façons de conduire. Le pilote automatique reste disponible dans tous les cas, ' +
     'et le clavier reprend la main dès qu\'on l\'utilise.</div>');
   elBody.insertAdjacentHTML('beforeend',
-    '<div class="note">La carte se manipule à deux doigts : <b>écarter</b> pour zoomer, ' +
-    '<b>glisser</b> pour la déplacer. Elle cesse alors de suivre l\'engin ; la pastille 🎯 le ' +
-    'ramène au centre.<br>Un <b>double-appui</b> sur le champ envoie l\'engin conduit à ' +
-    'l\'endroit touché. Le bouton ✏️ arme le <b>tracé</b> : on dessine autant de traits qu\'on ' +
-    'veut, l\'engin les avale et le trajet s\'efface derrière lui, jusqu\'au bouton stop.<br>' +
-    'Tous les engins restent sur la carte : celui qu\'on quitte continue son travail.</div>');
+    '<div class="note"><b>Un doigt</b> — une <b>tape</b> sur un engin le sélectionne, un ' +
+    'triangle se plante au-dessus. <b>Deux tapes</b> sur le champ y envoient l\'engin ' +
+    'sélectionné. Un <b>balayage</b> lui dessine un parcours, qu\'il suit et qui s\'efface ' +
+    'derrière lui. Le bouton ◼ l\'arrête.<br><b>Deux doigts</b> — <b>écarter</b> pour zoomer, ' +
+    '<b>glisser</b> pour déplacer la carte, <b>tourner</b> pour la faire pivoter. La caméra ne ' +
+    'suit jamais les engins : elle reste où on la laisse, et la pastille 🎯 la ramène sur ' +
+    'l\'engin sélectionné.<br>Tous les engins restent sur la carte : celui qu\'on quitte ' +
+    'continue son travail.</div>');
   // l'inclinaison a quitté le balayage à deux doigts, qui déplace maintenant la carte
   const el = document.createElement('div');
   el.className = 'card';
@@ -2516,12 +2582,12 @@ function drawHelp(){
     '<kbd>Échap</kbd><span>pause / reprendre</span>' +
     '</div>');
   elBody.insertAdjacentHTML('beforeend',
-    '<div class="note" style="margin-top:12px">Au doigt : <b>deux doigts</b> déplacent et zooment la carte — ' +
-    'elle cesse alors de suivre l\'engin, la pastille 🎯 le ramène. Un <b>double-appui</b> sur le champ y ' +
-    'envoie l\'engin conduit. Le bouton ✏️ arme le <b>tracé</b> : on dessine autant de traits qu\'on veut, ' +
-    'l\'engin les suit et le trajet s\'efface derrière lui, jusqu\'au bouton stop. Le <b>manche</b> reste en ' +
-    'bas pour conduire à la main.<br>Tous les engins vivent sur la carte : celui qu\'on quitte garde son ' +
-    'tracé et continue de travailler.</div>');
+    '<div class="note" style="margin-top:12px">Au doigt, trois gestes : une <b>tape</b> sur un engin le ' +
+    'sélectionne, <b>deux tapes</b> sur le champ l\'y envoient, un <b>balayage</b> lui dessine un parcours ' +
+    'qui s\'efface à mesure qu\'il le suit. À <b>deux doigts</b>, le champ appartient à la caméra : écarter ' +
+    'pour zoomer, glisser pour la déplacer, tourner pour la faire pivoter — elle ne suit jamais les engins. ' +
+    'Le <b>manche</b> reste en bas pour conduire à la main.<br>Tous les engins vivent sur la carte : celui ' +
+    'qu\'on quitte garde son tracé et continue de travailler.</div>');
 }
 
 // ---------- manette ----------
@@ -2534,22 +2600,19 @@ let ctrlMode = 'manche';
 // Deux temps seulement : au repos le doigt appartient à la carte, armé il dessine le
 // parcours de l'engin conduit. Tant qu'on est armé on peut tracer autant de traits qu'on
 // veut : ils s'ajoutent au bout du parcours, l'engin les avale au fur et à mesure.
-let pathState = 'pret';                 // 'pret' | 'trace'
+let pathState = 'pret';                 // conservé pour la sonde : 'pret' | 'route'
 function applyCtrl(){ /* un seul poste de commande : le manche, toujours en place */ }
 function drawPathBtn(){
   const b = document.getElementById('pathBtn');
   if (!b) return;
-  const n = traceLeft(pilote());
-  b.classList.toggle('armed', pathState === 'trace' && n < 2);
-  b.classList.toggle('rolling', pathState === 'trace' && n >= 2);
-  b.setAttribute('aria-label', pathState === 'pret' ? 'Tracer un parcours'
-                 : n >= 2 ? 'Arrêter l\'engin · ' + n + ' points' : 'Dessine sur le champ');
+  const v = pilote(), n = traceLeft(v);
+  const roule = n >= 2 || !!(v && v.goto);
+  pathState = roule ? 'route' : 'pret';
+  b.classList.toggle('rolling', roule);
+  b.classList.remove('armed');
+  b.setAttribute('aria-label', roule ? 'Arrêter l\'engin · ' + n + ' points' : 'Arrêter l\'engin');
 }
-function setPathState(st){
-  pathState = st;
-  if (st === 'pret'){ const v = pilote(); if (v){ traceClear(v); v.goto = null; } }
-  drawPathBtn();
-}
+function setPathState(st){ drawPathBtn(); }
 (function(){
   const stick = document.getElementById('stick'), knob = document.getElementById('knob');
   let id = null;
@@ -2569,45 +2632,89 @@ function setPathState(st){
   stick.addEventListener('pointercancel', clear);
 })();
 
-// --- le parcours : un bouton l'arme, on trace autant de traits qu'on veut, il s'arrête au stop
-// --- et hors tracé, un double-appui envoie l'engin conduit à l'endroit désigné
+// --- Le doigt, en trois gestes et rien d'autre :
+//   une tape sur un engin le sélectionne ;
+//   deux tapes sur le champ y envoient l'engin sélectionné ;
+//   un balayage lui dessine un parcours, qu'il suit et qui s'efface derrière lui.
+// Le tracé n'a plus besoin d'être armé : c'est le mouvement du doigt qui le distingue
+// d'une tape. À deux doigts, le champ appartient à la caméra.
 (function(){
   const stage = document.getElementById('stage');
   const btn = document.getElementById('pathBtn');
-  let drawId = null, tapT = 0, tapX = 0, tapY = 0;
-  btn.onclick = () => {
-    if (pathState === 'pret'){ setPathState('trace'); setManual(); }
-    else { const v = pilote(); if (v) v.speed = 0; setPathState('pret'); setManual(); }
+  const SEUIL = 14;                                   // px au-delà desquels c'est un balayage
+  let id = null, x0 = 0, y0 = 0, trace = false, tapT = 0, tapX = 0, tapY = 0;
+  btn.onclick = () => {                               // le bouton ne fait plus qu'arrêter
+    const v = pilote(); if (!v) return;
+    traceClear(v); v.goto = null; v.speed = 0; setManual(); drawPathBtn();
   };
   stage.addEventListener('pointerdown', e => {
     if (paused || pinching()) return;
-    if (pathState !== 'trace') return;
-    const p = screenToWorld(e.clientX, e.clientY); if (!p) return;
-    const v = pilote(); if (!v) return;
-    drawId = e.pointerId;
+    id = e.pointerId; x0 = e.clientX; y0 = e.clientY; trace = false;
     try { stage.setPointerCapture(e.pointerId); } catch(err){}
-    v.goto = null; setManual(); traceAdd(v, p);
   });
   stage.addEventListener('pointermove', e => {
-    if (drawId !== e.pointerId) return;
-    if (pinching()){ drawId = null; return; }         // un deuxième doigt : c'est la carte
-    const p = screenToWorld(e.clientX, e.clientY); if (p) traceAdd(pilote(), p);
+    if (id !== e.pointerId) return;
+    if (pinching()){ id = null; return; }              // un deuxième doigt : c'est la carte
+    if (!trace && Math.hypot(e.clientX-x0, e.clientY-y0) < SEUIL) return;
+    const v = pilote(); if (!v){ id = null; return; }
+    if (!trace){                                       // le balayage commence : on repart à zéro
+      trace = true; traceClear(v); v.goto = null; setManual();
+      const q = screenToWorld(x0, y0); if (q) traceAdd(v, q);
+    }
+    const p = screenToWorld(e.clientX, e.clientY); if (p) traceAdd(v, p);
   });
   stage.addEventListener('pointerup', e => {
-    if (drawId === e.pointerId){ drawId = null; drawPathBtn(); return; }
-    if (paused || pinching() || pathState === 'trace') return;
-    // double-appui : l'engin conduit s'en va tout seul jusqu'au point touché
+    if (id !== e.pointerId) return;
+    id = null;
+    if (trace){ drawPathBtn(); return; }
+    // c'était une tape : sur un engin elle sélectionne, sur le champ elle vise
+    const cible = vehicleAt(e.clientX, e.clientY);
+    if (cible){ tapT = 0; if (cible !== pilote()) selectVeh(cible.kind); return; }
     const now = performance.now();
-    if (now - tapT < 340 && Math.hypot(e.clientX-tapX, e.clientY-tapY) < 28){
+    if (now - tapT < 340 && Math.hypot(e.clientX-tapX, e.clientY-tapY) < 30){
       tapT = 0;
       const p = screenToWorld(e.clientX, e.clientY); if (!p) return;
       const v = pilote(); if (!v) return;
-      traceClear(v); v.goto = p; setManual();
-      pingSol(p.x, p.z);
+      traceClear(v); v.goto = p; setManual(); pingSol(p.x, p.z); drawPathBtn();
     } else { tapT = now; tapX = e.clientX; tapY = e.clientY; }
   });
-  stage.addEventListener('pointercancel', e => { if (drawId === e.pointerId) drawId = null; });
+  stage.addEventListener('pointercancel', e => { if (id === e.pointerId) id = null; });
 })();
+// Repère de sélection : un petit triangle planté au-dessus de l'engin conduit. Il tourne
+// avec la caméra pour rester de face, et bat doucement pour se distinguer du décor.
+const MARK = (function(){
+  // un triangle plat, pointe en bas, toujours face à la caméra : un volume se lirait
+  // comme un losange dès qu'on tourne la vue
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(
+    [0,0,0, -.82,1.2,0, .82,1.2,0], 3));
+  g.computeVertexNormals();
+  const grp = new THREE.Group();
+  const fond = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    color:'#5c4a20', side:THREE.DoubleSide, depthTest:false, depthWrite:false }));
+  fond.scale.setScalar(1.22); fond.position.set(0,-.13,-.01);
+  const face = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    color:'#dfa93c', side:THREE.DoubleSide, depthTest:false, depthWrite:false }));
+  grp.add(fond, face);
+  grp.renderOrder = 7; grp.visible = false; scene.add(grp);
+  return grp;
+})();
+// quel engin se trouve sous le doigt ? on vise les maillages, pas le sol derrière eux
+function vehicleAt(cx, cy){
+  const r = stageEl.getBoundingClientRect();
+  _ndc.set(((cx-r.left)/r.width)*2-1, -((cy-r.top)/r.height)*2+1);
+  _ray.setFromCamera(_ndc, camera);
+  const objs = [];
+  for(const k of KINDS){ const v = fleet[k]; if (v) objs.push(v.h); }
+  const hits = _ray.intersectObjects(objs, true);
+  if (!hits.length) return null;
+  for(const k of KINDS){
+    const v = fleet[k]; if (!v) continue;
+    let o = hits[0].object;
+    while (o){ if (o === v.h) return v; o = o.parent; }
+  }
+  return null;
+}
 // repère posé au sol à l'endroit désigné : sans lui on ne sait pas si l'appui a été pris
 const PING = (function(){
   const g = new THREE.RingGeometry(.7, 1.5, 22); g.rotateX(-Math.PI/2);
@@ -2650,7 +2757,7 @@ STAGES.forEach((s,i) => {
 
 const elVehBtn = document.getElementById('vehBtn'), elCropBtn = document.getElementById('cropBtn');
 (function(){ const b = document.getElementById('btnCam');
-  if (b) b.onclick = () => { const v = pilote(); if (v) camLook.set(v.pos.x, 1, v.pos.z); camFollow(); }; })();
+  if (b) b.onclick = () => camFollow(); })();
 elCropBtn.onclick = () => openPanel('crop');
 document.getElementById('btnShop').onclick = () => openPanel('shop');
 document.getElementById('btnSet').onclick  = () => openPanel('ctrl');
@@ -2707,8 +2814,9 @@ function selectVeh(kind){
   const e = VEH_CYCLE.find(x => x.id === kind);
   if (e && e.st >= 0 && stage !== e.st) switchTo(e.st);
   syncFleet();
-  if (neuf) toast((kind === 'trailer' ? 'Benne attelée' : VEHNOM[kind]) + ' — elle sort du portail');
-  setPathState('pret'); setManual(); camFollow(); sfx('stage'); drawVeh();
+  if (neuf){ toast((kind === 'trailer' ? 'Benne attelée' : VEHNOM[kind]) + ' — elle sort du portail');
+             camFollow(); }        // un engin qui vient de naître, on le montre une fois
+  setManual(); sfx('stage'); drawVeh(); drawPathBtn();
 }
 elVehBtn.onclick = switchVehicle;
 
@@ -2785,15 +2893,20 @@ function unstick(v){
 // grange et s'y usait. On vise donc la tangente de l'obstacle qui bloque — l'écart exact
 // pour le raser — et on garde le même côté tant qu'il gêne, sinon l'engin hésite entre
 // les deux et n'avance plus.
-function dodge(v, want){
+// `portee` = distance du but. Sans elle, un obstacle situé derrière le point visé faisait
+// tourner l'engin autour indéfiniment : il ne pouvait plus jamais atteindre un point posé
+// près d'un bâtiment ou d'un autre engin. On n'évite que ce qui est sur le chemin.
+function dodge(v, want, portee){
   const R = (v.rad || 2.2) + 1.4;
-  const look = Math.max(10, v.speed*1.5);
+  const but = portee === undefined ? 1e9 : portee;
+  const look = Math.min(but, Math.max(10, v.speed*1.5));
   const sn = Math.sin(want), cs = Math.cos(want);
   let bloc = null, proche = 1e9;
   const test = (ox, oz, orad) => {
     const dx = ox - v.pos.x, dz = oz - v.pos.z;
     const along = dx*sn + dz*cs;                          // distance devant
     if (along <= -orad) return;                           // derrière : il ne gêne plus
+    if (along > but + .5) return;                         // au-delà du but : il ne gêne pas
     const side = dx*cs - dz*sn;                           // écart latéral, positif à droite
     const need = R + orad;
     if (Math.abs(side) > need) return;                    // on passe à côté sans le frôler
@@ -2825,6 +2938,8 @@ function driveOne(v, conduit, chantier, dt){
   if (v.path && v.head < v.path.length){ followPath(v, dt); return; }
   if (v.goto){
     // `stop` mettrait la consigne de vitesse à zéro : on roule jusqu'au point, on ne s'y gare pas
+    v.bloque = v.speed < 1.2 ? (v.bloque || 0) + dt : 0;
+    if (v.bloque > 3){ v.bloque = 0; v.goto = null; v.speed = 0; return; }  // inatteignable
     if (driveTo(v, v.goto, dt) < RMIN + 1.2){ v.goto = null; v.speed = 0; }
     return;
   }
@@ -3134,24 +3249,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
 
   // caméra : suit l'engin piloté
   // caméra quasi figée : elle ne bouge que si l'engin sort d'une zone morte centrale
-  const foc = pilote();
-  if (foc && !camFree){
-    const a = SW/SH;
-    const mx = (VIEW*a/2) * .22;                       // marge avant décrochage : on suit tôt,
-    const mz = (VIEW/Math.sin(PITCH)/2) * .22;         // l'engin n'approche jamais du bord
-    const dx = foc.pos.x - camLook.x, dz = foc.pos.z - camLook.z;
-    let tx = camLook.x, tz = camLook.z;
-    if (dx >  mx) tx = foc.pos.x - mx;
-    if (dx < -mx) tx = foc.pos.x + mx;
-    if (dz >  mz) tz = foc.pos.z - mz;
-    if (dz < -mz) tz = foc.pos.z + mz;
-    // recadrage doux, et uniquement sur l'axe qui a décroché
-    camLook.x += (tx - camLook.x) * Math.min(1, raw*3.2);
-    camLook.z += (tz - camLook.z) * Math.min(1, raw*3.2);
-    // large assez pour suivre l'engin dans les fourrières et jusqu'au silo
-    camLook.x = Math.max(X0 - 10, Math.min(X0 + P + 10, camLook.x));
-    camLook.z = Math.max(Z0 - 14, Math.min(YARD + 8, camLook.z));
-  }
+  // la caméra reste où on l'a posée : plus aucun recadrage automatique
   camera.position.copy(camLook).add(camOff);
   camera.lookAt(camLook);
   sun.position.set(camLook.x+12, 32, camLook.z+18);
@@ -3188,6 +3286,11 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   elGauge.classList.toggle('full', gf > .985);
 
   if (pathState === 'trace') drawPathBtn();      // le bouton compte les points qui restent
+  { const v = pilote();                           // le triangle de sélection
+    if (v){ MARK.visible = true;
+            MARK.position.set(v.pos.x, (v.gy||0) + (v.kind==='harvest'?4.9:3.9) + Math.sin(now*2.4)*.2, v.pos.z);
+            MARK.quaternion.copy(camera.quaternion); }
+    else MARK.visible = false; }
   if (PING.m.visible){                            // le repère du double-appui s'efface seul
     PING.t += tick;
     const k = Math.min(1, PING.t/1.1);
@@ -3209,6 +3312,7 @@ window.__FARM_DEBUG = () => ({
   manuel:manual, pause:paused, vitesse:SPEED,
   pilotage:ctrlMode, tracage:pathState, trace:traceLeft(pilote()), zoom:+zoom.toFixed(2),
   obstacles:OBST.length,
+  cape:+(YAW*180/Math.PI).toFixed(1), vise:[+camLook.x.toFixed(1), +camLook.z.toFixed(1)],
   // pénétration la plus profonde de l'engin conduit dans un obstacle : doit rester nulle
   enfonce:(function(){
     const v = pilote(); if (!v) return 0;
