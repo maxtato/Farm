@@ -1532,17 +1532,28 @@ function traceClear(v){
   if (v.trace){ v.trace.geo.setDrawRange(0,0); v.trace.mesh.visible = false; }
 }
 function traceLeft(v){ return v && v.path ? Math.max(0, v.path.length - v.head) : 0; }
+// Le suivi visait le point suivant, à un mètre devant. L'évitement, borné à la distance du
+// but, ne voyait donc rien venir : l'engin entrait dans la grange et forçait dessus. Il vise
+// maintenant un point pris plus loin sur le tracé — assez loin pour anticiper, ce qui lisse
+// aussi la trajectoire — et l'évitement travaille à pleine portée.
 function followPath(v, dt){
-  const t = v.path[v.head];
-  if (!t){ traceClear(v); return; }
-  v.bloque = v.speed < 1.2 ? (v.bloque || 0) + dt : 0;
-  if (v.bloque > 2.5){ v.bloque = 0; v.head++; traceDraw(v); return; }  // coincé : on saute le point
-  if (driveTo(v, t, dt) < 2.6){
-    v.head++;
-    if (v.head > 80){ v.path.splice(0, v.head); v.head = 0; }   // on ne garde pas le passé
-    if (v.head >= v.path.length){ traceClear(v); if (v === pilote()) setPathState('pret'); }
-    else traceDraw(v);
+  let avance = false;
+  while (v.head < v.path.length &&
+         Math.hypot(v.path[v.head].x-v.pos.x, v.path[v.head].z-v.pos.z) < 2.6){ v.head++; avance = true; }
+  if (v.head >= v.path.length){
+    traceClear(v); if (v === pilote()) setPathState('pret');
+    return;
   }
+  if (v.head > 80){ v.path.splice(0, v.head); v.head = 0; avance = true; }
+  if (avance) traceDraw(v);
+  const LOOK = Math.max(5.5, v.speed*.85);
+  let i = v.head;
+  while (i < v.path.length-1 &&
+         Math.hypot(v.path[i].x-v.pos.x, v.path[i].z-v.pos.z) < LOOK) i++;
+  // coincé pour de bon : on abandonne le point courant plutôt que d'insister
+  v.bloque = v.speed < 1.2 ? (v.bloque || 0) + dt : 0;
+  if (v.bloque > 2.5){ v.bloque = 0; v.head++; traceDraw(v); return; }
+  driveTo(v, v.path[i], dt, false, true);
 }
 
 // ---------- effets ----------
@@ -1750,7 +1761,11 @@ function driveManual(v, dt){
   {
     const push = Math.max(0, (jmag - .12)/.88);                // zone morte au centre
     const turning = jmag > .12;
-    const wantH = turning ? Math.atan2(jx, jy) : v.heading;
+    // Le manche est lu à l'écran, pas dans le monde : il faut le tourner du lacet de la
+    // caméra, sinon pousser à droite n'envoie plus l'engin à droite de l'écran dès qu'on
+    // a pivoté la vue. Droite d'écran = (cos, -sin) au sol, haut d'écran = -(sin, cos).
+    const cyw = Math.cos(YAW), snw = Math.sin(YAW);
+    const wantH = turning ? Math.atan2(jx*cyw + jy*snw, -jx*snw + jy*cyw) : v.heading;
     // demi-tour au manche : il lève le pied le temps de pivoter, puis relance
     let d = wantH - v.heading;
     while(d >  Math.PI) d -= 6.28318;
@@ -1890,9 +1905,12 @@ const MAXSPD0 = 7.6, RMIN0 = 2.0;   // vitesse de base ; rayon de braquage mini
 const TURNCAP = 4.3, TURNFLOOR = 1.7;
 const LINEK = .48;                  // jusqu'à +48 % d'allure sur un long passage droit
 let MAXSPD = MAXSPD0, RMIN = RMIN0, ACC = 10, GROWK = 1, PRICEK = 1, mudK = 1;
-function driveTo(v, target, dt, stop){
+function driveTo(v, target, dt, stop, large){
   const dbut = Math.hypot(target.x-v.pos.x, target.z-v.pos.z);
-  const want = dodge(v, Math.atan2(target.x-v.pos.x, target.z-v.pos.z), dbut);
+  // `large` : on regarde aussi au-delà du point visé. Sur un tracé les points se suivent de
+  // près, et se borner à eux revenait à rouler les yeux fermés.
+  const portee = large ? Math.max(dbut, 14) : dbut;
+  const want = dodge(v, Math.atan2(target.x-v.pos.x, target.z-v.pos.z), portee);
   let diff = want - v.heading;
   while(diff> Math.PI) diff -= 6.28318;
   while(diff<-Math.PI) diff += 6.28318;
@@ -2834,15 +2852,19 @@ function readKeys(){
 // Tout est ramené à des disques : le décor y est réduit une fois pour toutes, et un engin
 // vaut son gabarit. On repousse hors du chevauchement plutôt que d'annuler le mouvement :
 // l'engin glisse le long d'un mur au lieu de s'y coller.
+// Repousser hors du chevauchement ne suffisait pas : l'engin restait le nez dans le mur et
+// poussait dessus. On retient donc la direction de la poussée, et on braque du même côté —
+// le mur écarte l'avant au lieu de l'arrêter, et l'engin longe puis contourne.
 function unstick(v){
   const R = v.rad || 2.2;
-  let touche = 0;
+  let px = 0, pz = 0, prof = 0;
   for(let i=0;i<OBST.length;i++){
     const o = OBST[i], dx = v.pos.x-o.x, dz = v.pos.z-o.z;
     const min = R + o.r, d2 = dx*dx + dz*dz;
     if (d2 >= min*min) continue;
     const d = Math.sqrt(d2) || 1e-3, k = (min-d)/d;
-    v.pos.x += dx*k; v.pos.z += dz*k; touche = 1;
+    v.pos.x += dx*k; v.pos.z += dz*k;
+    px += dx*k; pz += dz*k; prof = Math.max(prof, min-d);
   }
   for(let i=0;i<KINDS.length;i++){
     const w = fleet[KINDS[i]];
@@ -2853,9 +2875,16 @@ function unstick(v){
     const d = Math.sqrt(d2) || 1e-3, k = (min-d)/d*.5;   // chacun recule de moitié
     v.pos.x += dx*k; v.pos.z += dz*k;
     w.pos.x -= dx*k; w.pos.z -= dz*k;
-    touche = 1;
+    px += dx*k; pz += dz*k; prof = Math.max(prof, min-d);
   }
-  if (touche){ v.speed *= .4; v.line = 0; }              // on tape : ça freine et l'élan tombe
+  if (!prof) return;
+  // la poussée nous éloigne de l'obstacle : on tourne dans son sens pour le longer
+  const sn = Math.sin(v.heading), cs = Math.cos(v.heading);
+  const cote = px*cs - pz*sn;                            // >0 : l'obstacle est à gauche
+  v.heading += (cote >= 0 ? 1 : -1) * Math.min(.11, prof*.55);
+  v.cote = cote >= 0 ? 1 : -1;                           // l'évitement contournera du même côté
+  v.choc = .9;                                           // mémoire de contact, en secondes
+  v.speed *= .74; v.line = 0;                            // on ralentit sans caler
 }
 // Évitement. Une simple poussée latérale ne suffisait pas : l'engin venait buter sur la
 // grange et s'y usait. On vise donc la tangente de l'obstacle qui bloque — l'écart exact
@@ -2865,9 +2894,11 @@ function unstick(v){
 // tourner l'engin autour indéfiniment : il ne pouvait plus jamais atteindre un point posé
 // près d'un bâtiment ou d'un autre engin. On n'évite que ce qui est sur le chemin.
 function dodge(v, want, portee){
-  const R = (v.rad || 2.2) + 1.4;
+  v.choc = Math.max(0, (v.choc || 0) - .016);            // le souvenir du choc s'estompe
+  const marge = v.choc > 0 ? 2.6 : 1.4;                  // fraîchement touché : on passe plus large
+  const R = (v.rad || 2.2) + marge;
   const but = portee === undefined ? 1e9 : portee;
-  const look = Math.min(but, Math.max(10, v.speed*1.5));
+  const look = Math.min(but, Math.max(12, v.speed*1.8));
   const sn = Math.sin(want), cs = Math.cos(want);
   let bloc = null, proche = 1e9;
   const test = (ox, oz, orad) => {
