@@ -791,18 +791,26 @@ function build(kind){
     const t = tractorBase(g, C.blue);
     const h = new THREE.Group(); h.position.set(0,0,-.9); t.hitch.add(h);   // flèche longue
     rbox(.22,.22,2.4, C.dark, 0,.85,.95, h, .07);
-    rbox(2.6,1.4,4.2, C.cream, 0,1.55,-2.4, h, .22);
+    // Caisse ouverte : quatre ridelles et un fond, pas de couvercle. On voit le grain
+    // monter dedans pendant tout le transfert, au lieu d'un capot qui s'ouvre et masque.
+    const LB = 2.6, HB = 1.42, PB = 4.2, YB = 1.56, EP = .16, ZB = -2.4;
+    rbox(LB, .18, PB, C.cream, 0, .97, ZB, h, .08);                           // fond
+    rbox(LB, HB, EP, C.cream, 0, YB, ZB-PB/2+EP/2, h, .08);                   // ridelle avant
+    rbox(LB, HB, EP, C.cream, 0, YB, ZB+PB/2-EP/2, h, .08);                   // ridelle arrière
+    rbox(EP, HB, PB-EP*2, C.cream, -LB/2+EP/2, YB, ZB, h, .08);               // ridelle gauche
+    rbox(EP, HB, PB-EP*2, C.cream,  LB/2-EP/2, YB, ZB, h, .08);               // ridelle droite
+    const RM = YB+HB/2;                                                       // margelle : quatre
+    rbox(LB+.06, .1, EP+.06, C.redDark, 0, RM, ZB-PB/2+EP/2, h, .04);         // barres sur les
+    rbox(LB+.06, .1, EP+.06, C.redDark, 0, RM, ZB+PB/2-EP/2, h, .04);         // arêtes hautes,
+    rbox(EP+.06, .1, PB+.06, C.redDark, -LB/2+EP/2, RM, ZB, h, .04);          // surtout pas un
+    rbox(EP+.06, .1, PB+.06, C.redDark,  LB/2-EP/2, RM, ZB, h, .04);          // bloc plein
     rbox(2.7,.35,4.3, C.redDark, 0,.8,-2.4, h, .14);
-    const fw = new THREE.Group(); fw.position.set(0,1.1,-2.4); h.add(fw);
-    const fg = new THREE.BoxGeometry(2.3,1.25,3.8); fg.translate(0,.62,0);
+    const fw = new THREE.Group(); fw.position.set(0,1.06,-2.4); h.add(fw);
+    const fg = new THREE.BoxGeometry(LB-EP*2-.04, 1.3, PB-EP*2-.04); fg.translate(0,.65,0);
     fw.add(new THREE.Mesh(fg, mat(C.gold))); fw.scale.y = .02;
-    // couvercle articulé : il ne s'ouvre que sous la goulotte
-    const lid = new THREE.Group(); lid.position.set(-1.32,2.28,-2.4); h.add(lid);
-    rbox(2.64,.14,4.24, C.redDark, 1.32,0,0, lid, .06);
-    rbox(.5,.16,.5, C.metal, 2.4,.06,1.5, lid, .05);
     const w = [ wheel(.7,.5,1.67,.7,-2.6,h), wheel(.7,.5,-1.67,.7,-2.6,h) ];
     d = { wheels:t.wheels.concat(w), steer:t.steer, spinners:[], hitch:t.hitch,
-          fill:fw, bin:fw, lid:lid, tool:null };
+          fill:fw, bin:fw, lid:null, tool:null };
   }
   JELLY = false;
   g.userData = d;
@@ -2910,15 +2918,18 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
       popGrain(_spout.x, _spout.y, _spout.z, _bin.x, _bin.z);
     if (Math.random() < .05) popDust(_bin.x, _bin.z);
   }
-  // la vis reste rangée pendant la coupe ; elle ne sort qu'à trémie pleine, et rentre une fois vidée
+  // La vis reste rangée pendant la coupe. Elle sort à trémie pleine comme avant, mais aussi
+  // dès que la benne s'approche alors qu'il reste du grain — même une trémie à moitié se
+  // vide, il suffit de venir la chercher. Le seuil de sortie est plus court que celui de
+  // rentrée : sans cela la vis battait dès qu'on longeait la benne à la limite.
   if (combine){
     const a = combine.g.userData.auger;
-    const want = (cFull || vidange) ? AUG_OPEN : AUG_FOLD;
-    a.rotation.y += (want - a.rotation.y)*Math.min(1, dt*2.2);
-  }
-  if (hauler && hauler.g.userData.lid){
-    const l = hauler.g.userData.lid;
-    l.rotation.z += ((vidange ? 1.15 : 0) - l.rotation.z)*Math.min(1, dt*3.4);
+    const reste = combine.hop > .5;
+    const place = !!hauler && hauler.hop < TRCAP - .5;
+    const dist = hauler ? combine.pos.distanceTo(hauler.pos) : 1e9;
+    combine.augWant = cFull || vidange ||
+                      (reste && place && dist < (combine.augWant ? 17 : 13));
+    a.rotation.y += ((combine.augWant ? AUG_OPEN : AUG_FOLD) - a.rotation.y)*Math.min(1, dt*2.2);
   }
   if (combine && combine.g.userData.fill) combine.g.userData.fill.scale.y = .02 + combine.hop/CAP*.98;
 
@@ -3071,6 +3082,15 @@ window.__FARM_DEBUG = () => ({
   bx:+(hauler ? hauler.pos.x : 0).toFixed(1), bz:+(hauler ? hauler.pos.z : 0).toFixed(1),
   capMax:Math.round(CAP), trCapMax:Math.round(TRCAP),
   vis:+(worker && worker.g.userData.auger ? worker.g.userData.auger.rotation.y : -1).toFixed(2),
+  // écart goulotte -> benne : c'est lui qui déclenche le transfert, pas la distance des engins
+  ecart:(function(){
+    if (!worker || worker.kind !== 'harvest' || !hauler) return -1;
+    worker.h.updateMatrixWorld(true); hauler.h.updateMatrixWorld(true);
+    const a = new THREE.Vector3(), b = new THREE.Vector3();
+    worker.g.userData.spout.getWorldPosition(a); hauler.g.userData.bin.getWorldPosition(b);
+    return +Math.hypot(a.x-b.x, a.z-b.z).toFixed(2);
+  })(),
+  capBenne:+(hauler ? hauler.heading : 0).toFixed(3),
   grain:grains.reduce((n,d)=>n+(d.m.visible?1:0),0),
   terre:SOIL.live(), graines:SEED.live(), gouttes:spray.reduce((n,d)=>n+(d.m.visible?1:0),0),
   paille:plants.reduce((n,p)=>n+(p.r?1:0),0),
