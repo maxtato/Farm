@@ -1304,41 +1304,43 @@ function tuftRape(flower, stemCol){                         // colza : tiges ram
   return merge(p);
 }
 function tuftCorn(leaf, stemCol, cob){                      // maïs : des cannes hautes, feuilles en hélice
-  // Le maïs ne poussait qu'à une canne par pied, sur la même trame que le blé : bien trop
-  // clairsemé pour la culture reine. Chaque pied porte maintenant trois cannes serrées, ce
-  // qui porte la densité à près de six au mètre carré sans multiplier les objets à
-  // afficher, et les cannes sont plus hautes, l'épi plus gros.
-  const p = [], H = 2.45;
-  const CANNES = [ [0,0,1], [.26,.1,.9], [-.15,-.24,.95] ];   // décalage x, z, échelle
+  // Un vrai champ de maïs, où les cannes se touchent. Six cannes par pied au lieu de trois,
+  // écartées jusqu'à trente centimètres du centre : les pieds voisins étant à soixante-douze
+  // centimètres, les feuilles d'un pied entrent dans celles d'à côté et la terre disparaît
+  // sous le rang. Onze cannes et demie au mètre carré, sans un objet de plus à afficher —
+  // c'est une seule géométrie posée aux mêmes emplacements.
+  const p = [], H = 2.75;
+  const CANNES = [ [0,0,1], [.30,.05,.92], [-.24,.20,.97], [.10,-.30,.88],
+                   [-.30,-.16,.95], [.22,.28,.90] ];          // décalage x, z, échelle
   for(const [dx,dz,sc] of CANNES){
     const h = H*sc, tour = dx*7.3 + dz*4.1;
     const g = new THREE.CylinderGeometry(.05,.08,h,5,1,true); g.translate(0,h/2,0);
     p.push({ g, c:stemCol, m:MX(dx,0,dz) });
-    for(let k=0;k<6;k++){
-      const a = k*1.05 + tour, y = (.3 + k*.27)*sc, s2 = (1 - k*.09)*sc;
-      p.push({ g:new THREE.ConeGeometry(.11,.9,3), c:leaf,
-               m:MX(dx+Math.cos(a)*.19, y, dz+Math.sin(a)*.19, 0, -a, 1.18, s2) });
+    for(let k=0;k<5;k++){
+      const a = k*1.26 + tour, y = (.34 + k*.33)*sc, s2 = (1 - k*.1)*sc;
+      p.push({ g:new THREE.ConeGeometry(.12,1.02,3), c:leaf,
+               m:MX(dx+Math.cos(a)*.2, y, dz+Math.sin(a)*.2, 0, -a, 1.18, s2) });
     }
-    p.push({ g:new THREE.CylinderGeometry(.10,.07,.58,6), c:cob,
-             m:MX(dx+.15, h*.6, dz+.05, 0, tour, -.3) });
-    p.push({ g:new THREE.ConeGeometry(.06,.4,4), c:cob, m:MX(dx,h,dz) });  // la panicule au sommet
+    p.push({ g:new THREE.CylinderGeometry(.12,.085,.70,6), c:cob,
+             m:MX(dx+.16, h*.58, dz+.05, 0, tour, -.3) });
+    p.push({ g:new THREE.ConeGeometry(.07,.46,4), c:cob, m:MX(dx,h,dz) });  // la panicule au sommet
   }
   return merge(p);
 }
 // Avant le labour, la parcelle ne montre plus aucun motif peint : uniquement ce dépôt,
 // les tiges de la récolte précédente qui ont séché sur place.
 function tuftStraw(){
-  // De la menue paille, telle qu'une moissonneuse la hache : des morceaux trois fois plus
-  // courts et trois fois plus fins qu'avant. Pour que le sol reste couvert malgré tout,
-  // ils sont deux fois et demie plus nombreux et gardent la même emprise au sol. Les
-  // sections passent à trois pans : à cette taille les faces ne se distinguent plus, et
-  // c'est ce qui permet d'en poser autant sans alourdir l'affichage.
+  // De la menue paille, telle qu'une moissonneuse la hache. Les morceaux restent bien plus
+  // courts que la botte d'origine, remontés d'un quart pour qu'on les distingue un à un à
+  // la distance de la caméra. Vingt-huit par touffe, sur la même emprise. Les sections sont
+  // à trois pans : à cette taille les faces ne se distinguent plus, et c'est ce qui permet
+  // d'en poser autant sans alourdir l'affichage.
   const p = [], col = '#f7e598', colD = '#cfae52', colP = '#e8d178';
   for(let k=0;k<28;k++){
-    const a = k*1.11 + (k%3)*.42, L = .30 + (k%4)*.093, r = .05 + (k%7)*.068;
-    const g = new THREE.CylinderGeometry(.025,.018,L,3); g.rotateZ(Math.PI/2);
+    const a = k*1.11 + (k%3)*.42, L = .38 + (k%4)*.118, r = .05 + (k%7)*.07;
+    const g = new THREE.CylinderGeometry(.032,.023,L,3); g.rotateZ(Math.PI/2);
     p.push({ g, c: k%3 === 0 ? col : k%3 === 1 ? colD : colP,
-             m: MX(Math.cos(a)*r, .03 + (k%3)*.022, Math.sin(a)*r, 0, a, .04 + (k%2)*.05) });
+             m: MX(Math.cos(a)*r, .036 + (k%3)*.027, Math.sin(a)*r, 0, a, .04 + (k%2)*.05) });
   }
   return merge(p);
 }
@@ -1350,7 +1352,7 @@ const CROPS = [
     price:16, yieldK:.58, grow:.78, scale:1.05, uh:2.0, seed:1500, unlock:6000,
     young:()=>tuftRape('#a9c552','#4f8f36'), ripe:()=>tuftRape('#f2d417','#779c34') },
   { id:'mais', n:'Maïs', emo:'🌽', d:'Long à mûrir, mais c\'est la culture reine.',
-    price:27, yieldK:.50, grow:.58, scale:1.22, uh:3.5, seed:4000, unlock:25000,
+    price:27, yieldK:.50, grow:.58, scale:1.3, uh:3.9, seed:4000, unlock:25000,
     young:()=>tuftCorn('#4f9c33','#478f2e','#4f9c33'), ripe:()=>tuftCorn('#84a53d','#8a9a35','#e8c236') }
 ];
 function cropGeo(c){
@@ -3072,7 +3074,8 @@ window.__FARM_DEBUG = () => ({
   grain:grains.reduce((n,d)=>n+(d.m.visible?1:0),0),
   terre:SOIL.live(), graines:SEED.live(), gouttes:spray.reduce((n,d)=>n+(d.m.visible?1:0),0),
   paille:plants.reduce((n,p)=>n+(p.r?1:0),0),
-  vole:document.querySelectorAll('#fx .fly').length
+  vole:document.querySelectorAll('#fx .fly').length,
+  tri:renderer.info.render.triangles, appels:renderer.info.render.calls
 });
 
 })();
