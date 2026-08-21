@@ -387,7 +387,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color('#54a52e');
 
 // ---------- caméra : même angle qu'avant, mais elle suit l'engin (le terrain ne tient plus à l'écran)
-let PITCH = 56*Math.PI/180;   // inclinaison de la caméra, réglable à deux doigts
+let PITCH = 50*Math.PI/180;   // inclinaison de la caméra, réglable à deux doigts
 let VIEW = 34;      // hauteur de monde visible au point visé
 // Caméra en perspective. En projection orthogonale, incliner la caméra ne changeait que
 // l'écrasement du sol : les bâtiments et les engins gardaient la même taille au premier
@@ -403,7 +403,7 @@ const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 app.appendChild(renderer.domElement);
-let zoom = 1;                           // facteur de rapprochement, piloté à deux doigts
+let zoom = 1.25;                        // facteur de rapprochement, piloté à deux doigts
 function applyCamera(){
   const a = SW/SH;
   VIEW = Math.max(26, Math.min(50, SH/10.5));
@@ -1303,30 +1303,42 @@ function tuftRape(flower, stemCol){                         // colza : tiges ram
   });
   return merge(p);
 }
-function tuftCorn(leaf, stemCol, cob){                      // maïs : une canne haute, feuilles en hélice
-  const p = [], H = 2.0;
-  const g = new THREE.CylinderGeometry(.05,.08,H,5,1,true); g.translate(0,H/2,0);
-  p.push({ g, c:stemCol, m:MX(0,0,0) });
-  for(let k=0;k<6;k++){
-    const a = k*1.05, y = .3 + k*.27, sc = 1 - k*.09;
-    p.push({ g:new THREE.ConeGeometry(.11,.9,3), c:leaf,
-             m:MX(Math.cos(a)*.19, y, Math.sin(a)*.19, 0, -a, 1.18, sc) });
+function tuftCorn(leaf, stemCol, cob){                      // maïs : des cannes hautes, feuilles en hélice
+  // Le maïs ne poussait qu'à une canne par pied, sur la même trame que le blé : bien trop
+  // clairsemé pour la culture reine. Chaque pied porte maintenant trois cannes serrées, ce
+  // qui porte la densité à près de six au mètre carré sans multiplier les objets à
+  // afficher, et les cannes sont plus hautes, l'épi plus gros.
+  const p = [], H = 2.45;
+  const CANNES = [ [0,0,1], [.26,.1,.9], [-.15,-.24,.95] ];   // décalage x, z, échelle
+  for(const [dx,dz,sc] of CANNES){
+    const h = H*sc, tour = dx*7.3 + dz*4.1;
+    const g = new THREE.CylinderGeometry(.05,.08,h,5,1,true); g.translate(0,h/2,0);
+    p.push({ g, c:stemCol, m:MX(dx,0,dz) });
+    for(let k=0;k<6;k++){
+      const a = k*1.05 + tour, y = (.3 + k*.27)*sc, s2 = (1 - k*.09)*sc;
+      p.push({ g:new THREE.ConeGeometry(.11,.9,3), c:leaf,
+               m:MX(dx+Math.cos(a)*.19, y, dz+Math.sin(a)*.19, 0, -a, 1.18, s2) });
+    }
+    p.push({ g:new THREE.CylinderGeometry(.10,.07,.58,6), c:cob,
+             m:MX(dx+.15, h*.6, dz+.05, 0, tour, -.3) });
+    p.push({ g:new THREE.ConeGeometry(.06,.4,4), c:cob, m:MX(dx,h,dz) });  // la panicule au sommet
   }
-  p.push({ g:new THREE.CylinderGeometry(.08,.055,.44,6), c:cob, m:MX(.14,H*.6,.05, 0,0,-.3) });
-  p.push({ g:new THREE.ConeGeometry(.055,.36,4), c:cob, m:MX(0,H,0) });   // la panicule au sommet
   return merge(p);
 }
 // Avant le labour, la parcelle ne montre plus aucun motif peint : uniquement ce dépôt,
 // les tiges de la récolte précédente qui ont séché sur place.
 function tuftStraw(){
-  // Le dépôt laissé par la moisson : des brins deux fois plus longs et plus épais qu'avant,
-  // étalés plus large. À la distance de la caméra les précédents se perdaient dans le sol.
+  // De la menue paille, telle qu'une moissonneuse la hache : des morceaux trois fois plus
+  // courts et trois fois plus fins qu'avant. Pour que le sol reste couvert malgré tout,
+  // ils sont deux fois et demie plus nombreux et gardent la même emprise au sol. Les
+  // sections passent à trois pans : à cette taille les faces ne se distinguent plus, et
+  // c'est ce qui permet d'en poser autant sans alourdir l'affichage.
   const p = [], col = '#f7e598', colD = '#cfae52', colP = '#e8d178';
-  for(let k=0;k<12;k++){
-    const a = k*1.11 + (k%3)*.42, L = .92 + (k%4)*.28, r = .13 + (k%4)*.12;
-    const g = new THREE.CylinderGeometry(.075,.055,L,4); g.rotateZ(Math.PI/2);
+  for(let k=0;k<28;k++){
+    const a = k*1.11 + (k%3)*.42, L = .30 + (k%4)*.093, r = .05 + (k%7)*.068;
+    const g = new THREE.CylinderGeometry(.025,.018,L,3); g.rotateZ(Math.PI/2);
     p.push({ g, c: k%3 === 0 ? col : k%3 === 1 ? colD : colP,
-             m: MX(Math.cos(a)*r, .07 + (k%3)*.05, Math.sin(a)*r, 0, a, .06 + (k%2)*.08) });
+             m: MX(Math.cos(a)*r, .03 + (k%3)*.022, Math.sin(a)*r, 0, a, .04 + (k%2)*.05) });
   }
   return merge(p);
 }
@@ -1338,7 +1350,7 @@ const CROPS = [
     price:16, yieldK:.58, grow:.78, scale:1.05, uh:2.0, seed:1500, unlock:6000,
     young:()=>tuftRape('#a9c552','#4f8f36'), ripe:()=>tuftRape('#f2d417','#779c34') },
   { id:'mais', n:'Maïs', emo:'🌽', d:'Long à mûrir, mais c\'est la culture reine.',
-    price:27, yieldK:.50, grow:.58, scale:1.15, uh:2.9, seed:4000, unlock:25000,
+    price:27, yieldK:.50, grow:.58, scale:1.22, uh:3.5, seed:4000, unlock:25000,
     young:()=>tuftCorn('#4f9c33','#478f2e','#4f9c33'), ripe:()=>tuftCorn('#84a53d','#8a9a35','#e8c236') }
 ];
 function cropGeo(c){
@@ -2219,7 +2231,7 @@ function save(){
     localStorage.setItem(SKEY, JSON.stringify({
       v:1, coins, stock, totalT, harvests, lv, owned, cropI, stage, day, dayT,
       contract, son:SND.isOn(), ctrl:ctrlMode,
-      vue:{ z:+zoom.toFixed(3), p:+PITCH.toFixed(4) }
+      vue:{ z:+zoom.toFixed(3), p:+PITCH.toFixed(4), v:2 }
     }));
   } catch(e){ /* mode privé : on joue sans sauvegarde */ }
 }
@@ -2238,8 +2250,14 @@ function restore(){
   contract = d.contract && d.contract.qty ? d.contract : null;
   if (d.son === false) SND.set(false);
   if (CTRL.some(c => c.id === d.ctrl)) ctrlMode = d.ctrl;
-  if (d.vue){ if (d.vue.z) zoom = Math.max(.45, Math.min(3.2, d.vue.z));
-              if (d.vue.p) PITCH = Math.max(.48, Math.min(1.49, d.vue.p)); applyPitch(); }
+  // Le cadrage d'usine a changé : une vue enregistrée avant ce réglage est périmée, on la
+  // laisse tomber une fois pour reprendre 50° et ×1,25. Ce que le joueur règle ensuite est
+  // conservé comme avant.
+  if (d.vue && d.vue.v === 2){
+    if (d.vue.z) zoom = Math.max(.45, Math.min(3.2, d.vue.z));
+    if (d.vue.p) PITCH = Math.max(.48, Math.min(1.49, d.vue.p));
+  }
+  applyCamera();
   applyUpgrades();
   return d;
 }
