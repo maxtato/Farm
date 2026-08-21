@@ -196,31 +196,21 @@
 
   /* ---------- manette ---------- */
   #pad { display:flex; justify-content:center; }
-  #padStick, #padPath { display:none; width:100%; justify-content:center; }
-  #pad.manche #padStick { display:flex; }
-  #pad.trace  #padPath  { display:flex; flex-direction:column; align-items:center; gap:7px; }
-  body.kb #pad.manche { display:none; }
-  /* le bouton de tracé occupe la place du manche : la carte reste libre au doigt */
-  #pathBtn{
-    width:clamp(72px,13vh,104px); aspect-ratio:1; border-radius:50%; border:none; padding:0;
-    display:grid; place-items:center; color:var(--ink);
-    background:linear-gradient(180deg,#ffdd77,var(--gold));
-    box-shadow:0 5px 0 var(--goldD), 0 8px 14px rgba(0,0,0,.34);
-    transition:transform .08s ease;
-  }
-  #pathBtn svg{ width:56%; height:56%; grid-area:1/1; }
+  #pathBtn svg{ width:60%; height:60%; grid-area:1/1; }
   #pathBtn #icoStop{ display:none; }
-  #pathBtn:active{ transform:translateY(3px); box-shadow:0 2px 0 var(--goldD); }
-  #pathBtn:focus-visible{ outline:3px solid var(--cream); outline-offset:3px; }
-  #pathBtn.armed{ animation:armPulse 1.4s ease-in-out infinite; }
-  @keyframes armPulse{ 0%,100%{ box-shadow:0 5px 0 var(--goldD), 0 0 0 0 rgba(255,201,60,.5); }
-                       50%{ box-shadow:0 5px 0 var(--goldD), 0 0 0 12px rgba(255,201,60,0); } }
+  #pathBtn.armed{ background:linear-gradient(180deg,#ffdd77,var(--gold)); color:var(--ink);
+                  box-shadow:0 3px 0 var(--goldD); animation:armPulse 1.4s ease-in-out infinite; }
   #pathBtn.rolling{ background:linear-gradient(180deg,#ff8a72,var(--rust)); color:#fff;
-                    box-shadow:0 5px 0 var(--rustD), 0 8px 14px rgba(0,0,0,.34); }
+                    box-shadow:0 3px 0 var(--rustD); animation:none; }
   #pathBtn.rolling #icoDraw{ display:none; }
   #pathBtn.rolling #icoStop{ display:block; }
+  #btnCam.free{ background:linear-gradient(180deg,#ffdd77,var(--gold)); color:var(--ink);
+                box-shadow:0 3px 0 var(--goldD); }
+  #padStick { display:flex; width:100%; justify-content:center; }
+  body.kb #padStick { display:none; }
+  @keyframes armPulse{ 0%,100%{ box-shadow:0 3px 0 var(--goldD), 0 0 0 0 rgba(255,201,60,.55); }
+                       50%{ box-shadow:0 3px 0 var(--goldD), 0 0 0 10px rgba(255,201,60,0); } }
   @media (prefers-reduced-motion:reduce){ #pathBtn.armed{ animation:none; } }
-  #padPath .cap{ font-size:var(--fsm); opacity:.85; text-align:center; }
   #stick { position:relative; width:clamp(78px, 13vh, 108px); aspect-ratio:1; border-radius:50%;
            background:radial-gradient(circle at 50% 38%, rgba(0,0,0,.28), rgba(0,0,0,.46));
            border:4px solid rgba(255,255,255,.22); touch-action:none;
@@ -326,23 +316,23 @@
     <div id="padrow">
       <div class="corner">
         <button class="mini" id="btnShop" aria-label="Boutique">🛒</button>
-        <button class="mini" id="btnSet" aria-label="Réglages">⚙️</button>
-      </div>
-      <div id="pad">
-      <div id="padStick"><div id="stick"><div id="knob"></div></div></div>
-      <div id="padPath">
-        <button id="pathBtn" aria-label="Tracer un parcours">
+        <button class="mini" id="pathBtn" aria-label="Tracer un parcours">
           <svg id="icoDraw" viewBox="0 0 44 44" aria-hidden="true">
             <path d="M7 30c5-12 10 6 15-6s9 8 15-6" fill="none" stroke="currentColor"
-                  stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="7" cy="30" r="3.4" fill="currentColor"/>
+                  stroke-width="4.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="7" cy="30" r="3.6" fill="currentColor"/>
           </svg>
           <svg id="icoStop" viewBox="0 0 44 44" aria-hidden="true">
-            <rect x="14" y="14" width="16" height="16" rx="3" fill="currentColor"/>
+            <rect x="13" y="13" width="18" height="18" rx="3" fill="currentColor"/>
           </svg>
         </button>
-        <div class="cap" id="pathCap">Tracer un parcours</div>
       </div>
+      <div id="pad">
+        <div id="padStick"><div id="stick"><div id="knob"></div></div></div>
+      </div>
+      <div class="corner">
+        <button class="mini" id="btnCam" aria-label="Recentrer sur l'engin">🎯</button>
+        <button class="mini" id="btnSet" aria-label="Réglages">⚙️</button>
       </div>
       <div class="corner">
         <button class="mini" id="btnAuto" aria-label="Pilote automatique">🤖</button>
@@ -398,7 +388,17 @@ const camera = new THREE.PerspectiveCamera(FOV, 1, 1, 400);
 let camDist = 150;                      // reculée pour cadrer VIEW mètres au point visé
 const camOff = new THREE.Vector3();
 function applyPitch(){ camOff.set(0, camDist*Math.sin(PITCH), camDist*Math.cos(PITCH)); }
-const camLook = new THREE.Vector3(0,1,0);   // point visé, quasi fixe
+const camLook = new THREE.Vector3(0,1,0);   // point visé
+// La carte se manipule au doigt : deux doigts la déplacent, l'écartement la zoome. Elle
+// cesse alors de suivre l'engin — c'est voulu, on va regarder ailleurs — et une pastille
+// permet de revenir dessus.
+let camFree = false;
+function camFollow(){ camFree = false; const b = document.getElementById('btnCam'); if (b) b.classList.remove('free'); }
+function camPan(dx, dz){
+  camLook.x = Math.max(X0-40, Math.min(X0+P+40, camLook.x + dx));
+  camLook.z = Math.max(Z0-40, Math.min(Z0+P+50, camLook.z + dz));
+  if (!camFree){ camFree = true; const b = document.getElementById('btnCam'); if (b) b.classList.add('free'); }
+}
 const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -449,7 +449,7 @@ if (window.ResizeObserver) new ResizeObserver(resize).observe(stageEl);
 
 // ---------- pincer pour zoomer : la carte reste manipulable au doigt ----------
 const _touches = new Map();
-let _pinchBase = 0, _pinchZoom = 1, _pitchY = 0, _pitchBase = 0;
+let _pinchBase = 0, _pinchZoom = 1, _panX = 0, _panY = 0;
 const pinching = () => _touches.size >= 2;
 (function(){
   const el = stageEl;
@@ -460,12 +460,15 @@ const pinching = () => _touches.size >= 2;
     if (_touches.size < 2){ _pinchBase = 0; return; }
     const it = _touches.values(), a = it.next().value, b = it.next().value;
     const d = Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY);
-    const my = (a.clientY + b.clientY)/2;
-    if (!_pinchBase){ _pinchBase = d; _pinchZoom = zoom; _pitchY = my; _pitchBase = PITCH; }
+    const mx = (a.clientX + b.clientX)/2, my = (a.clientY + b.clientY)/2;
+    if (!_pinchBase){ _pinchBase = d; _pinchZoom = zoom; _panX = mx; _panY = my; }
     else {
       setZoom(_pinchZoom * d/_pinchBase);
-      // les deux doigts qui montent couchent la caméra vers l'horizon, comme sur une carte
-      setPitch(_pitchBase + (my - _pitchY)*.0055);
+      // le milieu des deux doigts entraîne la carte, comme sur un plan
+      // à l'écran un pixel vaut VIEW/SH mètres, et le sol est incliné de PITCH
+      const k = VIEW/SH;
+      camPan(-(mx-_panX)*k, -(my-_panY)*k/Math.max(.35, Math.sin(PITCH)));
+      _panX = mx; _panY = my;
     }
   }, true);
   const drop = e => { _touches.delete(e.pointerId); if (_touches.size < 2) _pinchBase = 0; };
@@ -1481,57 +1484,71 @@ function screenToWorld(cx, cy){
   return _ray.ray.intersectPlane(_plane, _hit) ? _hit.clone() : null;
 }
 // le parcours dessiné, montré comme un ruban posé sur la terre
-const PATH = (function(){
-  const MAX = 420;
-  let W = 4;                                        // largeur du tracé : celle de l'outil
-  const pos = new Float32Array(MAX*6), idx = new Uint32Array((MAX-1)*6);
+// ---------- tracés : un par engin, et il s'efface derrière ----------
+// Chaque engin porte son propre parcours. Le ruban n'est dessiné qu'à partir du point
+// courant : ce qui a été parcouru disparaît de lui-même, on voit toujours ce qui reste.
+const TRMAX = 700;
+function traceKit(v){
+  if (v.trace) return v.trace;
+  const pos = new Float32Array(TRMAX*6), idx = new Uint32Array((TRMAX-1)*6);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos,3).setUsage(THREE.DynamicDrawUsage));
   geo.setIndex(new THREE.BufferAttribute(idx,1));
   geo.setDrawRange(0,0);
-  // Posé sur la terre, pas devant la scène : le test de profondeur reste actif, donc
-  // l'engin qui roule dessus passe devant au lieu d'être recouvert par le tracé.
+  // posé sur la terre, test de profondeur actif : l'engin qui roule dessus passe devant
   const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-    color:'#ffd24a', transparent:true, opacity:.34, side:THREE.DoubleSide,
+    color:'#fff0a8', transparent:true, opacity:.26, side:THREE.DoubleSide,
     depthTest:true, depthWrite:false }));
   mesh.frustumCulled = false; mesh.visible = false; scene.add(mesh);
-  let pts = [], head = 0;
-  function rebuild(){
-    const n = Math.min(pts.length, MAX);
-    if (n < 2){ geo.setDrawRange(0,0); mesh.visible = false; return; }
-    for(let i=0;i<n;i++){
-      const a = pts[Math.max(0,i-1)], b = pts[Math.min(n-1,i+1)];
-      let dx = b.x-a.x, dz = b.z-a.z;
-      const m = Math.hypot(dx,dz) || 1; dx/=m; dz/=m;
-      const px = -dz*W/2, pz = dx*W/2;                 // normale au tracé
-      const o = i*6, x = pts[i].x, z = pts[i].z, y = parcelY(x,z) + .045;
-      pos[o]   = x+px; pos[o+1] = y; pos[o+2] = z+pz;
-      pos[o+3] = x-px; pos[o+4] = y; pos[o+5] = z-pz;
-    }
-    for(let i=0;i<n-1;i++){
-      const a = i*2, b = a+1, c = a+2, d = a+3, t = i*6;
-      idx[t]=a; idx[t+1]=b; idx[t+2]=c; idx[t+3]=b; idx[t+4]=d; idx[t+5]=c;
-    }
-    geo.attributes.position.needsUpdate = true; geo.index.needsUpdate = true;
-    geo.setDrawRange(0, (n-1)*6);
-    mesh.visible = true;
+  v.trace = { mesh, geo, pos, idx };
+  return v.trace;
+}
+function traceDraw(v){
+  const t = traceKit(v), W = Math.max(1.6, toolW(v));
+  const pts = v.path, h = v.head, n = Math.min(pts.length - h, TRMAX);
+  if (n < 2){ t.geo.setDrawRange(0,0); t.mesh.visible = false; return; }
+  for(let i=0;i<n;i++){
+    const a = pts[h+Math.max(0,i-1)], b = pts[h+Math.min(n-1,i+1)];
+    let dx = b.x-a.x, dz = b.z-a.z;
+    const m = Math.hypot(dx,dz) || 1; dx/=m; dz/=m;
+    const px = -dz*W/2, pz = dx*W/2;                 // normale au tracé
+    const o = i*6, x = pts[h+i].x, z = pts[h+i].z, y = parcelY(x,z) + .045;
+    t.pos[o]   = x+px; t.pos[o+1] = y; t.pos[o+2] = z+pz;
+    t.pos[o+3] = x-px; t.pos[o+4] = y; t.pos[o+5] = z-pz;
   }
-  return {
-    start(p){ pts = [p]; head = 0; rebuild(); },
-    add(p){
-      const last = pts[pts.length-1];
-      if (!last || Math.hypot(p.x-last.x, p.z-last.z) > 1.1){
-        if (pts.length < MAX) pts.push(p);
-        rebuild();
-      }
-    },
-    clear(){ pts = []; head = 0; geo.setDrawRange(0,0); mesh.visible = false; },
-    width(w){ W = Math.max(1.5, w); rebuild(); },
-    count(){ return Math.max(0, pts.length - head); },
-    target(){ return pts[head] || null; },
-    advance(){ head++; if (head >= pts.length) this.clear(); }
-  };
-})();
+  for(let i=0;i<n-1;i++){
+    const a = i*2, b = a+1, c = a+2, d = a+3, q = i*6;
+    t.idx[q]=a; t.idx[q+1]=b; t.idx[q+2]=c; t.idx[q+3]=b; t.idx[q+4]=d; t.idx[q+5]=c;
+  }
+  t.geo.attributes.position.needsUpdate = true; t.geo.index.needsUpdate = true;
+  t.geo.setDrawRange(0, (n-1)*6);
+  t.mesh.visible = true;
+}
+function traceAdd(v, p){
+  if (!v) return;
+  if (!v.path){ v.path = []; v.head = 0; }
+  const last = v.path[v.path.length-1];
+  if (!last || Math.hypot(p.x-last.x, p.z-last.z) > 1.1){
+    if (v.path.length - v.head < TRMAX) v.path.push(p);
+    traceDraw(v);
+  }
+}
+function traceClear(v){
+  if (!v) return;
+  v.path = []; v.head = 0;
+  if (v.trace){ v.trace.geo.setDrawRange(0,0); v.trace.mesh.visible = false; }
+}
+function traceLeft(v){ return v && v.path ? Math.max(0, v.path.length - v.head) : 0; }
+function followPath(v, dt){
+  const t = v.path[v.head];
+  if (!t){ traceClear(v); return; }
+  if (driveTo(v, t, dt) < 2){
+    v.head++;
+    if (v.head > 80){ v.path.splice(0, v.head); v.head = 0; }   // on ne garde pas le passé
+    if (v.head >= v.path.length){ traceClear(v); if (v === pilote()) setPathState('pret'); }
+    else traceDraw(v);
+  }
+}
 
 // ---------- effets ----------
 const proj = new THREE.Vector3();
@@ -1715,17 +1732,6 @@ function vehicle(kind){
            sus:0, susV:0, pit:0, pitV:0, rol:0, rolV:0, lastS:0, wph:Math.random()*6,
            sq:0, sqV:0, line:0, strk:0 };
 }
-// un engin qui quitte la parcelle rend aussi sa mémoire : sans ça, chaque cycle
-// laissait derrière lui roues, disques et cuves sur le GPU
-function killVehicle(v){
-  if (!v) return;
-  scene.remove(v.h);
-  v.h.traverse(o => {
-    if (!o.isMesh) return;
-    if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
-    if (o.material && o.material.userData.own) o.material.dispose();
-  });
-}
 // Allure en virage : plein régime dans l'axe, ralentissement franc au demi-tour, et
 // entre les deux une courbe douce plutôt qu'une cassure. La même sert au manche et au
 // pilote automatique, pour que les deux se comportent pareil.
@@ -1745,7 +1751,7 @@ function easeGrip(v, target, dt){
 // conduite au manche, au clavier ou sur parcours : le même code pour l'engin d'attelage
 // comme pour la benne, puisque les deux se pilotent maintenant.
 function driveManual(v, dt){
-  if (kbActive || ctrlMode === 'manche'){
+  {
     const push = Math.max(0, (jmag - .12)/.88);                // zone morte au centre
     const turning = jmag > .12;
     const wantH = turning ? Math.atan2(jx, jy) : v.heading;
@@ -1756,14 +1762,6 @@ function driveManual(v, dt){
     // il lève le pied dès qu'il braque, et relance tout seul une fois dans l'axe du manche
     const grip = easeGrip(v, turning ? speedForTurn(d) : 1, dt);
     step(v, dt, wantH, push*MAXSPD*mudK*grip, turning);
-  } else {                                                     // parcours dessiné
-    const t = pathState === 'route' ? PATH.target() : null;
-    if (t){
-      if (driveTo(v, t, dt) < 2){
-        PATH.advance();
-        if (!PATH.count()) setPathState('pret');               // arrivé au bout : l'engin s'arrête
-      }
-    } else step(v, dt, v.heading, 0, false);
   }
 }
 function step(v, dt, wantHeading, wantSpeed, turnable){
@@ -1962,8 +1960,30 @@ const STAGES = [
   { k:'grow',    n:'Pousse',   ic:'🌿', d:'La culture mûrit' },
   { k:'harvest', n:'Moisson',  ic:'🌾', d:'Moissonneuse — la benne vient au transfert' }
 ];
-let stage = 0, worker = null, hauler = null, coins = 0, stock = 0;
-let driven = 'worker';          // quel engin répond aux commandes : la benne ne roule plus seule
+let stage = 0, coins = 0, stock = 0;
+// Toute la flotte vit sur la carte. On passe d'un engin à l'autre sans que le précédent
+// disparaisse : il garde son tracé, continue de rouler et continue de travailler. `worker`
+// et `hauler` ne sont plus que des vues sur la flotte, rafraîchies à chaque image.
+const KINDS = ['prep','sow','fert','harvest','trailer'];
+const fleet = { prep:null, sow:null, fert:null, harvest:null, trailer:null };
+let driven = 'prep';            // clé de l'engin qui répond aux commandes
+let worker = null, hauler = null;
+function fleetGet(kind){
+  if (!KINDS.includes(kind)) return null;
+  if (!fleet[kind]){
+    const v = vehicle(kind), n = KINDS.indexOf(kind);
+    v.pos.set(GATE.x + (n-2)*4.6, 0, GATE.z - 2);   // rangés côte à côte à l'entrée
+    v.heading = Math.PI; v.h.position.set(v.pos.x, 0, v.pos.z);
+    if (kind === 'trailer'){ v.hop = 0; v.paid = 0; v.cropId = crop().id; }
+    const tw = v.g.userData.tool ? v.g.userData.tool.W : 4;
+    v.lanes = lanesFor(tw); v.laneI = 0; v.done = false;
+    v.path = []; v.head = 0; v.goto = null;
+    fleet[kind] = v;
+  }
+  return fleet[kind];
+}
+function syncFleet(){ worker = fleet[STAGES[stage].k] || null; hauler = fleet.trailer; }
+function pilote(){ return fleet[driven] || null; }
 const CAP0 = 900, TRCAP0 = 1800;   // une trémie qui tient un vrai bout de parcelle
 let CAP = CAP0, TRCAP = TRCAP0;
 const elNow = null;
@@ -1974,23 +1994,18 @@ function refreshNow(){
 }
 function startStage(skipSeed){
   const s = STAGES[stage];
-  if (stage === 0){
-    SWATH.reset();                  // nouveau cycle : la parcelle repart du sol nu
-    if (hauler && hauler.hop <= .5){ killVehicle(hauler); hauler = null; }
-  }
-  if (!hauler) driven = 'worker';
+  if (stage === 0) SWATH.reset();     // nouveau cycle : la parcelle repart du sol nu
   if (s.k === 'sow' && !skipSeed) paySeed();   // la semence se règle au moment de la mettre en terre
   document.querySelectorAll('#steps .step').forEach((e,i) => {
     e.classList.toggle('on', i === stage);
     e.classList.toggle('done', i < stage);
   });
   refreshNow();
-  if (s.k === 'grow'){ worker = null; return; }
-  worker = vehicle(s.k);
-  const tw = worker.g.userData.tool ? worker.g.userData.tool.W : 4;
-  worker.lanes = lanesFor(tw);
-  PATH.width(tw);                       // le tracé se dessine à la largeur de travail
+  if (s.k !== 'grow') fleetGet(s.k);   // l'engin du chantier existe, mais rien n'est détruit
+  syncFleet();
+  if (worker){ worker.lanes = lanesFor(toolW(worker)); worker.laneI = 0; worker.done = false; }
 }
+function toolW(v){ return v && v.g.userData.tool ? v.g.userData.tool.W : 4; }
 // la semence est une vraie dépense : trop juste, on retombe sur le blé, qui ne coûte rien
 function paySeed(){
   const c = crop();
@@ -2006,19 +2021,22 @@ function paySeed(){
 }
 function nextStage(){
   const fini = STAGES[stage];
+  const suivait = driven === fini.k;   // on conduisait celui qui vient de finir : on suit le chantier
   stage = (stage+1) % STAGES.length;
   if (stage === 0) harvests++;      // on vient de boucler un cycle entier
   startStage(); sfx('stage'); save();
+  if (fleet[fini.k]) fleet[fini.k].done = true;
+  if (suivait){
+    const k = STAGES[stage].k;
+    if (KINDS.includes(k)){ driven = k; syncFleet(); drawVeh(); camFollow(); }
+  }
   toast(fini.ic + ' ' + fini.n + ' — terminé !', 'good');
   confetti(stage === 0 ? 34 : 14);
 }
+// Changer d'étape ne déplace ni ne supprime rien : chaque engin reste où il est.
 function switchTo(i){
   if (i === stage) return;
-  const p = worker ? worker.pos.clone() : GATE.clone();
-  const h = worker ? worker.heading : Math.PI;
-  if (worker){ killVehicle(worker); worker = null; }
   stage = i; startStage();
-  if (worker){ worker.pos.copy(p); worker.heading = h; worker.h.position.set(p.x,0,p.z); }
 }
 
 // ---------- son : tout est synthétisé, aucun fichier à charger ----------
@@ -2240,7 +2258,7 @@ function save(){
   try {
     localStorage.setItem(SKEY, JSON.stringify({
       v:1, coins, stock, totalT, harvests, lv, owned, cropI, stage, day, dayT,
-      contract, son:SND.isOn(), ctrl:ctrlMode,
+      contract, son:SND.isOn(), ctrl:ctrlMode, conduit:driven,
       vue:{ z:+zoom.toFixed(3), p:+PITCH.toFixed(4), v:2 }
     }));
   } catch(e){ /* mode privé : on joue sans sauvegarde */ }
@@ -2260,6 +2278,7 @@ function restore(){
   contract = d.contract && d.contract.qty ? d.contract : null;
   if (d.son === false) SND.set(false);
   if (CTRL.some(c => c.id === d.ctrl)) ctrlMode = d.ctrl;
+  if (KINDS.includes(d.conduit)) driven = d.conduit;
   // Le cadrage d'usine a changé : une vue enregistrée avant ce réglage est périmée, on la
   // laisse tomber une fois pour reprendre 50° et ×1,25. Ce que le joueur règle ensuite est
   // conservé comme avant.
@@ -2439,18 +2458,28 @@ function drawCtrl(){
   elBody.insertAdjacentHTML('beforeend',
     '<div class="note">Trois façons de conduire. Le pilote automatique reste disponible dans tous les cas, ' +
     'et le clavier reprend la main dès qu\'on l\'utilise.</div>');
-  CTRL.forEach(c => {
-    const el = card(c.emo, c.n, c.d);
-    if (c.id === ctrlMode) el.classList.add('sel');
-    const b = document.createElement('button');
-    if (c.id === ctrlMode){ b.className = 'buy max'; b.textContent = 'en place'; }
-    else {
-      b.className = 'buy'; b.textContent = 'choisir';
-      b.onclick = () => { ctrlMode = c.id; applyCtrl(); sfx('buy');
-                          toast(c.emo + ' ' + c.n, 'good'); save(); drawPanel(); };
-    }
-    el.appendChild(b); elBody.appendChild(el);
-  });
+  elBody.insertAdjacentHTML('beforeend',
+    '<div class="note">La carte se manipule à deux doigts : <b>écarter</b> pour zoomer, ' +
+    '<b>glisser</b> pour la déplacer. Elle cesse alors de suivre l\'engin ; la pastille 🎯 le ' +
+    'ramène au centre.<br>Un <b>double-appui</b> sur le champ envoie l\'engin conduit à ' +
+    'l\'endroit touché. Le bouton ✏️ arme le <b>tracé</b> : on dessine autant de traits qu\'on ' +
+    'veut, l\'engin les avale et le trajet s\'efface derrière lui, jusqu\'au bouton stop.<br>' +
+    'Tous les engins restent sur la carte : celui qu\'on quitte continue son travail.</div>');
+  // l'inclinaison a quitté le balayage à deux doigts, qui déplace maintenant la carte
+  const el = document.createElement('div');
+  el.className = 'card';
+  el.innerHTML = '<div class="ico">📐</div><div class="txt"><b>Inclinaison de la caméra</b>' +
+                 '<i id="pitchVal">' + Math.round(PITCH*180/Math.PI) + '°</i></div>';
+  const sl = document.createElement('input');
+  sl.type = 'range'; sl.min = '28'; sl.max = '85'; sl.step = '1';
+  sl.value = String(Math.round(PITCH*180/Math.PI));
+  sl.style.cssText = 'width:100%;margin-top:6px';
+  sl.oninput = () => { setPitch(+sl.value*Math.PI/180);
+                       const t = document.getElementById('pitchVal');
+                       if (t) t.textContent = sl.value + '°'; };
+  sl.onchange = () => save();
+  const wrap = document.createElement('div'); wrap.style.cssText = 'flex:1 1 100%';
+  wrap.appendChild(sl); el.appendChild(wrap); elBody.appendChild(el);
 }
 function drawHelp(){
   elBody.insertAdjacentHTML('beforeend',
@@ -2462,7 +2491,7 @@ function drawHelp(){
     '<kbd>Z Q S D</kbd><span>piloter (ou W A S D / flèches)</span>' +
     '<kbd>Espace</kbd><span>freiner</span>' +
     '<kbd>V</kbd><span>pilote automatique</span>' +
-    '<kbd>G</kbd><span>changer de mode de pilotage</span>' +
+    '<kbd>E</kbd><span>changer d\'engin</span>' +
     '<kbd>1 2 3 4</kbd><span>sol · semis · engrais · moisson</span>' +
     '<kbd>X</kbd><span>accélérer le temps ×1 ×3 ×6</span>' +
     '<kbd>B</kbd><span>boutique</span>' +
@@ -2472,44 +2501,38 @@ function drawHelp(){
     '<kbd>Échap</kbd><span>pause / reprendre</span>' +
     '</div>');
   elBody.insertAdjacentHTML('beforeend',
-    '<div class="note" style="margin-top:12px">Sans clavier, le poste de commande en bas de l\'écran prend le ' +
-    'relais. Trois modes au choix dans <b>Réglages</b> : le <b>manche</b> (direction = cap, amplitude = vitesse), ' +
-    'et <b>parcours</b> : un bouton arme le tracé, on dessine le trajet sur le champ, et l\'engin part dès ' +
-    'qu\'on lève le doigt. Le même bouton l\'arrête. Hors tracé, le champ se pince à deux doigts pour zoomer, ' +
-    'et deux doigts qui balaient de haut en bas règlent l\'inclinaison de la caméra.</div>');
+    '<div class="note" style="margin-top:12px">Au doigt : <b>deux doigts</b> déplacent et zooment la carte — ' +
+    'elle cesse alors de suivre l\'engin, la pastille 🎯 le ramène. Un <b>double-appui</b> sur le champ y ' +
+    'envoie l\'engin conduit. Le bouton ✏️ arme le <b>tracé</b> : on dessine autant de traits qu\'on veut, ' +
+    'l\'engin les suit et le trajet s\'efface derrière lui, jusqu\'au bouton stop. Le <b>manche</b> reste en ' +
+    'bas pour conduire à la main.<br>Tous les engins vivent sur la carte : celui qu\'on quitte garde son ' +
+    'tracé et continue de travailler.</div>');
 }
 
 // ---------- manette ----------
 let jx = 0, jy = 0, jmag = 0, manual = false, btnAuto = null;   // une seule manette : angle = cap, amplitude = vitesse
 // trois façons de conduire : au manche, au cap et à l'allure, ou sur un parcours dessiné
 const CTRL = [
-  { id:'manche', n:'Manche',   emo:'🕹️', d:'La direction donne le cap, l\'amplitude la vitesse.' },
-  { id:'trace',  n:'Parcours', emo:'✏️', d:'Un bouton arme le tracé, l\'engin suit le trajet dessiné.' }
+  { id:'manche', n:'Manche', emo:'🕹️', d:'La direction donne le cap, l\'amplitude la vitesse.' }
 ];
 let ctrlMode = 'manche';
-// Le tracé passe par trois temps, et on ne dessine que dans le deuxième :
-// hors de là le doigt appartient à la carte, pour la déplacer ou la zoomer.
-let pathState = 'pret';                 // 'pret' | 'dessin' | 'route'
-// le poste de commande visible suit le mode choisi
-function applyCtrl(){
-  document.getElementById('pad').className = ctrlMode;
-  if (ctrlMode !== 'trace') setPathState('pret');
-  else drawPathBtn();
-}
-const PATHTXT = { pret:'Tracer un parcours', dessin:'Dessine sur le champ', route:'Arrêter l\'engin' };
+// Deux temps seulement : au repos le doigt appartient à la carte, armé il dessine le
+// parcours de l'engin conduit. Tant qu'on est armé on peut tracer autant de traits qu'on
+// veut : ils s'ajoutent au bout du parcours, l'engin les avale au fur et à mesure.
+let pathState = 'pret';                 // 'pret' | 'trace'
+function applyCtrl(){ /* un seul poste de commande : le manche, toujours en place */ }
 function drawPathBtn(){
-  const b = document.getElementById('pathBtn'), c = document.getElementById('pathCap');
+  const b = document.getElementById('pathBtn');
   if (!b) return;
-  b.classList.toggle('armed', pathState === 'dessin');
-  b.classList.toggle('rolling', pathState === 'route');
-  b.setAttribute('aria-label', PATHTXT[pathState]);
-  c.textContent = pathState === 'route'
-    ? PATHTXT.route + ' · ' + PATH.count() + ' points'
-    : PATHTXT[pathState];
+  const n = traceLeft(pilote());
+  b.classList.toggle('armed', pathState === 'trace' && n < 2);
+  b.classList.toggle('rolling', pathState === 'trace' && n >= 2);
+  b.setAttribute('aria-label', pathState === 'pret' ? 'Tracer un parcours'
+                 : n >= 2 ? 'Arrêter l\'engin · ' + n + ' points' : 'Dessine sur le champ');
 }
 function setPathState(st){
   pathState = st;
-  if (st !== 'route') PATH.clear();
+  if (st === 'pret'){ const v = pilote(); if (v){ traceClear(v); v.goto = null; } }
   drawPathBtn();
 }
 (function(){
@@ -2531,39 +2554,57 @@ function setPathState(st){
   stick.addEventListener('pointercancel', clear);
 })();
 
-// --- parcours dessiné : un bouton arme le tracé, le lâcher lance l'engin
+// --- le parcours : un bouton l'arme, on trace autant de traits qu'on veut, il s'arrête au stop
+// --- et hors tracé, un double-appui envoie l'engin conduit à l'endroit désigné
 (function(){
   const stage = document.getElementById('stage');
   const btn = document.getElementById('pathBtn');
-  let drawId = null;
+  let drawId = null, tapT = 0, tapX = 0, tapY = 0;
   btn.onclick = () => {
-    if (pathState === 'pret')        setPathState('dessin');
-    else if (pathState === 'dessin') setPathState('pret');
-    else { setPathState('pret');                       // on stoppe : l'engin s'arrête net
-           if (worker){ worker.speed = 0; setManual(); } }
+    if (pathState === 'pret'){ setPathState('trace'); setManual(); }
+    else { const v = pilote(); if (v) v.speed = 0; setPathState('pret'); setManual(); }
   };
   stage.addEventListener('pointerdown', e => {
-    if (ctrlMode !== 'trace' || paused || pathState !== 'dessin') return;
-    if (pinching()) return;
+    if (paused || pinching()) return;
+    if (pathState !== 'trace') return;
     const p = screenToWorld(e.clientX, e.clientY); if (!p) return;
-    drawId = e.pointerId; stage.setPointerCapture(e.pointerId);
-    PATH.start(p); setManual();
+    const v = pilote(); if (!v) return;
+    drawId = e.pointerId;
+    try { stage.setPointerCapture(e.pointerId); } catch(err){}
+    v.goto = null; setManual(); traceAdd(v, p);
   });
   stage.addEventListener('pointermove', e => {
     if (drawId !== e.pointerId) return;
-    if (pinching()){ abort(); return; }               // un deuxième doigt : c'est un zoom, pas un tracé
-    const p = screenToWorld(e.clientX, e.clientY); if (p) PATH.add(p);
+    if (pinching()){ drawId = null; return; }         // un deuxième doigt : c'est la carte
+    const p = screenToWorld(e.clientX, e.clientY); if (p) traceAdd(pilote(), p);
   });
-  function abort(){ drawId = null; PATH.clear(); drawPathBtn(); }
-  function finish(e){
-    if (drawId !== e.pointerId) return;
-    drawId = null;
-    if (PATH.count() > 1) setPathState('route');       // le tracé est fini : l'engin part
-    else { PATH.clear(); drawPathBtn(); }
-  }
-  stage.addEventListener('pointerup', finish);
-  stage.addEventListener('pointercancel', e => { if (drawId === e.pointerId) abort(); });
+  stage.addEventListener('pointerup', e => {
+    if (drawId === e.pointerId){ drawId = null; drawPathBtn(); return; }
+    if (paused || pinching() || pathState === 'trace') return;
+    // double-appui : l'engin conduit s'en va tout seul jusqu'au point touché
+    const now = performance.now();
+    if (now - tapT < 340 && Math.hypot(e.clientX-tapX, e.clientY-tapY) < 28){
+      tapT = 0;
+      const p = screenToWorld(e.clientX, e.clientY); if (!p) return;
+      const v = pilote(); if (!v) return;
+      traceClear(v); v.goto = p; setManual();
+      pingSol(p.x, p.z);
+    } else { tapT = now; tapX = e.clientX; tapY = e.clientY; }
+  });
+  stage.addEventListener('pointercancel', e => { if (drawId === e.pointerId) drawId = null; });
 })();
+// repère posé au sol à l'endroit désigné : sans lui on ne sait pas si l'appui a été pris
+const PING = (function(){
+  const g = new THREE.RingGeometry(.7, 1.5, 22); g.rotateX(-Math.PI/2);
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    color:'#ffe07a', transparent:true, opacity:0, depthWrite:false }));
+  m.frustumCulled = false; m.visible = false; scene.add(m);
+  return { m, t:0 };
+})();
+function pingSol(x,z){
+  PING.m.position.set(x, parcelY(x,z)+.06, z);
+  PING.m.visible = true; PING.t = 0;
+}
 function setManual(){
   if (manual) return;
   manual = true; if (btnAuto) btnAuto.classList.remove('on');
@@ -2571,10 +2612,12 @@ function setManual(){
 function setAuto(){
   manual = false;
   if (btnAuto) btnAuto.classList.add('on');
-  if (worker && worker.lanes){
+  const v = worker || pilote();
+  if (v && v.lanes){
+    traceClear(v); v.goto = null;
     let best = 0, bd = 1e9;
-    worker.lanes.forEach((l,i) => { const d = l.distanceTo(worker.pos); if (d<bd){ bd=d; best=i; } });
-    worker.laneI = best; worker.wpT = 0; worker.done = false;
+    v.lanes.forEach((l,i) => { const d = l.distanceTo(v.pos); if (d<bd){ bd=d; best=i; } });
+    v.laneI = best; v.wpT = 0; v.done = false;
   }
 }
 
@@ -2585,11 +2628,14 @@ STAGES.forEach((s,i) => {
   e.className = 'step'; e.type = 'button';
   e.innerHTML = '<i>' + s.ic + '</i><span>' + s.n + '</span>';
   e.title = s.n + ' — ' + s.d;
-  e.onclick = () => switchTo(i);          // le chemin des étapes sert aussi à choisir le chantier
+  // le chemin des étapes sert aussi à choisir l'engin : on prend celui du chantier visé
+  e.onclick = () => { const k = STAGES[i].k; if (KINDS.includes(k)) selectVeh(k); else switchTo(i); };
   stepsEl.appendChild(e);
 });
 
 const elVehBtn = document.getElementById('vehBtn'), elCropBtn = document.getElementById('cropBtn');
+(function(){ const b = document.getElementById('btnCam');
+  if (b) b.onclick = () => { const v = pilote(); if (v) camLook.set(v.pos.x, 1, v.pos.z); camFollow(); }; })();
 elCropBtn.onclick = () => openPanel('crop');
 document.getElementById('btnShop').onclick = () => openPanel('shop');
 document.getElementById('btnSet').onclick  = () => openPanel('ctrl');
@@ -2621,14 +2667,14 @@ const VEH_CYCLE = [
 ];
 function canSwitch(){ return true; }
 const VEHICO = { prep:'🚜', sow:'🌱', fert:'💧', harvest:'🌾', trailer:'🛻' };
+const VEHNOM = { prep:'Déchaumeuse', sow:'Semoir', fert:'Pulvérisateur',
+                 harvest:'Moissonneuse', trailer:'Benne' };
 function drawVeh(){
-  const cur = driven === 'hauler' ? 'trailer' : (worker ? worker.kind : null);
+  const cur = driven;
   const libre = true;
   elVehBtn.disabled = false;
-  elVehBtn.classList.toggle('alt', driven === 'hauler');
-  const n = cur === 'trailer' ? 'Benne' : cur === 'harvest' ? 'Moissonneuse'
-          : cur === 'prep' ? 'Déchaumeuse' : cur === 'sow' ? 'Semoir'
-          : cur === 'fert' ? 'Pulvérisateur' : 'Au repos';
+  elVehBtn.classList.toggle('alt', driven === 'trailer');
+  const n = VEHNOM[cur] || 'Au repos';
   elVehBtn.innerHTML = '<i>' + (VEHICO[cur] || '🚜') + '</i><span>' + n + '</span>'
                      + (libre ? '<b class="sw">⇄</b>' : '');
   elVehBtn.title = libre ? 'Changer d\u2019engin' : n;
@@ -2636,27 +2682,18 @@ function drawVeh(){
 function drawCropBtn(){
   elCropBtn.innerHTML = '<i>' + crop().emo + '</i><span>' + crop().n + '</span>';
 }
-function switchVehicle(){
-  const cur = driven === 'hauler' ? 'trailer' : (worker ? worker.kind : null);
-  const i = VEH_CYCLE.findIndex(e => e.id === cur);
-  const nxt = VEH_CYCLE[(i + 1) % VEH_CYCLE.length];
-  if (nxt.id === 'trailer'){
-    if (!hauler){
-      hauler = vehicle('trailer');
-      hauler.pos.copy(GATE); hauler.heading = Math.PI;
-      hauler.h.position.set(GATE.x, 0, GATE.z);
-      hauler.hop = 0; hauler.paid = 0; hauler.cropId = crop().id;
-      toast(worker && worker.kind === 'harvest'
-            ? 'Benne attelée — conduis-la sous la goulotte'
-            : 'Benne attelée — elle sort du portail');
-    }
-    driven = 'hauler';
-  } else {
-    driven = 'worker';
-    if (stage !== nxt.st) switchTo(nxt.st);
-    else if (!worker) startStage(true);
-  }
-  setManual(); setPathState('pret'); sfx('stage'); drawVeh();
+// Passer d'un engin à l'autre ne fait que changer qui répond aux commandes : celui qu'on
+// quitte reste sur la carte, garde son tracé et continue son chantier.
+function switchVehicle(){ selectVeh(VEH_CYCLE[(VEH_CYCLE.findIndex(e => e.id === driven) + 1) % VEH_CYCLE.length].id); }
+function selectVeh(kind){
+  const neuf = !fleet[kind];
+  fleetGet(kind);
+  driven = kind;
+  const e = VEH_CYCLE.find(x => x.id === kind);
+  if (e && e.st >= 0 && stage !== e.st) switchTo(e.st);
+  syncFleet();
+  if (neuf) toast((kind === 'trailer' ? 'Benne attelée' : VEHNOM[kind]) + ' — elle sort du portail');
+  setPathState('pret'); setManual(); camFollow(); sfx('stage'); drawVeh();
 }
 elVehBtn.onclick = switchVehicle;
 
@@ -2678,13 +2715,8 @@ addEventListener('keydown', e => {
     else if (k === 'h') openPanel('help');
     else if (k === 'x') cycleSpeed();
     else if (k === 'e') switchVehicle();
-    else if (k === 'g'){                       // faire tourner les modes de pilotage
-      const i = CTRL.findIndex(c => c.id === ctrlMode);
-      ctrlMode = CTRL[(i+1) % CTRL.length].id; applyCtrl(); save();
-      const c = CTRL.find(x => x.id === ctrlMode); toast(c.emo + ' ' + c.n);
-    }
     else if (k === 'n') toast(SND.toggle() ? '🔊 Son activé' : '🔇 Son coupé');
-    else if (k >= '1' && k <= '4') switchTo([0,1,2,4][+k-1]);
+    else if (k >= '1' && k <= '4') selectVeh(['prep','sow','fert','harvest'][+k-1]);
   }
   keys[k] = true;
 });
@@ -2707,6 +2739,120 @@ function readKeys(){
   jmag = brake ? 0 : 1;
 }
 
+// ---------- pilotage d'un engin de la flotte ----------
+// Ordre de priorité : le tracé dessiné, puis le point désigné au double-appui, puis le
+// manche si c'est l'engin conduit, puis le pilote automatique si c'est celui du chantier.
+function driveOne(v, conduit, chantier, dt){
+  if (v.path && v.head < v.path.length){ followPath(v, dt); return; }
+  if (v.goto){
+    // `stop` mettrait la consigne de vitesse à zéro : on roule jusqu'au point, on ne s'y gare pas
+    if (driveTo(v, v.goto, dt) < RMIN + 1.2){ v.goto = null; v.speed = 0; }
+    return;
+  }
+  if (conduit && manual){ driveManual(v, dt); return; }
+  if (chantier && !manual){ autoWork(v, dt); return; }
+  step(v, dt, v.heading, 0, false);                       // à l'arrêt, moteur au ralenti
+}
+function autoWork(v, dt){
+  if (v.done){
+    const waiting = v.kind === 'harvest' && v.hop > 1;
+    const dist = driveTo(v, waiting ? v.pos : GATE, dt, waiting);
+    if (!waiting && dist < RMIN+1) nextStage();
+    return;
+  }
+  const t = v.lanes[v.laneI];
+  const full = v.kind === 'harvest' && v.hop >= CAP - .5;
+  v.wpT = (v.wpT||0) + dt;
+  if (driveTo(v, t, dt, full) < RMIN || v.wpT > 30){      // RMIN : inutile de viser plus près
+    v.laneI++; v.wpT = 0;
+    if (v.laneI >= v.lanes.length) v.done = true;
+  }
+}
+// ---------- l'outil d'un engin, appliqué là où il passe ----------
+function work(v, dt){
+  const d = v.g.userData;
+  if (v.kind === 'prep'){
+    const n = applyTool(v, i => setCell(i,1));
+    laySwath(v, 0);
+    if (n){
+      popDust(v.pos.x - Math.sin(v.heading)*3.5, v.pos.z - Math.cos(v.heading)*3.5);
+      // le déchaumage enfouit ce qui traînait : plants levés comme dépôt de paille
+      plants.forEach((p,k) => {
+        if (cell[p.ti]===1 && (p.g>0 || p.r)){ p.g = 0; p.r = 0; writePlant(k); }
+      });
+    }
+    // la terre gicle derrière le rouleau, d'autant plus qu'on avance vite
+    const q = toolPose(v);
+    if (q && v.speed > .5){
+      const back = -Math.sin(q.a), backZ = -Math.cos(q.a);
+      let nb = Math.min(6, Math.round(dt*v.speed*9));
+      while (nb-- > 0){
+        const u = (Math.random()-.5)*q.W;
+        const x = q.x + Math.cos(q.a)*u + back*.5, z = q.z - Math.sin(q.a)*u + backZ*.5;
+        SOIL.spawn(x, parcelY(x,z)+.25, z,
+                   back*(1.4+Math.random()*2.4) + (Math.random()-.5)*1.6,
+                   1.8 + Math.random()*2.3,
+                   backZ*(1.4+Math.random()*2.4) + (Math.random()-.5)*1.6,
+                   .8 + Math.random()*.45, .8 + Math.random()*.8);
+      }
+    }
+  }
+  else if (v.kind === 'sow'){
+    const n = applyTool(v, i => cell[i]===1 && setCell(i,2));
+    laySwath(v, 1);
+    if (n) plants.forEach((p,k) => { if (cell[p.ti]===2 && p.g===0){ p.g = .04; writePlant(k); } });
+    const q = toolPose(v);
+    if (q && v.speed > .3){
+      let nb = Math.min(7, Math.round(dt*v.speed*13));
+      while (nb-- > 0){
+        const u = (Math.random()-.5)*q.W;
+        const x = q.x + Math.cos(q.a)*u, z = q.z - Math.sin(q.a)*u;
+        SEED.spawn(x, parcelY(x,z)+1.05, z,
+                   (Math.random()-.5)*1.7 - Math.sin(q.a)*v.speed*.25,
+                   .5 + Math.random()*.9,
+                   (Math.random()-.5)*1.7 - Math.cos(q.a)*v.speed*.25,
+                   .8 + Math.random()*.5, .8 + Math.random()*.6);
+      }
+    }
+  }
+  else if (v.kind === 'fert'){
+    applyTool(v, i => cell[i]===2 && setCell(i,3));
+    laySwath(v, 2);
+    const q = toolPose(v);                       // buses réparties sur toute la rampe
+    if (q && v.speed > .3){
+      const NB = 8;                                   // une buse tous les mètres environ
+      for(let k=0;k<NB;k++){
+        const u = (k + .5)/NB*q.W - q.W/2 + (Math.random()-.5)*.4;
+        popSpray(q.x + Math.cos(q.a)*u, 3.15, q.z - Math.sin(q.a)*u,
+                 -Math.sin(q.a)*v.speed*.15, -Math.cos(q.a)*v.speed*.15);
+      }
+    }
+  }
+  else if (v.kind === 'harvest'){
+    if (v.hop < CAP){
+      let cut = 0;
+      const q = toolPose(v);
+      const cs = Math.cos(-q.a), sn = Math.sin(-q.a), RR = (q.W/2+1.2)*(q.W/2+1.2);
+      for(let k=0;k<plants.length;k++){
+        const p = plants[k];
+        if (p.g < .55) continue;
+        const dx = p.x-q.x, dz = p.z-q.z;
+        if (dx*dx+dz*dz > RR) continue;
+        const lx = dx*cs+dz*sn, lz = -dx*sn+dz*cs;
+        if (Math.abs(lx) < q.W/2 && lz > q.near && lz < q.far){ p.g = 0; p.r = 1; writePlant(k); cut++; }
+      }
+      if (cut){
+        v.hop = Math.min(CAP, v.hop + cut*crop().yieldK);
+        applyTool(v, i => setCell(i,0));
+        laySwath(v, 3);
+        if (Math.random()<.3) popDust(v.pos.x-Math.sin(v.heading)*2.5,
+                                      v.pos.z-Math.cos(v.heading)*2.5);
+      }
+    }
+    if (d.fill) d.fill.scale.y = .02 + v.hop/CAP*.98;
+  }
+}
+
 // ---------- boucle ----------
 const clock = new THREE.Clock();
 let jbx=0,jbvx=0,jbz=0,jbvz=0;
@@ -2714,14 +2860,17 @@ const JK=40, JD=3.1;
 const elCoins=document.getElementById('coins'), elStock=document.getElementById('stock'),
       elClock=document.getElementById('clock'), elWIcon=document.getElementById('wIcon'),
       elLvl=document.getElementById('lvl'), elGauge=document.getElementById('gauge'),
-      elGVal=document.getElementById('gval'), chipLvl=document.getElementById('chipLvl'),
-      elPathCap=document.getElementById('pathCap');
+      elGVal=document.getElementById('gval'), chipLvl=document.getElementById('chipLvl');
+
 let saveT = 0, lastCoins = -1, lastLvl = 0;
 (function boot(){
   const had = restore();
   applyCrop();
   if (had && stage > 0) primeField(stage);   // on reprend la parcelle telle que l'étape la suppose
   startStage(!!had);                         // à la reprise, la semence a déjà été payée
+  if (fleet[STAGES[stage].k]) driven = STAGES[stage].k;
+  syncFleet(); drawVeh(); camFollow();
+  { const v = pilote(); if (v) camLook.set(v.pos.x, 1, v.pos.z); }
   applyCtrl();
   if (!contract) newContract(); else drawContract();
   if (!had) setTimeout(() => openPanel('help'), 400);   // première partie : on montre les commandes
@@ -2758,111 +2907,22 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   });
 
   const S = STAGES[stage];
+  syncFleet();
 
-  if (worker){
-    if (driven !== 'worker'){
-      step(worker, dt, worker.heading, 0, false);               // à l'arrêt pendant qu'on conduit la benne
-    } else if (manual){
-      driveManual(worker, dt);
-    } else if (worker.done){
-      const waiting = worker.kind === 'harvest' && worker.hop > 1;
-      const dist = driveTo(worker, waiting ? worker.pos : GATE, dt, waiting);
-      if (!waiting && dist < RMIN+1){ killVehicle(worker); worker = null; nextStage(); }
-    } else {
-      const t = worker.lanes[worker.laneI];
-      const full = worker.kind === 'harvest' && worker.hop >= CAP - .5;
-      worker.wpT = (worker.wpT||0) + dt;
-      if (driveTo(worker, t, dt, full) < RMIN || worker.wpT > 30){   // RMIN : inutile de viser plus près que son rayon
-        worker.laneI++; worker.wpT = 0;
-        if (worker.laneI >= worker.lanes.length) worker.done = true;
-      }
-    }
+  // Toute la flotte roule, pas seulement l'engin conduit : chacun suit son tracé ou son
+  // point d'arrivée, et celui du chantier reprend le pilote automatique s'il n'a rien d'autre.
+  for (const k of KINDS){
+    const v = fleet[k]; if (!v) continue;
+    driveOne(v, k === driven, k === S.k, dt);
   }
-
-  // outil : uniquement si l'engin en piste correspond bien à l'étape
-  if (worker && worker.kind === S.k && !(worker.done && !manual)){
-    const d = worker.g.userData;
-    if (S.k === 'prep'){
-      const n = applyTool(worker, i => setCell(i,1));
-      laySwath(worker, 0);
-      if (n){
-        popDust(worker.pos.x - Math.sin(worker.heading)*3.5, worker.pos.z - Math.cos(worker.heading)*3.5);
-        // le déchaumage enfouit ce qui traînait : plants levés comme dépôt de paille
-        plants.forEach((p,k) => {
-          if (cell[p.ti]===1 && (p.g>0 || p.r)){ p.g = 0; p.r = 0; writePlant(k); }
-        });
-      }
-      // la terre gicle derrière le rouleau, d'autant plus qu'on avance vite
-      const q = toolPose(worker);
-      if (q && worker.speed > .5){
-        const back = -Math.sin(q.a), backZ = -Math.cos(q.a);
-        let nb = Math.min(6, Math.round(dt*worker.speed*9));
-        while (nb-- > 0){
-          const u = (Math.random()-.5)*q.W;
-          const x = q.x + Math.cos(q.a)*u + back*.5, z = q.z - Math.sin(q.a)*u + backZ*.5;
-          SOIL.spawn(x, parcelY(x,z)+.25, z,
-                     back*(1.4+Math.random()*2.4) + (Math.random()-.5)*1.6,
-                     1.8 + Math.random()*2.3,
-                     backZ*(1.4+Math.random()*2.4) + (Math.random()-.5)*1.6,
-                     .8 + Math.random()*.45, .8 + Math.random()*.8);
-        }
-      }
-    }
-    else if (S.k === 'sow'){
-      const n = applyTool(worker, i => cell[i]===1 && setCell(i,2));
-      laySwath(worker, 1);
-      if (n) plants.forEach((p,k) => { if (cell[p.ti]===2 && p.g===0){ p.g = .04; writePlant(k); } });
-      const q = toolPose(worker);
-      if (q && worker.speed > .3){
-        let nb = Math.min(7, Math.round(dt*worker.speed*13));
-        while (nb-- > 0){
-          const u = (Math.random()-.5)*q.W;
-          const x = q.x + Math.cos(q.a)*u, z = q.z - Math.sin(q.a)*u;
-          SEED.spawn(x, parcelY(x,z)+1.05, z,
-                     (Math.random()-.5)*1.7 - Math.sin(q.a)*worker.speed*.25,
-                     .5 + Math.random()*.9,
-                     (Math.random()-.5)*1.7 - Math.cos(q.a)*worker.speed*.25,
-                     .8 + Math.random()*.5, .8 + Math.random()*.6);
-        }
-      }
-    }
-    else if (S.k === 'fert'){
-      applyTool(worker, i => cell[i]===2 && setCell(i,3));
-      laySwath(worker, 2);
-      const q = toolPose(worker);                       // buses réparties sur toute la rampe
-      if (q && worker.speed > .3){
-        const NB = 8;                                   // une buse tous les mètres environ
-        for(let k=0;k<NB;k++){
-          const u = (k + .5)/NB*q.W - q.W/2 + (Math.random()-.5)*.4;
-          popSpray(q.x + Math.cos(q.a)*u, 3.15, q.z - Math.sin(q.a)*u,
-                   -Math.sin(q.a)*worker.speed*.15, -Math.cos(q.a)*worker.speed*.15);
-        }
-      }
-    }
-    else if (S.k === 'harvest'){
-      if (worker.hop < CAP){
-        let cut = 0;
-        const q = toolPose(worker);
-        const cs = Math.cos(-q.a), sn = Math.sin(-q.a), RR = (q.W/2+1.2)*(q.W/2+1.2);
-        for(let k=0;k<plants.length;k++){
-          const p = plants[k];
-          if (p.g < .55) continue;
-          const dx = p.x-q.x, dz = p.z-q.z;
-          if (dx*dx+dz*dz > RR) continue;
-          const lx = dx*cs+dz*sn, lz = -dx*sn+dz*cs;
-          if (Math.abs(lx) < q.W/2 && lz > q.near && lz < q.far){ p.g = 0; p.r = 1; writePlant(k); cut++; }
-        }
-        if (cut){
-          worker.hop = Math.min(CAP, worker.hop + cut*crop().yieldK);
-          applyTool(worker, i => setCell(i,0));
-          laySwath(worker, 3);
-          if (Math.random()<.3) popDust(worker.pos.x-Math.sin(worker.heading)*2.5,
-                                        worker.pos.z-Math.cos(worker.heading)*2.5);
-        }
-      }
-      if (d.fill) d.fill.scale.y = .02 + worker.hop/CAP*.98;
-    }
+  // Et chacun travaille avec son propre outil, là où il passe. Un engin qu'on a laissé sur
+  // un tracé continue donc son chantier pendant qu'on en conduit un autre.
+  for (const k of KINDS){
+    const v = fleet[k];
+    if (v && k !== 'trailer' && v.speed > .12) work(v, dt);
   }
+  if (fleet.harvest && fleet.harvest.g.userData.fill)
+    fleet.harvest.g.userData.fill.scale.y = .02 + fleet.harvest.hop/CAP*.98;
 
   // pousse continue
   let ripe = 0, sown = 0;
@@ -2895,10 +2955,6 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   const combine = (worker && worker.kind === 'harvest') ? worker : null;
   const cFull = !!combine && (combine.hop >= CAP - .5 || (combine.done && combine.hop > .5));
 
-  if (hauler){
-    if (driven === 'hauler') driveManual(hauler, dt);
-    else step(hauler, dt, hauler.heading, 0, false);
-  }
 
   // transfert : uniquement quand la benne est venue se ranger sous la goulotte
   let vidange = false;
@@ -2947,7 +3003,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
         for(let i=0;i<4;i++) flyCoin(SILO.x, SILO.z-2, i*70);
         hauler.paid = 0; sfx('coin');
       }
-      if (hauler.hop <= .2){ sfx('cash'); save(); toast('Benne vidée au silo', 'good'); }
+      if (hauler.hop <= .2){ hauler.cropId = crop().id; sfx('cash'); save(); toast('Benne vidée au silo', 'good'); }
     }
     const rf = hauler.g.userData.fill;                  // benne ouverte : vide, on doit voir le fond
     if (rf){ rf.visible = hauler.hop > .5; rf.scale.y = .01 + hauler.hop/TRCAP*.99; }
@@ -2999,8 +3055,8 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
 
   // caméra : suit l'engin piloté
   // caméra quasi figée : elle ne bouge que si l'engin sort d'une zone morte centrale
-  const foc = (driven === 'hauler' && hauler) ? hauler : (worker || hauler);
-  if (foc){
+  const foc = pilote();
+  if (foc && !camFree){
     const a = SW/SH;
     const mx = (VIEW*a/2) * .22;                       // marge avant décrochage : on suit tôt,
     const mz = (VIEW/Math.sin(PITCH)/2) * .22;         // l'engin n'approche jamais du bord
@@ -3045,16 +3101,20 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   else if (S.k === 'sow'){   gf = (cellN[2]+cellN[3])/NC;          gl = 'Semis ' + Math.round(gf*100) + ' %'; }
   else if (S.k === 'fert'){  gf = cellN[3]/NC;                     gl = 'Engrais ' + Math.round(gf*100) + ' %'; }
   else if (S.k === 'grow'){  gf = sown ? ripe/sown : 0;            gl = 'Maturité ' + Math.round(gf*100) + ' %'; }
-  else if (driven === 'hauler' && hauler){ gf = hauler.hop/TRCAP; gl = 'Benne ' + Math.round(gf*100) + ' %'; }
+  else if (driven === 'trailer' && hauler){ gf = hauler.hop/TRCAP; gl = 'Benne ' + Math.round(gf*100) + ' %'; }
   else {                     gf = combine ? combine.hop/CAP : (hauler ? hauler.hop/TRCAP : 0);
                              gl = (combine ? 'Trémie ' : 'Benne ') + Math.round(gf*100) + ' %'; }
   elGauge.firstElementChild.style.width = (gf*100).toFixed(1) + '%';
   elGVal.textContent = gl;
   elGauge.classList.toggle('full', gf > .985);
 
-  if (ctrlMode === 'trace' && pathState === 'route'){
-    const txt = PATHTXT.route + ' · ' + PATH.count() + ' points';
-    if (elPathCap.textContent !== txt) elPathCap.textContent = txt;
+  if (pathState === 'trace') drawPathBtn();      // le bouton compte les points qui restent
+  if (PING.m.visible){                            // le repère du double-appui s'efface seul
+    PING.t += tick;
+    const k = Math.min(1, PING.t/1.1);
+    PING.m.material.opacity = .75*(1-k);
+    PING.m.scale.setScalar(1 + k*.9);
+    if (k >= 1) PING.m.visible = false;
   }
   saveT += tick;
   if (saveT > 6){ saveT = 0; save(); }
@@ -3068,18 +3128,22 @@ window.__FARM_DEBUG = () => ({
   stage, etape:STAGES[stage].n, culture:crop().id, jour:day, heure:+(dayT*24).toFixed(2),
   meteo:wKey, niveaux:Object.assign({}, lv), contrat:contract && {c:contract.crop, q:contract.qty, got:Math.round(contract.got)},
   manuel:manual, pause:paused, vitesse:SPEED,
-  pilotage:ctrlMode, tracage:pathState, trace:PATH.count(), zoom:+zoom.toFixed(2),
+  pilotage:ctrlMode, tracage:pathState, trace:traceLeft(pilote()), zoom:+zoom.toFixed(2),
+  traceVu:!!(pilote() && pilote().trace && pilote().trace.mesh.visible),
   cap:+(worker ? worker.heading : 0).toFixed(3), vit:+(worker ? worker.speed : 0).toFixed(2),
   allure:+(worker && worker.grip !== undefined ? worker.grip : 1).toFixed(2),
   posX:+worker?.pos.x.toFixed(1), posZ:+worker?.pos.z.toFixed(1),
   cly:+(worker ? worker.gy || 0 : 0).toFixed(3), surTerre:+(worker ? worker.soil || 0 : 0).toFixed(2),
-  elan:+((driven==='hauler'&&hauler?hauler:worker) ? ((driven==='hauler'&&hauler?hauler:worker).line||0) : 0).toFixed(2),
-  ecrase:+((driven==='hauler'&&hauler?hauler:worker) ? (((driven==='hauler'&&hauler?hauler:worker).sq||0)+((driven==='hauler'&&hauler?hauler:worker).wob||0)) : 0).toFixed(3),
-  penche:+((driven==='hauler'&&hauler?hauler:worker) ? ((driven==='hauler'&&hauler?hauler:worker).rol||0) : 0).toFixed(3),
+  elan:+(pilote() ? (pilote().line||0) : 0).toFixed(2),
+  ecrase:+(pilote() ? ((pilote().sq||0)+(pilote().wob||0)) : 0).toFixed(3),
+  penche:+(pilote() ? (pilote().rol||0) : 0).toFixed(3),
   traits:streaks.reduce((n,d)=>n+(d.m.visible?1:0),0),
   hop:worker ? Math.round(worker.hop) : 0,
   incl:Math.round(PITCH*180/Math.PI),
   conduit:driven, benneLa:!!hauler, benne:hauler ? Math.round(hauler.hop) : -1,
+  // la flotte présente sur la carte : clé, position, points de tracé restants, but désigné
+  flotte:KINDS.filter(k=>fleet[k]).map(k=>({k, x:+fleet[k].pos.x.toFixed(1), z:+fleet[k].pos.z.toFixed(1),
+          v:+fleet[k].speed.toFixed(1), tr:traceLeft(fleet[k]), but:!!fleet[k].goto})),
   bx:+(hauler ? hauler.pos.x : 0).toFixed(1), bz:+(hauler ? hauler.pos.z : 0).toFixed(1),
   capMax:Math.round(CAP), trCapMax:Math.round(TRCAP),
   vis:+(worker && worker.g.userData.auger ? worker.g.userData.auger.rotation.y : -1).toFixed(2),
