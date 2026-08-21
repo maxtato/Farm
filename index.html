@@ -954,13 +954,19 @@ function parcelY(x,z){
 // n'avait aucun sens — un champ au repos, c'est du chaume qui a séché, pas de la glaise.
 // C'est le motif M5 « Menue paille », le même que celui déposé par la moissonneuse.
 function soilTex(){
+  // Chaume clair, le motif retenu pour l'ouverture de partie. Vu de la caméra de jeu la
+  // tuile est réduite d'un facteur sept : les brins dessinés à la taille du nuancier
+  // disparaissent au filtrage et il ne reste que le fond, marron et nu. On garde donc la
+  // recette et on la dessine plus grande et plus dense, pour que le chaume tienne à
+  // distance. Pas de bandes de rouleau ici : sur une surface aussi large leur couture se
+  // verrait d'un bout à l'autre du champ.
   const [c,x] = cv(), R = rng(1028679);
-  x.fillStyle = '#a3905c'; x.fillRect(0,0,TS,TS); bands(x,.03);
-  speck(x, R,110,['rgba(198,182,132,.34)'],1.6,4.4);
-  for(let i=0;i<200;i++){
-    const px=R()*TS, py=R()*TS, a=R()*6.28, L=6+R()*13;
-    straw(x, R, px+1, py+1.4, a, L, 2.4+R()*2, 'rgba(96,78,38,.35)');
-    straw(x, R, px, py, a, L, 2.4+R()*2,
+  x.fillStyle = '#a3905c'; x.fillRect(0,0,TS,TS);
+  speck(x, R,150,['rgba(198,182,132,.34)'],2.4,6.6);
+  for(let i=0;i<330;i++){
+    const px=R()*TS, py=R()*TS, a=R()*6.28, L=10+R()*20, w=3.6+R()*2.8;
+    straw(x, R, px+1.4, py+2, a, L, w, 'rgba(112,92,48,.3)');
+    straw(x, R, px, py, a, L, w,
           R()>.45 ? 'rgba(244,226,150,.85)' : 'rgba(206,180,104,.7)');
   }
   const t = new THREE.CanvasTexture(c);
@@ -972,14 +978,15 @@ function soilTex(){
   const pos = [], uvs = [], col = [], tri = [];
   const px = new Float32Array(W*W), pz = new Float32Array(W*W), idx = new Int32Array(W*W);
   const push = (x,y,z,shade) => {
-    pos.push(x,y,z); uvs.push((x-X0)/2.2, (z-Z0)/2.2); col.push(shade,shade,shade);
+    pos.push(x,y,z); uvs.push((x-X0)/3.4, (z-Z0)/3.4); col.push(shade,shade,shade);
     return pos.length/3 - 1;
   };
   for(let j=0;j<=N;j++) for(let i=0;i<=N;i++){
     const k = j*W+i, p = parcelPoint(i/N, j/N), y = parcelY(p[0], p[1]);
     px[k] = p[0]; pz[k] = p[1];
-    // creux plus sombres, bosses plus claires : le relief se lit même vu à plat
-    idx[k] = push(p[0], y, p[1], .80 + (y - LIP)*2.4);
+    // creux à peine plus sombres, bosses à peine plus claires : le relief se devine
+    // sans peindre de grandes taches brunes sur le chaume
+    idx[k] = push(p[0], y, p[1], .95 + (y - LIP)*.8);
   }
   for(let j=0;j<N;j++) for(let i=0;i<N;i++){
     const a = j*W+i, b = a+1, c = a+W, d = c+1;
