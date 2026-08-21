@@ -1663,15 +1663,15 @@ for(let i=0;i<30;i++){
     color:'#fffbe8', transparent:true, opacity:0, depthWrite:false }));
   m.visible = false; m.renderOrder = 3; scene.add(m); streaks.push({ m, t:0, life:.3, a:.5 });
 }
-function popStreak(x,z,hd,lat,len,fort){
+function popStreak(x,z,hd,lat,recul,len,fort){
   const d = streaks.find(d=>!d.m.visible); if(!d) return;
-  const sn = Math.sin(hd), cs = Math.cos(hd);
-  const px = x + cs*lat, pz = z - sn*lat;
-  d.m.visible = true; d.t = 0; d.life = .26 + Math.random()*.12;
-  d.a = .42 + .4*fort;
-  d.m.position.set(px, parcelY(px,pz) + .06, pz);
+  const sn = Math.sin(hd), cs = Math.cos(hd);       // avant (sn,cs), côté (cs,-sn)
+  const px = x + cs*lat - sn*recul, pz = z - sn*lat - cs*recul;
+  d.m.visible = true; d.t = 0; d.life = .24 + Math.random()*.1;
+  d.a = .17 + .16*fort;                             // à peine plus clair que le sol
+  d.m.position.set(px, parcelY(px,pz) + .05, pz);
   d.m.rotation.y = hd + Math.PI/2;      // le trait file dans l'axe de marche, pas en travers
-  d.m.scale.set(len, 1, .85 + Math.random()*.6);
+  d.m.scale.set(len, 1, .85 + Math.random()*.35);
   d.m.material.opacity = d.a;
 }
 function popDust(x,z){
@@ -1821,10 +1821,14 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
   // Le ressort n'encaisse que les à-coups : cahots et reprises. Le balancement d'une caisse
   // molle, lui, est appliqué directement — passé par le ressort il était excité bien
   // au-dessus de sa fréquence propre et n'en sortait qu'un pour cent.
+  // Mesuré sur la vidéo, sur un passage droit : la caisse varie de treize pour cent en
+  // hauteur crête à crête, à 2,5 Hz, tandis que sa largeur ne bouge pas — deux et demi pour
+  // cent, soit le bruit de mesure. Le bas reste posé, c'est le toit qui monte et redescend.
+  // On s'aligne : plus aucune compensation de largeur, et une amplitude du même ordre.
   const K3 = 52, D3 = 5.8;                                   // ~1,15 Hz, bien élastique
-  v.sqV += (-K3*v.sq - D3*v.sqV - v.susV*4 - acc*.3)*dt;
-  v.sq = Math.max(-.16, Math.min(.16, v.sq + v.sqV*dt));
-  v.wob = Math.sin(v.bob*1.5)*.075*sf;                       // ~2,5 Hz à pleine allure
+  v.sqV += (-K3*v.sq - D3*v.sqV - v.susV*1.5 - acc*.11)*dt;
+  v.sq = Math.max(-.045, Math.min(.045, v.sq + v.sqV*dt));
+  v.wob = Math.sin(v.bob*1.5)*.05*sf;                        // ~2,5 Hz à pleine allure
   // la terre est en surépaisseur : l'engin y monte, et se cabre sur la rampe du bord
   const sn2 = Math.sin(v.heading), cs2 = Math.cos(v.heading);
   const gy = parcelY(v.pos.x, v.pos.z);
@@ -1837,17 +1841,19 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
   v.h.rotation.y = v.heading;
   v.g.position.y = v.sus;
   v.g.rotation.set(v.pit + v.slope, 0, v.rol);
-  const sy = 1 + v.sq + (v.wob||0), sxz = 1/Math.sqrt(sy);
-  v.g.scale.set(sxz, sy, sxz);
-  // les traits filent au sol dès que l'élan de ligne droite est pris
-  if (v.line > .34 && v.speed > 4){
-    v.strk += dt*(8 + 22*v.line);
+  // en hauteur seulement : la caisse ne s'élargit pas, elle se soulève et se rabaisse
+  v.g.scale.set(1, 1 + v.sq + (v.wob||0), 1);
+  // Deux rails posés juste sous l'arrière, dans la trace même de l'engin, dès que l'élan
+  // de ligne droite est pris. Ils se recouvrent assez pour faire une ligne continue, et
+  // s'effacent en un quart de seconde là où ils ont été posés.
+  if (v.line > .3 && v.speed > 4){
+    v.strk += dt*(9 + 9*v.line);
     while (v.strk >= 1){
       v.strk -= 1;
-      const cote = Math.random() < .5 ? -1 : 1;
-      popStreak(v.pos.x, v.pos.z, v.heading,
-                cote*(1.9 + Math.random()*2.6),
-                4.2 + Math.random()*5 + v.line*4, v.line);
+      const len = 1.5 + Math.random()*.8 + v.line*1.1;
+      const rec = 2.3 + Math.random()*.4;
+      popStreak(v.pos.x, v.pos.z, v.heading, -(.7 + Math.random()*.14), rec, len, v.line);
+      popStreak(v.pos.x, v.pos.z, v.heading,  (.7 + Math.random()*.14), rec, len, v.line);
     }
   } else v.strk = 0;
   const br = v.g.userData.brakes;
@@ -2951,11 +2957,10 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
     d.m.material.opacity = Math.max(0,.65-d.t*.8);
     if (d.t>.85) d.m.visible = false;
   });
-  streaks.forEach(d => {                       // le trait s'allonge un peu et s'efface
+  streaks.forEach(d => {                       // le rail s'efface là où il a été posé
     if(!d.m.visible) return;
     d.t += dt;
     const k = d.t/d.life;
-    d.m.scale.x *= 1 + dt*1.6;
     d.m.material.opacity = Math.max(0, d.a*(1-k)*(1-k));
     if (d.t > d.life) d.m.visible = false;
   });
