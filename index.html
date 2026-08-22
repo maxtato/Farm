@@ -1165,11 +1165,14 @@ const SWATH = (function(){
     return finish(c);
   }
   // Les points de semence, seuls, sur fond transparent : semés au hasard comme la paille.
+  // Ce qui tombe au sol doit valoir ce qui sort du semoir — il en pleut beaucoup, la terre
+  // doit en être criblée. Quatre fois plus de grains qu'avant, et un peu plus petits pour
+  // que ça reste une pluie de points et pas une nappe blanche : la terre passe encore entre.
   function texGrains(){
     const [c,x] = cv(), R = rng(884411);
-    for(let i=0;i<155;i++){
-      const gx=R()*TS, gy=R()*TS, r=4.4+R()*3.4;
-      blob(x,gx+1.1,gy+1.3,r,'rgba(74,54,26,.32)');
+    for(let i=0;i<620;i++){
+      const gx=R()*TS, gy=R()*TS, r=2.9+R()*2.7;
+      blob(x,gx+.9,gy+1.0,r,'rgba(74,54,26,.22)');
       blob(x,gx,gy,r,'#f6ecd2');
       blob(x,gx-r*.3,gy-r*.32,r*.46,'#fffaf0');
     }
