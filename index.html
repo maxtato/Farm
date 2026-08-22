@@ -1614,7 +1614,7 @@ function traceAdd(v, p){
 }
 function traceClear(v){
   if (!v) return;
-  v.path = []; v.head = 0;
+  v.path = []; v.head = 0; v.accroche = false;
   if (v.trace){ v.trace.geo.setDrawRange(0,0); v.trace.mesh.visible = false; }
 }
 function traceLeft(v){ return v && v.path ? Math.max(0, v.path.length - v.head) : 0; }
@@ -1633,21 +1633,57 @@ function followPath(v, dt){
     if (Math.hypot(v.path[v.head].x-P.x, v.path[v.head].z-P.z) >= 2.6) break;
     v.head++; avance = true;
   }
+  // On rejoint le tracé où on le touche. Le joueur commence rarement son trait pile sur
+  // l'engin : le premier point tombait souvent derrière lui, à cinq ou six mètres, hors de
+  // portée du rayon de capture — l'engin tournait alors en rond à côté de sa ligne sans
+  // jamais l'accrocher. On avance donc jusqu'au point le plus proche devant, jamais en
+  // arrière : ce qui reste du tracé est bien ce qu'il reste à faire.
+  // (on ne regarde qu'une douzaine de points devant : de quoi glisser le long de la ligne
+  //  sans qu'une boucle dessinée puisse se faire couper d'un bout à l'autre)
+  if (v.head < v.path.length - 1){
+    const t0 = v.head;
+    const d0 = Math.hypot(v.path[t0].x-v.pos.x, v.path[t0].z-v.pos.z);
+    let j = t0, best = d0;
+    const fin = Math.min(v.path.length, t0 + 12);
+    for(let k = t0+1; k < fin; k++){
+      const d = Math.hypot(v.path[k].x-v.pos.x, v.path[k].z-v.pos.z);
+      if (d < best){ best = d; j = k; }
+    }
+    if (j > t0 && best < d0 - 1){ v.head = j; avance = true; }
+  }
   if (v.head >= v.path.length){
     traceClear(v); if (v === pilote()) setPathState('pret');
     return;
   }
   if (v.head > 80){ v.path.splice(0, v.head); v.head = 0; avance = true; }
   if (avance) traceDraw(v);
-  const LOOK = Math.max(5.5, v.speed*.85);
+  // Choix du point visé. L'ancienne règle — avancer tant que le point est à moins de LOOK
+  // de l'engin — basculait d'un coup : à quelques centimètres près, la consigne sautait du
+  // premier point du tracé à un point bien plus loin, souvent dans une autre direction.
+  // L'engin partait alors tourner en rond sans jamais accrocher la ligne. On sépare donc
+  // les deux cas : tant qu'on n'est pas sur le tracé, on va droit sur son premier point ;
+  // une fois dessus, on avance LE LONG du tracé, ce qui ne peut plus revenir en arrière.
+  const LOOK = Math.max(6.5, v.speed*.85);
+  const dTete = Math.hypot(v.path[v.head].x-v.pos.x, v.path[v.head].z-v.pos.z);
   let i = v.head;
+  if (dTete < LOOK){
+    let reste = LOOK - dTete;
+    while (i < v.path.length-1 && reste > 0){
+      reste -= Math.hypot(v.path[i+1].x-v.path[i].x, v.path[i+1].z-v.path[i].z);
+      i++;
+    }
+  }
+  // et jamais un point posé sur le capot : viser à bout portant fait tourner l'engin en
+  // rond au lieu de l'amener sur la ligne
+  const MINI = RMIN*2 + 1.2;
   while (i < v.path.length-1 &&
-         Math.hypot(v.path[i].x-v.pos.x, v.path[i].z-v.pos.z) < LOOK) i++;
+         Math.hypot(v.path[i].x-v.pos.x, v.path[i].z-v.pos.z) < MINI) i++;
   // coincé pour de bon : on abandonne le point courant plutôt que d'insister
   v.bloque = v.speed < 1.2 ? (v.bloque || 0) + dt : 0;
   if (v.bloque > 2.5){ v.bloque = 0; v.head++; traceDraw(v); return; }
   // sur le tout dernier point seulement, on vise avec l'outil : l'engin dépasse le bout du
   // tracé de la longueur de son attelage, pour que l'outil, lui, s'arrête pile dessus
+  v.__cible = v.path[i];
   driveTo(v, v.path[i], dt, false, true, i === v.path.length-1);
 }
 
@@ -2280,10 +2316,11 @@ function toast(msg, cls){
 }
 
 // ---------- améliorations ----------
-// La transmission ne s'achète plus : elle touchait au braquage et à la reprise, donc à la
-// conduite elle-même, et deux parties d'un même jeu ne se pilotaient plus pareil.
+// Plus rien ne s'achète qui touche à la conduite. La transmission jouait sur le braquage et
+// la reprise, le moteur sur la vitesse : au bout de quelques niveaux l'engin filait si vite
+// et braquait si court qu'il ne rattrapait plus le tracé qu'on venait de lui dessiner. Un
+// engin se pilote donc pareil du premier au dernier jour, et la boutique s'occupe du reste.
 const UPGRADES = [
-  { id:'moteur',  n:'Moteur',      emo:'⚙️', d:'Vitesse de travail',    max:5, base:2400 },
   { id:'tremie',  n:'Trémie',      emo:'🛢️', d:'Capacité de récolte',   max:5, base:2800 },
   { id:'semence', n:'Fertilisant', emo:'🌿', d:'Vitesse de pousse',     max:5, base:2600 },
   { id:'negoce',  n:'Négoce',      emo:'💵', d:'Prix de vente au silo', max:5, base:3200 }
@@ -2294,8 +2331,8 @@ const owned = { ble:true, colza:false, mais:false };
 let totalT = 0, harvests = 0;
 const level = () => 1 + Math.floor(Math.sqrt(totalT/1500));
 function applyUpgrades(){
-  MAXSPD = MAXSPD0*(1 + .11*lv.moteur);
-  RMIN   = RMIN0;                                  // le braquage ne s'achète pas
+  MAXSPD = MAXSPD0;                                // la vitesse ne s'achète pas
+  RMIN   = RMIN0;                                  // le braquage non plus
   ACC    = 10;                                     // la reprise non plus
   CAP    = Math.round(CAP0  *(1 + .28*lv.tremie));
   TRCAP  = Math.round(TRCAP0*(1 + .28*lv.tremie));
@@ -3528,6 +3565,11 @@ window.__FARM_DEBUG = () => ({
   })(),
   trav:(function(){ const o={}; for(const k of KINDS){ const v=fleet[k]; if(v) o[k]=+v.trav.toFixed(2); } return o; })(),
   grains:+GRAIN.value.toFixed(3),
+  suivi:(function(){ const v = pilote(); if (!v) return null;
+    return { tete:v.head, n:v.path?v.path.length:0, cote:v.cote||0, choc:+(v.choc||0).toFixed(2),
+             bloque:+(v.bloque||0).toFixed(1), cap:+v.heading.toFixed(2),
+             cible:v.__cible ? [+v.__cible.x.toFixed(1), +v.__cible.z.toFixed(1)] : null,
+             pt0:(v.path&&v.path[v.head])?[+v.path[v.head].x.toFixed(1), +v.path[v.head].z.toFixed(1)]:null }; })(),
   finTrace:(function(){ const v = pilote(); if (!v || !v.path || !v.path.length) return null;
     const p = v.path[v.path.length-1]; return [+p.x.toFixed(2), +p.z.toFixed(2)]; })(),
   outil:(function(){ const v = pilote(); if (!v) return null;
