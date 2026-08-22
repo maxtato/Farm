@@ -1224,7 +1224,7 @@ const SWATH = (function(){
   m.renderOrder = -10;                    // juste après le sol, avant tout le reste
   scene.add(m);
 
-  let n = 0, tri = 0, av = 0, lx = 0, lz = 0, fil = null;
+  let n = 0, tri = 0, fil = null;
   return {
     // `chaine` : à qui appartient le point. Deux engins qui travaillent en même temps ne
     // doivent pas voir leurs échantillons cousus l'un à l'autre.
@@ -1232,16 +1232,20 @@ const SWATH = (function(){
       if (n >= MAXS) return;
       const suite = link && fil === (chaine === undefined ? etat : chaine + ':' + etat);
       const c = Math.cos(ang), si = Math.sin(ang);
-      av = suite ? av + Math.hypot(x-lx, z-lz)/TILE : 0;      // v = distance parcourue
-      lx = x; lz = z;
       fil = (chaine === undefined ? etat : chaine + ':' + etat);
       const o = n*6, u = n*4, e = n*2;
       const ax = x + c*w/2, az = z - si*w/2;
       const bx = x - c*w/2, bz = z + si*w/2;
       pos[o]   = ax; pos[o+1] = parcelY(ax,az)*.97 + .015; pos[o+2] = az;   // travaillé = aplani
       pos[o+3] = bx; pos[o+4] = parcelY(bx,bz)*.97 + .015; pos[o+5] = bz;
-      uv[u] = 0;        uv[u+1] = av;
-      uv[u+2] = w/TILE; uv[u+3] = av;
+      // La texture est accrochée au SOL, pas au passage. Elle l'était au passage : chaque
+      // aller repartait à zéro dans l'image et la parcourait sur la largeur exacte de
+      // l'outil, si bien que tous les passages montraient rigoureusement le même morceau
+      // d'image, bord à bord. C'était ça, l'effet carreaux — un damier calé sur les allées.
+      // En repère sol, deux passages voisins prolongent le même dessin sans couture, et le
+      // ruban tombe pile sur la texture de la parcelle qui compte dans le même repère.
+      uv[u]   = (ax-X0)/TILE; uv[u+1] = (az-Z0)/TILE;
+      uv[u+2] = (bx-X0)/TILE; uv[u+3] = (bz-Z0)/TILE;
       lay[e] = lay[e+1] = etat;
       if (suite && n > 0){
         const a = (n-1)*2, b = a+1, cc = n*2, d = cc+1, t = tri*6;
@@ -1256,7 +1260,7 @@ const SWATH = (function(){
       geo.attributes.uv.needsUpdate = true;
       geo.attributes.aEtat.needsUpdate = true;
     },
-    reset(){ n = 0; tri = 0; av = 0; fil = null; geo.setDrawRange(0,0); },
+    reset(){ n = 0; tri = 0; fil = null; geo.setDrawRange(0,0); },
     pose(){ return n; }                    // combien d'échantillons déposés, pour les essais
   };
 })();
@@ -1322,15 +1326,19 @@ const MX = (x,y,z,rx,ry,rz,s) => new THREE.Matrix4().compose(
   new THREE.Vector3(x,y,z),
   new THREE.Quaternion().setFromEuler(new THREE.Euler(rx||0,ry||0,rz||0)),
   new THREE.Vector3(1,1,1).multiplyScalar(s===undefined?1:s));
+// Six brins par pied au lieu de quatre, et écartés jusqu'à vingt-six centimètres du centre.
+// Les pieds étant à soixante, les brins d'un pied entrent dans ceux d'à côté : plus un
+// centimètre de terre entre les rangs.
 function tuftE(head, stemCol){
   const p = [];
-  [[0,0,1.5],[.085,.06,1.2],[-.075,-.06,1.34],[.02,-.09,1.1]].forEach(([x,z,H]) => {
+  [[0,0,1.5],[.24,.14,1.22],[-.21,-.16,1.36],[.06,-.26,1.12],
+   [-.19,.24,1.28],[.20,-.10,1.16]].forEach(([x,z,H]) => {
     const g = new THREE.CylinderGeometry(.019,.03,H,4,1,true); g.translate(0,H/2,0);
     p.push({ g, c:stemCol, m:MX(x,0,z) });
     for(let k=0;k<3;k++){
       const y = H-.02+k*.15, s = 1-k*.14;
-      p.push({ g:new THREE.ConeGeometry(.052,.18,4), c:head, m:MX(x+.05,y,z,0,0,-.7,s) });
-      p.push({ g:new THREE.ConeGeometry(.052,.18,4), c:head, m:MX(x-.05,y,z,0,0, .7,s) });
+      p.push({ g:new THREE.ConeGeometry(.056,.18,3), c:head, m:MX(x+.05,y,z,0,0,-.7,s) });
+      p.push({ g:new THREE.ConeGeometry(.056,.18,3), c:head, m:MX(x-.05,y,z,0,0, .7,s) });
     }
   });
   return merge(p);
@@ -1364,14 +1372,17 @@ const CN = 9, CH = P/CN;                                    // 9×9 tuiles : le 
 // ---------- cultures : chacune a sa silhouette, son prix et son rythme ----------
 function tuftRape(flower, stemCol){                         // colza : tiges ramifiées, tête en grappe
   const p = [];
-  [[0,0,1.32],[.1,.07,1.12],[-.09,-.07,1.24],[.03,-.1,.98]].forEach(([x,z,H]) => {
+  [[0,0,1.32],[.25,.17,1.14],[-.23,-.18,1.26],[.08,-.26,1.02]].forEach(([x,z,H]) => {
     const g = new THREE.CylinderGeometry(.022,.036,H,4,1,true); g.translate(0,H/2,0);
     p.push({ g, c:stemCol, m:MX(x,0,z) });
     p.push({ g:new THREE.ConeGeometry(.075,.3,4), c:stemCol, m:MX(x+.1,H*.42,z, 0,.6,-1.15) });
     p.push({ g:new THREE.ConeGeometry(.075,.3,4), c:stemCol, m:MX(x-.1,H*.62,z, 0,-.6, 1.15) });
-    for(let k=0;k<7;k++){                                   // la grappe de fleurs
-      const a = k/7*6.28318, r = .07 + (k%3)*.022;
-      p.push({ g:new THREE.SphereGeometry(.052,5,4), c:flower,
+    // La grappe coûtait à elle seule les trois quarts du colza : sept boules de cinq par
+    // quatre facettes, par tige, par pied. À la distance où on la voit, quatre par trois
+    // font exactement la même fleur pour un tiers du prix.
+    for(let k=0;k<6;k++){
+      const a = k/6*6.28318, r = .075 + (k%3)*.024;
+      p.push({ g:new THREE.SphereGeometry(.055,4,3), c:flower,
                m:MX(x+Math.cos(a)*r, H - .02 + (k%3)*.075, z+Math.sin(a)*r) });
     }
   });
@@ -1384,8 +1395,8 @@ function tuftCorn(leaf, stemCol, cob){                      // maïs : des canne
   // sous le rang. Onze cannes et demie au mètre carré, sans un objet de plus à afficher —
   // c'est une seule géométrie posée aux mêmes emplacements.
   const p = [], H = 2.75;
-  const CANNES = [ [0,0,1], [.30,.05,.92], [-.24,.20,.97], [.10,-.30,.88],
-                   [-.30,-.16,.95], [.22,.28,.90] ];          // décalage x, z, échelle
+  const CANNES = [ [0,0,1], [.36,.07,.92], [-.30,.25,.97], [.13,-.36,.88],
+                   [-.36,-.20,.95], [.27,.34,.90] ];          // décalage x, z, échelle
   for(const [dx,dz,sc] of CANNES){
     const h = H*sc, tour = dx*7.3 + dz*4.1;
     const g = new THREE.CylinderGeometry(.05,.08,h,5,1,true); g.translate(0,h/2,0);
@@ -1441,7 +1452,11 @@ function cropGeo(c){
 }
 let cropI = 0, cropScale = 1;
 const crop = () => CROPS[cropI];
-const SP = .72, plants = [], chunks = [];                    // pieds bien plus serrés
+// Pieds franchement plus serrés : de soixante-douze centimètres on descend à soixante, soit
+// une moitié de plants en plus au mètre carré. Comme chaque pied porte le même rendement, on
+// le divise d'autant : le champ est plus dense à l'œil, la benne se remplit pareil.
+const SP0 = .72, SP = .60, RENDK = (SP/SP0)*(SP/SP0);
+const plants = [], chunks = [];
 for(let cz=0;cz<CN;cz++) for(let cx=0;cx<CN;cx++)
   chunks.push({ cx:X0+(cx+.5)*CH, cz:Z0+(cz+.5)*CH, list:[] });
 for(let x=X0+SP/2; x<X0+P; x+=SP)
@@ -3343,7 +3358,7 @@ function work(v, dt){
         if (Math.abs(lx) < q.W/2 && lz > q.near && lz < q.far){ p.g = 0; p.r = 1; writePlant(k); cut++; }
       }
       if (cut){
-        v.hop = Math.min(CAP, v.hop + cut*crop().yieldK);
+        v.hop = Math.min(CAP, v.hop + cut*crop().yieldK*RENDK);
         applyTool(v, i => setCell(i,0));
         laySwath(v, 3);
         if (Math.random()<.3) popDust(v.pos.x-Math.sin(v.heading)*2.5,
