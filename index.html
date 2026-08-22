@@ -1598,7 +1598,7 @@ function traceAdd(v, p){
 }
 function traceClear(v){
   if (!v) return;
-  v.path = []; v.head = 0; v.accroche = false;
+  v.path = []; v.head = 0; v.accroche = false; v.prog = undefined; v.progT = 0; v.rate = 0;
   if (v.trace){ v.trace.geo.setDrawRange(0,0); v.trace.mesh.visible = false; }
 }
 function traceLeft(v){ return v && v.path ? Math.max(0, v.path.length - v.head) : 0; }
@@ -1628,7 +1628,9 @@ function followPath(v, dt){
     const t0 = v.head;
     const d0 = Math.hypot(v.path[t0].x-v.pos.x, v.path[t0].z-v.pos.z);
     let j = t0, best = d0;
-    const fin = Math.min(v.path.length, t0 + 12);
+    // Écarté du tracé — on vient de contourner quelque chose : on ne repart pas chercher le
+    // point qu'on a laissé derrière, on reprend la ligne là où on la retrouve, plus loin.
+    const fin = Math.min(v.path.length, t0 + (d0 > 4.5 ? 90 : 12));
     for(let k = t0+1; k < fin; k++){
       const d = Math.hypot(v.path[k].x-v.pos.x, v.path[k].z-v.pos.z);
       if (d < best){ best = d; j = k; }
@@ -1640,7 +1642,8 @@ function followPath(v, dt){
     return;
   }
   if (v.head > 80){ v.path.splice(0, v.head); v.head = 0; avance = true; }
-  if (avance) traceDraw(v);
+  if (avance){ traceDraw(v); v.prog = undefined; v.progT = 0; }   // nouveau point, nouveau compte
+  const dTete = Math.hypot(v.path[v.head].x-v.pos.x, v.path[v.head].z-v.pos.z);
   // Choix du point visé. L'ancienne règle — avancer tant que le point est à moins de LOOK
   // de l'engin — basculait d'un coup : à quelques centimètres près, la consigne sautait du
   // premier point du tracé à un point bien plus loin, souvent dans une autre direction.
@@ -1648,7 +1651,6 @@ function followPath(v, dt){
   // les deux cas : tant qu'on n'est pas sur le tracé, on va droit sur son premier point ;
   // une fois dessus, on avance LE LONG du tracé, ce qui ne peut plus revenir en arrière.
   const LOOK = Math.max(6.5, v.speed*.85);
-  const dTete = Math.hypot(v.path[v.head].x-v.pos.x, v.path[v.head].z-v.pos.z);
   let i = v.head;
   if (dTete < LOOK){
     let reste = LOOK - dTete;
@@ -1662,9 +1664,26 @@ function followPath(v, dt){
   const MINI = RMIN*2 + 1.2;
   while (i < v.path.length-1 &&
          Math.hypot(v.path[i].x-v.pos.x, v.path[i].z-v.pos.z) < MINI) i++;
-  // coincé pour de bon : on abandonne le point courant plutôt que d'insister
-  v.bloque = v.speed < 1.2 ? (v.bloque || 0) + dt : 0;
-  if (v.bloque > 2.5){ v.bloque = 0; v.head++; traceDraw(v); return; }
+  // Coincé pour de bon. On ne mesure plus ça à la vitesse : un engin qui rebondit contre la
+  // grange à trois mètres par seconde n'est pas lent, il n'avance simplement plus vers son
+  // point. On regarde donc le seul chiffre qui compte, la distance à ce point : si elle ne
+  // baisse plus pendant trois secondes, le point est hors d'atteinte et on passe au suivant.
+  if (v.prog === undefined || dTete < v.prog - .4){ v.prog = dTete; v.progT = 0; }
+  else {
+    v.progT = (v.progT || 0) + dt;
+    if (v.progT > 3){
+      v.progT = 0; v.prog = undefined; v.head++; traceDraw(v);
+      // Quatre points de suite hors d'atteinte sans jamais avoir touché la ligne : le tracé
+      // mène quelque part où l'engin ne peut pas aller. Mieux vaut s'arrêter franchement
+      // que continuer à racler la grange point après point.
+      if (++v.rate >= 4){
+        traceClear(v); v.speed = 0;
+        if (v === pilote()) setPathState('pret');
+      }
+      return;
+    }
+  }
+  if (dTete < 3) v.rate = 0;                   // on est sur la ligne : le compte repart
   // sur le tout dernier point seulement, on vise avec l'outil : l'engin dépasse le bout du
   // tracé de la longueur de son attelage, pour que l'outil, lui, s'arrête pile dessus
   v.__cible = v.path[i];
@@ -1937,7 +1956,7 @@ function step(v, dt, wantHeading, wantSpeed, turnable){
   v.speed += (wantSpeed*(1 + LINEK*v.line) - v.speed)*Math.min(1, dt*ACC);
   v.pos.x += Math.sin(v.heading)*v.speed*dt;
   v.pos.z += Math.cos(v.heading)*v.speed*dt;
-  unstick(v);                                            // décor et autres engins : on ne traverse pas
+  unstick(v, dt);                                        // décor et autres engins : on ne traverse pas
   const d = v.g.userData;
   d.wheels.forEach(w => w.userData.spin.rotation.x += v.speed*dt/w.userData.r);
   (d.steer||[]).forEach(s => s.w.rotation.y = v.steerA*s.k);
@@ -2070,7 +2089,7 @@ function driveTo(v, target, dt, stop, large, outil){
   while(diff<-Math.PI) diff += 6.28318;
   // en auto aussi il ralentit pour braquer, avec exactement la même courbe qu'au manche
   const grip = easeGrip(v, stop ? 1 : speedForTurn(diff), dt);
-  step(v, dt, want, stop ? 0 : MAXSPD*mudK*(v.mul||1)*grip, true);
+  step(v, dt, want, stop ? 0 : MAXSPD*mudK*(v.mul||1)*grip*(v.serre||1), true);
   if (dec){ const T = outilXZ(v, _out2); return Math.hypot(vrai.x-T.x, vrai.z-T.z); }
   return Math.hypot(target.x-v.pos.x, target.z-v.pos.z);
 }
@@ -2143,7 +2162,11 @@ function fleetGet(kind){
   if (!KINDS.includes(kind)) return null;
   if (!fleet[kind]){
     const v = vehicle(kind), n = KINDS.indexOf(kind);
-    v.pos.set(GATE.x + (n-2)*5.8, 0, GATE.z - 2);   // rangés côte à côte, sans se toucher
+    // Rangés côte à côte au fond de la cour, derrière les bâtiments. Alignés devant, comme
+    // ils l'étaient, les cinq engins formaient un mur de vingt-trois mètres exactement en
+    // travers du chemin entre le champ et la cour : impossible d'aller au silo sans se
+    // frotter à sa propre flotte.
+    v.pos.set(GATE.x + (n-2)*6.4, 0, YARD + 10.5);
     v.heading = Math.PI; v.h.position.set(v.pos.x, 0, v.pos.z);
     if (kind === 'trailer'){ v.hop = 0; v.paid = 0; v.cropId = crop().id; }
     const tw = v.g.userData.tool ? v.g.userData.tool.W : 4;
@@ -3033,7 +3056,7 @@ function readKeys(){
 // Repousser hors du chevauchement ne suffisait pas : l'engin restait le nez dans le mur et
 // poussait dessus. On retient donc la direction de la poussée, et on braque du même côté —
 // le mur écarte l'avant au lieu de l'arrêter, et l'engin longe puis contourne.
-function unstick(v){
+function unstick(v, dt){
   const sn = Math.sin(v.heading), cs = Math.cos(v.heading);
   const B = v.corps || CORPS.prep;
   let px = 0, pz = 0, tor = 0, prof = 0;
@@ -3070,7 +3093,8 @@ function unstick(v){
       }
     }
   }
-  if (!prof) return;
+  if (!prof){ v.frotte = 0; return; }
+  v.frotte = (v.frotte || 0) + (dt || .016);         // depuis combien de temps on frotte
   v.heading += Math.max(-.13, Math.min(.13, tor*.5));
   // et si le couple est nul — choc de plein fouet — on choisit quand même un côté
   const cote = px*cs - pz*sn;
@@ -3086,12 +3110,40 @@ function unstick(v){
 // `portee` = distance du but. Sans elle, un obstacle situé derrière le point visé faisait
 // tourner l'engin autour indéfiniment : il ne pouvait plus jamais atteindre un point posé
 // près d'un bâtiment ou d'un autre engin. On n'évite que ce qui est sur le chemin.
+// Jusqu'où peut-on aller dans cette direction avant de toucher quelque chose ? Sert à
+// choisir de quel côté contourner : le côté le plus dégagé, pas le premier venu.
+function degage(v, ang, look){
+  const sn = Math.sin(ang), cs = Math.cos(ang);
+  const R = (v.rad || 2.2) + .35, nez = v.avant || 2.2;
+  let d = look;
+  const test = (ox, oz, orad) => {
+    const dx = ox - v.pos.x, dz = oz - v.pos.z;
+    const along = dx*sn + dz*cs - nez;
+    if (along < 0 || along >= d) return;
+    if (Math.abs(dx*cs - dz*sn) > R + orad) return;
+    d = along;
+  };
+  for(let i=0;i<OBST.length;i++){ const o = OBST[i]; test(o.x, o.z, o.r); }
+  for(let i=0;i<KINDS.length;i++){
+    const w = fleet[KINDS[i]];
+    if (!w || w === v) continue;
+    if ((v.kind === 'harvest' && w.kind === 'trailer') ||
+        (v.kind === 'trailer' && w.kind === 'harvest')) continue;
+    const WB = w.corps || CORPS.prep, ws = Math.sin(w.heading), wc = Math.cos(w.heading);
+    for(let c=0;c<WB.length;c++) test(w.pos.x + ws*WB[c][0], w.pos.z + wc*WB[c][0], WB[c][1]*.92);
+  }
+  return d;
+}
 function dodge(v, want, portee){
   v.choc = Math.max(0, (v.choc || 0) - .016);            // le souvenir du choc s'estompe
-  const marge = v.choc > 0 ? 2.6 : 1.4;                  // fraîchement touché : on passe plus large
+  // On frôle : la marge, c'est ce qu'il faut pour ne pas toucher, pas un mètre de plus.
+  // Fraîchement cogné, on s'écarte un peu davantage le temps de se dégager.
+  const marge = v.choc > 0 ? 1.7 : 1.0;
   const R = (v.rad || 2.2) + marge;
   const but = portee === undefined ? 1e9 : portee;
-  const look = Math.min(but, Math.max(12, v.speed*1.8));
+  // On ne regarde qu'à la distance qu'il faut pour se déporter à cette allure. Regarder à
+  // douze mètres faisait braquer bien avant l'obstacle, puis se redresser, puis rebraquer.
+  const look = Math.min(but, Math.max(6.5, v.speed*1.15) + (v.rad || 2.2));
   const sn = Math.sin(want), cs = Math.cos(want);
   let bloc = null, proche = 1e9;
   const nez = v.avant || 2.2;                             // l'obstacle se mesure depuis l'avant
@@ -3119,11 +3171,47 @@ function dodge(v, want, portee){
     for(let c=0;c<WB.length;c++)
       test(w.pos.x + wsn*WB[c][0], w.pos.z + wcs*WB[c][0], WB[c][1]*.92);
   }
-  if (!bloc){ v.cote = 0; return want; }
-  if (!v.cote) v.cote = bloc.side >= 0 ? -1 : 1;          // il est à droite : on passe à gauche
-  const demi = bloc.dist > bloc.need ? Math.asin(bloc.need/bloc.dist) : Math.PI/2;
-  const rel  = Math.atan2(bloc.side, bloc.along);         // relèvement de l'obstacle
-  return want + rel + v.cote*demi;
+  // Coincé pour de bon — calé contre une botte, pris entre deux murs. On laisse tomber la
+  // consigne le temps de se dégager : on balaye tout autour et on part vers l'air libre.
+  // Sans ça l'engin oscillait sur place, une seconde d'un côté, une seconde de l'autre.
+  if ((v.frotte || 0) > 1.2){
+    let mieux = v.heading, large = -1;
+    for(let k=-5;k<=5;k++){
+      const a = v.heading + k*.32, l = degage(v, a, 18);
+      if (l > large){ large = l; mieux = a; }
+    }
+    v.cote = 0; v.serre = .8;
+    if (large > 6) v.frotte = 0;                         // dégagé : on reprend la consigne
+    return mieux;
+  }
+  if (!bloc){ v.cote = 0; v.serre = 1; return want; }
+  // On lève le pied à l'approche. Un engin qui arrive à dix mètres par seconde sur un mur
+  // n'a pas le temps de se déporter, quoi qu'on lui commande ; à quatre, il passe à côté.
+  v.serre = Math.max(.62, Math.min(1, (bloc.dist - bloc.need + 5)/6));
+  const demi = bloc.dist > bloc.need ? Math.asin(Math.min(1, bloc.need/bloc.dist)) : Math.PI/2;
+  const rel  = Math.atan2(bloc.side, Math.max(.1, bloc.along));   // relèvement de l'obstacle
+  // De quel côté ? Contourner par le plus proche bord ne suffit pas : dans une cour, l'esquive
+  // d'un bâtiment envoie droit dans le suivant. On regarde donc ce qu'il y a derrière chaque
+  // tangente et on prend la plus dégagée — puis on s'y tient, tant qu'elle le reste.
+  const port = look*1.7;
+  const g = degage(v, want + rel - demi, port);          // côté -1
+  const d = degage(v, want + rel + demi, port);          // côté +1
+  if (!v.cote) v.cote = g >= d ? -1 : 1;
+  else {
+    // On ne change d'avis en cours de contournement que si l'autre côté est franchement
+    // plus ouvert : hésiter, c'est se remettre en plein dans ce qu'on esquivait.
+    const ici = v.cote < 0 ? g : d, la = v.cote < 0 ? d : g;
+    if (ici < Math.min(4.5, port*.5) && la > ici + 3) v.cote = -v.cote;
+  }
+  // Deux garde-fous, et c'est là qu'était le blocage.
+  // 1. La consigne se borne. Un obstacle qui arrive contre le nez donnait un relèvement de
+  //    quatre-vingt-dix degrés, plus une demi-ouverture de quatre-vingt-dix : cent quatre-
+  //    vingts degrés de consigne, l'engin faisait demi-tour et repartait dans le décor.
+  // 2. Elle ne prend toute son ampleur qu'à l'approche. De loin on se contente d'infléchir
+  //    la trajectoire ; on ne se déporte franchement qu'une fois l'obstacle proche. C'est
+  //    ce qui fait qu'on le frôle au lieu de l'éviter dix mètres avant.
+  const corr = Math.max(-1.5, Math.min(1.5, rel + v.cote*demi));
+  return want + corr;
 }
 
 // ---------- pilotage d'un engin de la flotte ----------
@@ -3144,9 +3232,14 @@ function driveOne(v, conduit, chantier, dt){
   if (v.path && v.head < v.path.length){ followPath(v, dt); return; }
   if (v.goto){
     // `stop` mettrait la consigne de vitesse à zéro : on roule jusqu'au point, on ne s'y gare pas
-    v.bloque = v.speed < 1.2 ? (v.bloque || 0) + dt : 0;
-    if (v.bloque > 3){ v.bloque = 0; v.goto = null; v.speed = 0; return; }  // inatteignable
-    if (driveTo(v, v.goto, dt, false, false, true) < RMIN + 1.2){ v.goto = null; v.speed = 0; }
+    const dv = Math.hypot(v.goto.x-v.pos.x, v.goto.z-v.pos.z);
+    if (v.prog === undefined || dv < v.prog - .4){ v.prog = dv; v.progT = 0; }
+    else if ((v.progT = (v.progT||0) + dt) > 4){    // on n'approche plus : c'est inatteignable
+      v.progT = 0; v.prog = undefined; v.goto = null; v.speed = 0; return;
+    }
+    if (driveTo(v, v.goto, dt, false, false, true) < RMIN + 1.2){
+      v.goto = null; v.speed = 0; v.prog = undefined;
+    }
     return;
   }
   if (conduit && manual){ driveManual(v, dt); return; }
@@ -3560,6 +3653,22 @@ window.__FARM_DEBUG = () => ({
   trav:(function(){ const o={}; for(const k of KINDS){ const v=fleet[k]; if(v) o[k]=+v.trav.toFixed(2); } return o; })(),
   grains:+GRAIN.value.toFixed(3),
   ruban:SWATH.pose(),
+  // distance libre au plus proche obstacle, gabarit compris : négatif = ça touche
+  frole:(function(){ const v = pilote(); if (!v) return undefined;
+    const sn = Math.sin(v.heading), cs = Math.cos(v.heading); let m = 1e9;
+    for(const b of v.corps){ const cx = v.pos.x + sn*b[0], cz = v.pos.z + cs*b[0];
+      for(const o of OBST) m = Math.min(m, Math.hypot(cx-o.x, cz-o.z) - b[1] - o.r);
+      for(const k of KINDS){ const w = fleet[k]; if (!w || w===v) continue;
+        const ws = Math.sin(w.heading), wc = Math.cos(w.heading);
+        for(const c of w.corps)
+          m = Math.min(m, Math.hypot(cx-(w.pos.x+ws*c[0]), cz-(w.pos.z+wc*c[0])) - b[1] - c[1]); } }
+    return +m.toFixed(2); })(),
+  // de combien on s'est écarté de la ligne qu'on suit
+  ecartTrace:(function(){ const v = pilote(); if (!v || !v.path || v.head >= v.path.length) return undefined;
+    let m = 1e9;
+    for(let k=Math.max(0,v.head-3); k<Math.min(v.path.length, v.head+8); k++)
+      m = Math.min(m, Math.hypot(v.path[k].x-v.pos.x, v.path[k].z-v.pos.z));
+    return +m.toFixed(2); })(),
   cellules:(function(){ const o=[0,0,0,0]; for(let i=0;i<cell.length;i++) o[cell[i]]++;
     return o.map(v=>+(100*v/cell.length).toFixed(1)); })(),
   murs:(function(){ let m=0; for(const p of plants) if (p.g > .55) m++; return m; })(),
