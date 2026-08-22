@@ -892,11 +892,6 @@ function glow(x,px,py,r,c0,c1){
     x.fillStyle = g; x.beginPath(); x.arc(ax,ay,r,0,6.3); x.fill();
   });
 }
-function bands(x, a){                                  // trace de rouleau, commune à tous les états
-  a = a === undefined ? .05 : a;
-  x.fillStyle = 'rgba(255,255,255,'+a+')'; x.fillRect(0,0,TS/2,TS);
-  x.fillStyle = 'rgba(0,0,0,'+(a+.012)+')'; x.fillRect(TS/2,0,TS/2,TS);
-}
 // sillon ondulé, périodique sur la hauteur pour se raccorder
 function furrow(x, px, col, w, amp, k, ph){
   x.strokeStyle = col; x.lineWidth = w; x.lineCap = 'round';
@@ -908,49 +903,6 @@ function furrow(x, px, col, w, amp, k, ph){
     }
     x.stroke();
   }
-}
-// Terre sèche : des plaques séparées par des fentes. Un germe par maille d'un réseau
-// brouillé, chacun avec son propre rayon, et pour chaque pixel l'écart entre les deux plus
-// proches — nul sur la fente, maximal au cœur de la plaque. Le réseau sert deux fois : il
-// limite la comparaison aux germes voisins (sans quoi une grande image serait hors de
-// portée), et comme il compte un nombre entier de mailles, le motif boucle. Les distances
-// se mesurent donc sur le tore : la tuile se raccorde à elle-même par les quatre bords.
-function craquelures(x, R, a, larg, fente, bombe){
-  const W = x.canvas.width, H = x.canvas.height;
-  const NX = Math.max(4, Math.round(W/a)), NY = Math.max(4, Math.round(H/a));
-  const ax = W/NX, ay = H/NY, mail = Math.min(ax, ay);
-  const gx = new Float32Array(NX*NY), gy = new Float32Array(NX*NY), gw = new Float32Array(NX*NY);
-  for(let j=0;j<NY;j++) for(let i=0;i<NX;i++){
-    const k = j*NX+i;
-    gx[k] = (i+.5+(R()-.5)*.88)*ax;
-    gy[k] = (j+.5+(R()-.5)*.88)*ay;
-    gw[k] = (R()-.5)*mail*.6;                  // des plaques franchement inégales
-  }
-  const im = x.getImageData(0,0,W,H), D = im.data, HW = W*.5, HH = H*.5;
-  for(let py=0;py<H;py++){
-    const cj = (py/ay)|0;
-    for(let px=0;px<W;px++){
-      const ci = (px/ax)|0;
-      let d1 = 1e9, d2 = 1e9;
-      for(let j=cj-2;j<=cj+2;j++){
-        const jj = ((j%NY)+NY)%NY;
-        for(let i=ci-2;i<=ci+2;i++){
-          const k = jj*NX + ((i%NX)+NX)%NX;
-          let ux = px-gx[k]; if (ux > HW) ux -= W; else if (ux < -HW) ux += W;
-          let uy = py-gy[k]; if (uy > HH) uy -= H; else if (uy < -HH) uy += H;
-          const d = Math.sqrt(ux*ux+uy*uy) - gw[k];
-          if (d < d1){ d2 = d1; d1 = d; } else if (d < d2) d2 = d;
-        }
-      }
-      const k2 = Math.sqrt(Math.min(1, (d2-d1)/larg));
-      const mul = (1 - (1-k2)*fente) * (1 + k2*bombe);
-      const o = (py*W + px)*4;
-      D[o]   = Math.min(255, D[o]  *mul);
-      D[o+1] = Math.min(255, D[o+1]*mul);
-      D[o+2] = Math.min(255, D[o+2]*mul);
-    }
-  }
-  x.putImageData(im, 0, 0);
 }
 function speck(x, R, n, cols, rmin, rmax){
   for(let i=0;i<n;i++)
@@ -1065,92 +1017,22 @@ function parcelY(x,z){
 // Pas de bandes de rouleau non plus : sur une surface aussi large leur couture se lisait
 // d'un bout à l'autre du champ.
 const CUT_TONS = ['#f6e59d', '#e6d089', '#cdb271', '#b39c64'];
-const COUPE = [
-  // 0 — chaume moyen : la référence
-  (x,R) => { x.fillStyle='#ab9862'; x.fillRect(0,0,TS,TS);
-    speck(x,R,110,['rgba(214,199,150,.34)','rgba(186,170,118,.3)'],2.5,7);
-    for(let i=0;i<260;i++){ const px=R()*TS, py=R()*TS, a=R()*6.28, L=10+R()*20, w=3.6+R()*3;
-      straw(x,R,px,py,a,L,w,CUT_TONS[(R()*CUT_TONS.length)|0]); } },
-  // 1 — chaume dru : brins plus courts, deux fois plus nombreux, la terre ne se voit plus
-  (x,R) => { x.fillStyle='#b09d66'; x.fillRect(0,0,TS,TS);
-    speck(x,R,90,['rgba(220,206,158,.30)'],2.4,6.4);
-    for(let i=0;i<470;i++){ const px=R()*TS, py=R()*TS, a=R()*6.28, L=7+R()*13, w=3.2+R()*2.6;
-      straw(x,R,px,py,a,L,w,CUT_TONS[(R()*CUT_TONS.length)|0]); } },
-  // 2 — chaume clairsemé : brins longs bien détachés, on voit la terre entre eux
-  (x,R) => { x.fillStyle='#a08a58'; x.fillRect(0,0,TS,TS);
-    speck(x,R,130,['rgba(200,182,134,.30)','rgba(140,120,78,.26)'],2.6,7.4);
-    for(let i=0;i<150;i++){ const px=R()*TS, py=R()*TS, a=R()*6.28, L=16+R()*26, w=4+R()*3.4;
-      straw(x,R,px,py,a,L,w,CUT_TONS[(R()*CUT_TONS.length)|0]); } }
-];
-function drawCut(x, R){ COUPE[SOL.coupe % COUPE.length](x, R); }
-// ---------- recettes de sol ----------
-// Chaque état de la terre a plusieurs dessins possibles, qu'on compare en jeu, tracteur
-// dessus, avant d'en garder un. On change de recette en changeant un chiffre ici.
-const SOL = { repos:0, prep:0, seme:0, engrais:0, coupe:0 };
-
-// La terre au repos : celle du premier lancement, et celle qu'on retrouve après chaque
-// cycle quand plus aucun passage ne la couvre. Sèche, et fendue par le soleil.
-//
-// Elle se pose en tuile, comme les autres états — mais une tuile calée en MÈTRES, pas sur
-// la parcelle. C'est ce qui compte pour la suite : le jour où l'on achètera des parcelles
-// plus grandes ou d'une autre forme, le dessin ne s'étirera pas avec elles. Les fentes
-// garderont la même taille au sol, et le coût de fabrication ne bougera pas d'un pouce,
-// puisqu'on dessine toujours la même image. Une image à l'échelle de la parcelle aurait
-// fait l'inverse : quatre fois plus de pixels pour une parcelle deux fois plus large.
-//
-// Reste à choisir la taille de tuile. Trop petite — 2,9 m comme les autres états — et des
-// fentes de cette taille-là se lisent comme un quadrillage d'un bout à l'autre du champ ;
-// on prend donc 24 m, soit à peine deux répétitions sur la parcelle actuelle, et un motif
-// assez fin pour que la reprise ne s'attrape pas à l'œil. Le voile de matière du filtre,
-// lui, est calculé en repère monde et ne se répète jamais : il achève de brouiller la
-// couture.
-const SOLM = 24;                                    // mètres couverts par une tuile
-const SOLN = 768;                                   // pixels de cette tuile
-const SOLPX = SOLN/SOLM;                            // 32 pixels par mètre
-function solCanvas(){
-  const c = document.createElement('canvas'); c.width = c.height = SOLN;
-  return [c, c.getContext('2d'), SOLPX];
+function drawCut(x, R){
+  x.fillStyle='#ab9862'; x.fillRect(0,0,TS,TS);
+  speck(x,R,110,['rgba(214,199,150,.34)','rgba(186,170,118,.3)'],2.5,7);
+  for(let i=0;i<260;i++){
+    const px=R()*TS, py=R()*TS, a=R()*6.28, L=10+R()*20, w=3.6+R()*3;
+    straw(x,R,px,py,a,L,w,CUT_TONS[(R()*CUT_TONS.length)|0]);
+  }
 }
-const pois = (x,px,py,r,col) => { x.fillStyle = col;
-  wrapDraw(x,px,py,r,(a,b)=>{ x.beginPath(); x.arc(a,b,r,0,6.3); x.fill(); }, SOLN); };
-function sable(x, R, n, cols, rmin, rmax){
-  for(let i=0;i<n;i++) pois(x, R()*SOLN, R()*SOLN, rmin+R()*(rmax-rmin), cols[(R()*cols.length)|0]);
-}
-const REPOS = [
-  // 0 — fendillée fine : de petites plaques, des fentes étroites
-  (x,R,S) => { x.fillStyle='#b09a6a'; x.fillRect(0,0,SOLN,SOLN);
-    sable(x,R,3400,['rgba(206,190,146,.30)','rgba(150,131,90,.26)'],.16*S,.42*S);
-    craquelures(x,R,.95*S,.17*S,.32,.06); },
-  // 1 — grandes plaques : peu de dalles, fentes larges et franches
-  (x,R,S) => { x.fillStyle='#b39a63'; x.fillRect(0,0,SOLN,SOLN);
-    sable(x,R,2400,['rgba(212,194,146,.28)','rgba(146,124,80,.24)'],.18*S,.48*S);
-    craquelures(x,R,2.6*S,.44*S,.48,.11); },
-  // 2 — sèche et poussiéreuse : fentes moyennes, poussière claire et petits cailloux
-  (x,R,S) => { x.fillStyle='#ac9767'; x.fillRect(0,0,SOLN,SOLN);
-    craquelures(x,R,1.6*S,.30*S,.40,.08);
-    sable(x,R,4600,['rgba(224,211,170,.30)','rgba(126,107,70,.22)'],.15*S,.45*S);
-    for(let i=0;i<800;i++){ const px=R()*SOLN, py=R()*SOLN, r=(.12+R()*.16)*S;
-      pois(x,px+r*.4,py+r*.4,r,'rgba(60,46,24,.32)'); pois(x,px,py,r,'#c9b891'); } },
-  // 3 — dalles bombées : le relief se lit, chaque plaque a son ombre
-  (x,R,S) => { x.fillStyle='#ad9764'; x.fillRect(0,0,SOLN,SOLN);
-    sable(x,R,1900,['rgba(206,188,142,.24)'],.20*S,.50*S);
-    craquelures(x,R,2.1*S,.38*S,.54,.20); },
-  // 4 — à peine fendue, encore un peu de chaume clair par-dessus
-  (x,R,S) => { x.fillStyle='#b6a273'; x.fillRect(0,0,SOLN,SOLN);
-    craquelures(x,R,1.25*S,.15*S,.24,.05);
-    for(let i=0;i<3400;i++){ const px=R()*SOLN, py=R()*SOLN, a=R()*6.28,
-        L=(.6+R()*1.1)*S, w=(.22+R()*.18)*S, col=CUT_TONS[(R()*CUT_TONS.length)|0];
-      x.strokeStyle=col; x.lineWidth=w; x.lineCap='round';
-      wrapDraw(x,px,py,L+w,(u,v)=>{ x.beginPath(); x.moveTo(u,v);
-        x.lineTo(u+Math.cos(a)*L, v+Math.sin(a)*L); x.stroke(); }, SOLN); } }
-];
+// La terre au repos — celle du premier lancement, celle qu'on retrouve entre deux cycles —
+// c'est le chaume : exactement le sol que laisse la moissonneuse. Le cycle se referme donc
+// sur lui-même, et on ne voit aucune couture entre le champ fauché et le champ au repos.
 function soilTex(){
-  const [c,x,S] = solCanvas();
-  REPOS[SOL.repos % REPOS.length](x, rng(1028679), S);
+  const [c,x] = cv();
+  drawCut(x, rng(1028679));
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  if (renderer.capabilities) t.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  t.repeat.set(2.9/SOLM, 2.9/SOLM);                 // l'uv de la parcelle compte en tuiles de 2,9 m
   return t;
 }
 (function parcelle(){
@@ -1247,191 +1129,134 @@ function clipToParcel(m){
   return m;
 }
 
-// Les grains de semence vivent dans leur propre couche : on les pose sur la terre semée
-// puis fertilisée, et on les efface dès que les pousses ont franchi une dizaine de
-// centimètres — passé là, ce qu'on voit du sol, c'est le vert, plus la semence.
+// Les points de semence s'effacent avec la maturité : l'uniforme est partagé par le ruban,
+// qui les mélange lui-même à la terre labourée.
 const GRAIN = { value: 1 };
-function semis(m, tex, teinte){
-  const k = (teinte === undefined ? 1 : teinte).toFixed(3);
-  return chainCompile(m, sh => {
-    sh.uniforms.uSemis = { value: tex };
-    sh.uniforms.uGrain = GRAIN;
-    sh.fragmentShader = 'uniform sampler2D uSemis;\nuniform float uGrain;\n' + sh.fragmentShader
-      .replace('#include <map_fragment>', `#include <map_fragment>
-       {
-         vec4 gr = texture2D(uSemis, vUv);
-         diffuseColor.rgb = mix(diffuseColor.rgb, gr.rgb * ${k}, gr.a * uGrain);
-       }`);
-  }, 'semis' + k);
-}
 
+// Un seul ruban pour tous les passages. Chaque échantillon porte l'état qu'il dépose, et
+// tout se dessine dans l'ordre où c'est arrivé : le dernier outil passé recouvre les
+// précédents. C'est ce qu'il fallait pour que le déchaumage prévale sur tout — labourer un
+// champ déjà semé, mouillé ou couvert d'épis le remet à la terre nue, sous les yeux.
+// Une couche par état, dessinée chacune dans son coin, ne pouvait pas faire ça : leur ordre
+// était figé, la terre nue passait toujours SOUS le semis.
+//
+// Il n'y a plus que deux dessins de terre. Le semis, c'est la terre labourée avec des points
+// de semence par-dessus ; l'engrais, c'est la même terre en plus sombre, comme mouillée. Les
+// deux se font dans le shader, il n'y a donc rien à redessiner.
 const SWATH = (function(){
-  // Une texture par état, dessinée pour être franchement distincte des autres.
-  // (principe repris de Mow & Go : un motif fin déposé le long du passage, pas un aplat)
-  // Les motifs se lisent à 29 px la tuile : tout est dessiné gros, sinon rien ne se voit au sol.
   function finish(c){
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     if (renderer.capabilities) t.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return t;
   }
-
-  // 1. déchaumé
-  const PREP = [
-    // 0 — sillons souples et grosses mottes : la référence
-    (x,R) => { x.fillStyle='#7d6039'; x.fillRect(0,0,TS,TS); bands(x,.03);
-      x.globalAlpha=.62;
-      for(let i=0;i<5;i++) furrow(x,(i+.5)*(TS/5),'#4a3620',9,5,1,i);
-      x.globalAlpha=1;
-      for(let i=0;i<80;i++){ const px=R()*TS, py=R()*TS, r=4.6+R()*8.4;
-        blob(x,px+r*.3,py+r*.32,r,'rgba(52,37,19,.5)');
-        blob(x,px,py,r*.88,'#9d7d4d');
-        blob(x,px-r*.24,py-r*.28,r*.36,'rgba(226,205,160,.4)'); }
-      speck(x,R,120,['rgba(163,134,86,.5)','rgba(58,42,23,.45)'],2.3,6.4); },
-    // 1 — sans sillons : de la grosse motte partout, terre franchement retournée
-    (x,R) => { x.fillStyle='#755934'; x.fillRect(0,0,TS,TS); bands(x,.025);
-      for(let i=0;i<130;i++){ const px=R()*TS, py=R()*TS, r=5.5+R()*10;
-        blob(x,px+r*.32,py+r*.34,r,'rgba(46,32,16,.46)');
-        blob(x,px,py,r*.86,R()>.5?'#a3814e':'#8d6f42');
-        blob(x,px-r*.26,py-r*.3,r*.34,'rgba(228,208,164,.36)'); }
-      speck(x,R,90,['rgba(58,42,23,.4)'],2.4,6.6); },
-    // 2 — terre fine : émiettée menu, sillons à peine marqués
-    (x,R) => { x.fillStyle='#836440'; x.fillRect(0,0,TS,TS); bands(x,.03);
-      x.globalAlpha=.34;
-      for(let i=0;i<7;i++) furrow(x,(i+.5)*(TS/7),'#4a3620',6,4,1,i*1.9);
-      x.globalAlpha=1;
-      for(let i=0;i<230;i++){ const px=R()*TS, py=R()*TS, r=2.6+R()*4.6;
-        blob(x,px+r*.34,py+r*.36,r,'rgba(50,35,18,.38)');
-        blob(x,px,py,r*.88,'#a08048'); }
-      speck(x,R,170,['rgba(180,152,100,.4)','rgba(58,42,23,.34)'],2,5.2); }
-  ];
-  function texTilled(){ const [c,x] = cv(); PREP[SOL.prep % PREP.length](x, rng(601844)); return finish(c); }
-  // le dessin du semis, réutilisé tel quel par l'engrais. Les rangs ont sauté : la terre
-  // travaillée reste nue, les grains sont semés à la volée dans une couche à part.
-  const SEME = [
-    // 0 — terre nue, quelques mottes émiettées : la référence
-    (x,R) => { x.fillStyle='#7d5e39'; x.fillRect(0,0,TS,TS); bands(x,.028);
-      speck(x,R,150,['rgba(58,42,23,.38)','rgba(166,138,90,.35)'],2.5,6.8);
-      for(let i=0;i<34;i++){ const px=R()*TS, py=R()*TS, r=3.4+R()*6.2;
-        blob(x,px+r*.3,py+r*.32,r,'rgba(52,37,19,.34)');
-        blob(x,px,py,r*.86,'rgba(150,122,76,.5)'); } },
-    // 1 — rappuyée : lisse, roulée, à peine mouchetée. Le lit de semence propre.
-    (x,R) => { x.fillStyle='#835f36'; x.fillRect(0,0,TS,TS); bands(x,.042);
-      speck(x,R,90,['rgba(58,42,23,.24)','rgba(184,156,104,.30)'],2,5),
-      x.globalAlpha=.20;
-      for(let i=0;i<9;i++) furrow(x,(i+.5)*(TS/9),'#5a442a',4,3,1,i*1.3);
-      x.globalAlpha=1; },
-    // 2 — grumeleuse : mottes moyennes serrées, la terre reste vivante sous les grains
-    (x,R) => { x.fillStyle='#785936'; x.fillRect(0,0,TS,TS); bands(x,.026);
-      for(let i=0;i<105;i++){ const px=R()*TS, py=R()*TS, r=3+R()*5.4;
-        blob(x,px+r*.32,py+r*.34,r,'rgba(48,33,16,.36)');
-        blob(x,px,py,r*.86,R()>.5?'#997a49':'#8a6d40'); }
-      speck(x,R,130,['rgba(58,42,23,.34)','rgba(176,148,96,.32)'],2.2,5.8); }
-  ];
-  function drawSown(x, R){ SEME[SOL.seme % SEME.length](x, R); }
-  // les grains seuls, sur fond transparent : une couche par-dessus le semis et l'engrais,
-  // qu'on efface dès que les pousses sortent de terre
+  // La terre travaillée : des mottes jetées au hasard, de toutes les tailles, sans une seule
+  // ligne ni une seule bande — c'est l'alignement qui faisait le quadrillage.
+  function texLabour(){
+    const [c,x] = cv(), R = rng(601844);
+    x.fillStyle = '#755934'; x.fillRect(0,0,TS,TS);
+    for(let i=0;i<210;i++){                       // grosses mottes, avec leur ombre portée
+      const px=R()*TS, py=R()*TS, r=3.4+R()*9.6;
+      blob(x,px+r*.32,py+r*.34,r,'rgba(46,32,16,.44)');
+      blob(x,px,py,r*.86, R()>.5 ? '#a3814e' : '#8d6f42');
+      blob(x,px-r*.26,py-r*.3,r*.34,'rgba(228,208,164,.34)');
+    }
+    speck(x,R,150,['rgba(58,42,23,.4)','rgba(176,148,96,.34)'],2.2,6.6);
+    return finish(c);
+  }
+  // Les points de semence, seuls, sur fond transparent : semés au hasard comme la paille.
   function texGrains(){
     const [c,x] = cv(), R = rng(884411);
-    for(let i=0;i<100;i++){
-      const gx=R()*TS, gy=R()*TS, r=4.6+R()*3.2;
-      blob(x,gx+1.2,gy+1.5,r,'rgba(74,54,26,.34)');
-      blob(x,gx,gy,r,'#f0dda6');
-      blob(x,gx-r*.3,gy-r*.32,r*.42,'#fdf3d0');
+    for(let i=0;i<155;i++){
+      const gx=R()*TS, gy=R()*TS, r=4.4+R()*3.4;
+      blob(x,gx+1.1,gy+1.3,r,'rgba(74,54,26,.32)');
+      blob(x,gx,gy,r,'#f6ecd2');
+      blob(x,gx-r*.3,gy-r*.32,r*.46,'#fffaf0');
     }
     return finish(c);
   }
-  // 2. semé — grains à la volée (S2)
-  function texSown(){
-    const [c,x] = cv(); drawSown(x, rng(762006)); return finish(c);
-  }
-  // 3. fertilisé — le semis, mouillé et enrichi
-  const ENGRAIS = [
-    // 0 — mouillé sobre : le semis assombri, quelques flaques
-    (x,R2) => { x.fillStyle='rgba(40,26,10,.5)'; x.fillRect(0,0,TS,TS);
-      for(let i=0;i<20;i++) glow(x,R2()*TS,R2()*TS,24+R2()*46,'rgba(20,12,4,.35)','rgba(20,12,4,0)');
-      speck(x,R2,80,['rgba(186,204,214,.2)'],1.8,4.2); },
-    // 1 — détrempé : plus sombre, de vraies flaques qui accrochent la lumière
-    (x,R2) => { x.fillStyle='rgba(32,20,7,.62)'; x.fillRect(0,0,TS,TS);
-      for(let i=0;i<30;i++) glow(x,R2()*TS,R2()*TS,34+R2()*62,'rgba(14,9,3,.44)','rgba(14,9,3,0)');
-      for(let i=0;i<12;i++) glow(x,R2()*TS,R2()*TS,16+R2()*26,'rgba(198,216,226,.26)','rgba(198,216,226,0)');
-      speck(x,R2,110,['rgba(190,208,218,.24)'],2,5); },
-    // 2 — engrais visible : terre à peine mouillée, granulés clairs répandus dessus
-    (x,R2) => { x.fillStyle='rgba(44,30,12,.38)'; x.fillRect(0,0,TS,TS);
-      for(let i=0;i<14;i++) glow(x,R2()*TS,R2()*TS,22+R2()*40,'rgba(20,12,4,.28)','rgba(20,12,4,0)');
-      for(let i=0;i<150;i++){ const px=R2()*TS, py=R2()*TS, r=2.2+R2()*3;
-        blob(x,px,py,r,R2()>.45?'#dfe6c8':'#c9d3a6'); }
-      speck(x,R2,70,['rgba(186,204,214,.2)'],1.8,4.2); }
-  ];
-  function texWet(){
-    const [c,x] = cv();
-    drawSown(x, rng(762006));
-    ENGRAIS[SOL.engrais % ENGRAIS.length](x, rng(763788));
-    return finish(c);
-  }
-  // 4. moissonné — « Menue paille » (M5), débris nettement plus longs et plus jaunes
-  function texCut(){
-    const [c,x] = cv();
-    drawCut(x, rng(1028679));                          // strictement le sol de départ
-    return finish(c);
-  }
-  const TEX = [texTilled(), texSown(), texWet(), texCut()];
-  const GTEX = texGrains();
-  const MAXS = 6000, TILE = 2.9;          // 1 motif = 2,9 m au sol, échelle constante
-  const layers = TEX.map((tex,i) => {
-    const pos = new Float32Array(MAXS*6), nor = new Float32Array(MAXS*6), uv = new Float32Array(MAXS*4);
-    for(let k=0;k<MAXS*2;k++){ nor[k*3]=0; nor[k*3+1]=1; nor[k*3+2]=0; }
-    const idx = new Uint32Array((MAXS-1)*6);
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos,3).setUsage(THREE.DynamicDrawUsage));
-    geo.setAttribute('normal', new THREE.BufferAttribute(nor,3));
-    geo.setAttribute('uv', new THREE.BufferAttribute(uv,2).setUsage(THREE.DynamicDrawUsage));
-    geo.setIndex(new THREE.BufferAttribute(idx,1));
-    geo.setDrawRange(0,0);
-    const base = i === 2
-      ? new THREE.MeshPhongMaterial({ map:tex, side:THREE.DoubleSide, shininess:38,
-          specular:new THREE.Color('#6f7a80'), depthTest:false, depthWrite:false })  // brillance mouillée
-      : new THREE.MeshLambertMaterial({ map:tex, side:THREE.DoubleSide,
-          depthTest:false, depthWrite:false });  // aucun z-fight quand on repasse au même endroit
-    // le semis et l'engrais portent les grains ; sur la terre mouillée ils sont assombris
-    if (i === 1 || i === 2) semis(base, GTEX, i === 2 ? .58 : 1);
-    const mm = clipToParcel(base);
-    const m = new THREE.Mesh(geo, mm);
-    m.position.y = i*.004; m.frustumCulled = false; m.receiveShadow = true;
-    m.renderOrder = -10 + i;                      // juste après le sol, avant tout le reste
-    scene.add(m);
-    return { geo, pos, uv, idx, n:0, tri:0, v:0, lx:0, lz:0 };
-  });
-  const cx = (v,a,b) => Math.max(a, Math.min(b, v));
+  function texChaume(){ const [c,x] = cv(); drawCut(x, rng(1028679)); return finish(c); }
+
+  const LAB = texLabour(), CHAUME = texChaume(), GRAINS = texGrains();
+  const MAXS = 20000, TILE = 2.9;         // 1 motif = 2,9 m au sol, échelle constante
+  const pos = new Float32Array(MAXS*6), nor = new Float32Array(MAXS*6);
+  const uv  = new Float32Array(MAXS*4), lay = new Float32Array(MAXS*2);
+  for(let k=0;k<MAXS*2;k++){ nor[k*3]=0; nor[k*3+1]=1; nor[k*3+2]=0; }
+  const idx = new Uint32Array((MAXS-1)*6);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('normal',   new THREE.BufferAttribute(nor,3));
+  geo.setAttribute('uv',       new THREE.BufferAttribute(uv,2).setUsage(THREE.DynamicDrawUsage));
+  geo.setAttribute('aEtat',    new THREE.BufferAttribute(lay,1).setUsage(THREE.DynamicDrawUsage));
+  geo.setIndex(new THREE.BufferAttribute(idx,1));
+  geo.setDrawRange(0,0);
+
+  const mat = new THREE.MeshLambertMaterial({ map:LAB, side:THREE.DoubleSide,
+                                              depthTest:false, depthWrite:false });
+  chainCompile(mat, sh => {
+    sh.uniforms.uChaume = { value: CHAUME };
+    sh.uniforms.uGrains = { value: GRAINS };
+    sh.uniforms.uGrain  = GRAIN;
+    sh.vertexShader = 'attribute float aEtat;\nvarying float vEtat;\n' + sh.vertexShader
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n  vEtat = aEtat;');
+    sh.fragmentShader = 'uniform sampler2D uChaume;\nuniform sampler2D uGrains;\n' +
+      'uniform float uGrain;\nvarying float vEtat;\n' + sh.fragmentShader
+      .replace('#include <map_fragment>', `#include <map_fragment>
+       {
+         float chaume = step(2.5, vEtat);                       // 3 = moissonné
+         vec4 ch = texture2D(uChaume, vUv);
+         diffuseColor = mix(diffuseColor, ch, chaume);
+         float mouille = step(1.5, vEtat) * (1.0 - chaume);     // 2 = fertilisé
+         diffuseColor.rgb *= mix(vec3(1.0), vec3(0.56, 0.51, 0.45), mouille);
+         float pose = step(0.5, vEtat) * (1.0 - chaume);        // 1 et 2 portent la semence
+         vec4 gr = texture2D(uGrains, vUv);
+         diffuseColor.rgb = mix(diffuseColor.rgb,
+                                gr.rgb * mix(1.0, 0.62, mouille),
+                                gr.a * uGrain * pose);
+       }`);
+  }, 'ruban');
+  clipToParcel(mat);
+  const m = new THREE.Mesh(geo, mat);
+  m.position.y = .004; m.frustumCulled = false; m.receiveShadow = true;
+  m.renderOrder = -10;                    // juste après le sol, avant tout le reste
+  scene.add(m);
+
+  let n = 0, tri = 0, av = 0, lx = 0, lz = 0, fil = null;
   return {
-    add(s2, x, z, ang, w, link){
-      const L = layers[s2]; if (L.n >= MAXS) return;
+    // `chaine` : à qui appartient le point. Deux engins qui travaillent en même temps ne
+    // doivent pas voir leurs échantillons cousus l'un à l'autre.
+    add(etat, x, z, ang, w, link, chaine){
+      if (n >= MAXS) return;
+      const suite = link && fil === (chaine === undefined ? etat : chaine + ':' + etat);
       const c = Math.cos(ang), si = Math.sin(ang);
-      L.v = link ? L.v + Math.hypot(x-L.lx, z-L.lz)/TILE : 0;   // v = distance parcourue
-      L.lx = x; L.lz = z;
-      const o = L.n*6, u = L.n*4;
+      av = suite ? av + Math.hypot(x-lx, z-lz)/TILE : 0;      // v = distance parcourue
+      lx = x; lz = z;
+      fil = (chaine === undefined ? etat : chaine + ':' + etat);
+      const o = n*6, u = n*4, e = n*2;
       const ax = x + c*w/2, az = z - si*w/2;
       const bx = x - c*w/2, bz = z + si*w/2;
-      L.pos[o]   = ax; L.pos[o+1] = parcelY(ax,az)*.97 + .015; L.pos[o+2] = az;   // travaillé = aplani
-      L.pos[o+3] = bx; L.pos[o+4] = parcelY(bx,bz)*.97 + .015; L.pos[o+5] = bz;
-      L.uv[u] = 0;      L.uv[u+1] = L.v;
-      L.uv[u+2] = w/TILE; L.uv[u+3] = L.v;
-      if (link && L.n > 0){
-        const a = (L.n-1)*2, b = a+1, cc = L.n*2, d = cc+1, t = L.tri*6;
-        L.idx[t]=a; L.idx[t+1]=b; L.idx[t+2]=cc;
-        L.idx[t+3]=b; L.idx[t+4]=d; L.idx[t+5]=cc;
-        L.tri++;
-        L.geo.index.needsUpdate = true;
-        L.geo.setDrawRange(0, L.tri*6);
+      pos[o]   = ax; pos[o+1] = parcelY(ax,az)*.97 + .015; pos[o+2] = az;   // travaillé = aplani
+      pos[o+3] = bx; pos[o+4] = parcelY(bx,bz)*.97 + .015; pos[o+5] = bz;
+      uv[u] = 0;        uv[u+1] = av;
+      uv[u+2] = w/TILE; uv[u+3] = av;
+      lay[e] = lay[e+1] = etat;
+      if (suite && n > 0){
+        const a = (n-1)*2, b = a+1, cc = n*2, d = cc+1, t = tri*6;
+        idx[t]=a; idx[t+1]=b; idx[t+2]=cc;
+        idx[t+3]=b; idx[t+4]=d; idx[t+5]=cc;
+        tri++;
+        geo.index.needsUpdate = true;
+        geo.setDrawRange(0, tri*6);
       }
-      L.n++;
-      L.geo.attributes.position.needsUpdate = true;
-      L.geo.attributes.uv.needsUpdate = true;
+      n++;
+      geo.attributes.position.needsUpdate = true;
+      geo.attributes.uv.needsUpdate = true;
+      geo.attributes.aEtat.needsUpdate = true;
     },
-    reset(){ layers.forEach(L => { L.n = 0; L.tri = 0; L.v = 0; L.geo.setDrawRange(0,0); }); }
+    reset(){ n = 0; tri = 0; av = 0; fil = null; geo.setDrawRange(0,0); },
+    pose(){ return n; }                    // combien d'échantillons déposés, pour les essais
   };
 })();
-
 
 // ---------- ferme ----------
 const SILO = new THREE.Vector3(9,0,YARD+3), GATE = new THREE.Vector3(-2,0,YARD-2);
@@ -2273,9 +2098,9 @@ function laySwath(v, layer){
   if (v.swX !== undefined){
     const dd = Math.hypot(x-v.swX, z-v.swZ);
     if (dd < .25) return;
-    SWATH.add(layer, x, z, p.a, p.W, dd < 1.6 && v.swL === layer);
+    SWATH.add(layer, x, z, p.a, p.W, dd < 1.6 && v.swL === layer, v.kind);
   } else {
-    SWATH.add(layer, x, z, p.a, p.W, false);
+    SWATH.add(layer, x, z, p.a, p.W, false, v.kind);
   }
   v.swX = x; v.swZ = z; v.swL = layer;
 }
@@ -3343,10 +3168,16 @@ function autoWork(v, dt){
 // ---------- l'outil d'un engin, appliqué là où il passe ----------
 function work(v, dt){
   const d = v.g.userData;
+  // Règle d'ordre. Le déchaumage passe partout : quel que soit l'état du sol — chaume,
+  // semis, terre mouillée, épis prêts à faucher — l'outil remet la terre à nu, et cet état
+  // prévaut sur tous les autres. Les trois autres outils, eux, ne servent à rien hors de
+  // leur tour : semer sur du chaume ou sur des épis, mouiller avant d'avoir semé, tout cela
+  // ne laisse aucune trace. C'est pour ça que le ruban et les effets ne se posent que si
+  // l'outil a réellement changé quelque chose.
   if (v.kind === 'prep'){
     const n = applyTool(v, i => setCell(i,1));
-    laySwath(v, 0);
     if (n){
+      laySwath(v, 0);
       popDust(v.pos.x - Math.sin(v.heading)*3.5, v.pos.z - Math.cos(v.heading)*3.5);
       // le déchaumage enfouit ce qui traînait : plants levés comme dépôt de paille
       plants.forEach((p,k) => {
@@ -3370,9 +3201,10 @@ function work(v, dt){
     }
   }
   else if (v.kind === 'sow'){
-    const n = applyTool(v, i => cell[i]===1 && setCell(i,2));
+    const n = applyTool(v, i => cell[i]===1 && setCell(i,2));   // rien à semer hors terre labourée
+    if (!n) return;
     laySwath(v, 1);
-    if (n) plants.forEach((p,k) => { if (cell[p.ti]===2 && p.g===0){ p.g = .04; writePlant(k); } });
+    plants.forEach((p,k) => { if (cell[p.ti]===2 && p.g===0){ p.g = .04; writePlant(k); } });
     const q = toolPose(v);
     if (q && v.speed > .3){
       let nb = Math.min(7, Math.round(dt*v.speed*13));
@@ -3388,7 +3220,8 @@ function work(v, dt){
     }
   }
   else if (v.kind === 'fert'){
-    applyTool(v, i => cell[i]===2 && setCell(i,3));
+    const n = applyTool(v, i => cell[i]===2 && setCell(i,3));   // rien à mouiller hors semis
+    if (!n) return;
     laySwath(v, 2);
     const q = toolPose(v);                       // buses réparties sur toute la rampe
     if (q && v.speed > .3){
@@ -3723,6 +3556,10 @@ window.__FARM_DEBUG = () => ({
   })(),
   trav:(function(){ const o={}; for(const k of KINDS){ const v=fleet[k]; if(v) o[k]=+v.trav.toFixed(2); } return o; })(),
   grains:+GRAIN.value.toFixed(3),
+  ruban:SWATH.pose(),
+  cellules:(function(){ const o=[0,0,0,0]; for(let i=0;i<cell.length;i++) o[cell[i]]++;
+    return o.map(v=>+(100*v/cell.length).toFixed(1)); })(),
+  murs:(function(){ let m=0; for(const p of plants) if (p.g > .55) m++; return m; })(),
   suivi:(function(){ const v = pilote(); if (!v) return null;
     return { tete:v.head, n:v.path?v.path.length:0, cote:v.cote||0, choc:+(v.choc||0).toFixed(2),
              bloque:+(v.bloque||0).toFixed(1), cap:+v.heading.toFixed(2),
