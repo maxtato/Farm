@@ -873,10 +873,11 @@ function cv(){
   return [c, c.getContext('2d')];
 }
 // Tout se répète sur les bords : le motif se raccorde sans couture d'une tuile à l'autre.
-function wrapDraw(x, px, py, r, fn){
+function wrapDraw(x, px, py, r, fn, N){
+  N = N || TS;
   for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++){
-    const ax = px + dx*TS, ay = py + dy*TS;
-    if (ax < -r || ax > TS+r || ay < -r || ay > TS+r) continue;
+    const ax = px + dx*N, ay = py + dy*N;
+    if (ax < -r || ax > N+r || ay < -r || ay > N+r) continue;
     fn(ax, ay);
   }
 }
@@ -910,31 +911,36 @@ function furrow(x, px, col, w, amp, k, ph){
 }
 // Terre sèche : des plaques séparées par des fentes. Un germe par maille d'un réseau
 // brouillé, chacun avec son propre rayon, et pour chaque pixel l'écart entre les deux plus
-// proches — nul sur la fente, maximal au cœur de la plaque. Le réseau permet de ne comparer
-// qu'aux germes voisins : sans lui, une texture à l'échelle de la parcelle serait hors de
-// portée. `a` est le pas du réseau, donc la taille moyenne d'une plaque.
+// proches — nul sur la fente, maximal au cœur de la plaque. Le réseau sert deux fois : il
+// limite la comparaison aux germes voisins (sans quoi une grande image serait hors de
+// portée), et comme il compte un nombre entier de mailles, le motif boucle. Les distances
+// se mesurent donc sur le tore : la tuile se raccorde à elle-même par les quatre bords.
 function craquelures(x, R, a, larg, fente, bombe){
   const W = x.canvas.width, H = x.canvas.height;
-  const NX = Math.ceil(W/a)+5, NY = Math.ceil(H/a)+5;
+  const NX = Math.max(4, Math.round(W/a)), NY = Math.max(4, Math.round(H/a));
+  const ax = W/NX, ay = H/NY, mail = Math.min(ax, ay);
   const gx = new Float32Array(NX*NY), gy = new Float32Array(NX*NY), gw = new Float32Array(NX*NY);
   for(let j=0;j<NY;j++) for(let i=0;i<NX;i++){
     const k = j*NX+i;
-    gx[k] = (i-2+.5+(R()-.5)*.88)*a;
-    gy[k] = (j-2+.5+(R()-.5)*.88)*a;
-    gw[k] = (R()-.5)*a*.6;                     // des plaques franchement inégales
+    gx[k] = (i+.5+(R()-.5)*.88)*ax;
+    gy[k] = (j+.5+(R()-.5)*.88)*ay;
+    gw[k] = (R()-.5)*mail*.6;                  // des plaques franchement inégales
   }
-  const im = x.getImageData(0,0,W,H), D = im.data;
+  const im = x.getImageData(0,0,W,H), D = im.data, HW = W*.5, HH = H*.5;
   for(let py=0;py<H;py++){
-    const cj = (py/a|0)+2;
-    const j0 = Math.max(0,cj-2), j1 = Math.min(NY-1,cj+2);
+    const cj = (py/ay)|0;
     for(let px=0;px<W;px++){
-      const ci = (px/a|0)+2;
-      const i0 = Math.max(0,ci-2), i1 = Math.min(NX-1,ci+2);
+      const ci = (px/ax)|0;
       let d1 = 1e9, d2 = 1e9;
-      for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++){
-        const k = j*NX+i, ux = px-gx[k], uy = py-gy[k];
-        const d = Math.sqrt(ux*ux+uy*uy) - gw[k];
-        if (d < d1){ d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+      for(let j=cj-2;j<=cj+2;j++){
+        const jj = ((j%NY)+NY)%NY;
+        for(let i=ci-2;i<=ci+2;i++){
+          const k = jj*NX + ((i%NX)+NX)%NX;
+          let ux = px-gx[k]; if (ux > HW) ux -= W; else if (ux < -HW) ux += W;
+          let uy = py-gy[k]; if (uy > HH) uy -= H; else if (uy < -HH) uy += H;
+          const d = Math.sqrt(ux*ux+uy*uy) - gw[k];
+          if (d < d1){ d2 = d1; d1 = d; } else if (d < d2) d2 = d;
+        }
       }
       const k2 = Math.sqrt(Math.min(1, (d2-d1)/larg));
       const mul = (1 - (1-k2)*fente) * (1 + k2*bombe);
@@ -1080,56 +1086,71 @@ function drawCut(x, R){ COUPE[SOL.coupe % COUPE.length](x, R); }
 // ---------- recettes de sol ----------
 // Chaque état de la terre a plusieurs dessins possibles, qu'on compare en jeu, tracteur
 // dessus, avant d'en garder un. On change de recette en changeant un chiffre ici.
-const SOL = { repos:2, prep:0, seme:0, engrais:0, coupe:0 };
+const SOL = { repos:0, prep:0, seme:0, engrais:0, coupe:0 };
 
 // La terre au repos : celle du premier lancement, et celle qu'on retrouve après chaque
 // cycle quand plus aucun passage ne la couvre. Sèche, et fendue par le soleil.
-// Elle ne se répète pas : une seule image couvre toute la parcelle. Une tuile de 2,9 m
-// donnait quinze répétitions en travers du champ, et des fentes de cette taille-là se
-// lisaient alors comme un quadrillage. Tout est donc mesuré en mètres.
-const SOLPX = 13;                                   // pixels par mètre de la grande image
-const SOLN  = Math.round(P*SOLPX);
+//
+// Elle se pose en tuile, comme les autres états — mais une tuile calée en MÈTRES, pas sur
+// la parcelle. C'est ce qui compte pour la suite : le jour où l'on achètera des parcelles
+// plus grandes ou d'une autre forme, le dessin ne s'étirera pas avec elles. Les fentes
+// garderont la même taille au sol, et le coût de fabrication ne bougera pas d'un pouce,
+// puisqu'on dessine toujours la même image. Une image à l'échelle de la parcelle aurait
+// fait l'inverse : quatre fois plus de pixels pour une parcelle deux fois plus large.
+//
+// Reste à choisir la taille de tuile. Trop petite — 2,9 m comme les autres états — et des
+// fentes de cette taille-là se lisent comme un quadrillage d'un bout à l'autre du champ ;
+// on prend donc 24 m, soit à peine deux répétitions sur la parcelle actuelle, et un motif
+// assez fin pour que la reprise ne s'attrape pas à l'œil. Le voile de matière du filtre,
+// lui, est calculé en repère monde et ne se répète jamais : il achève de brouiller la
+// couture.
+const SOLM = 24;                                    // mètres couverts par une tuile
+const SOLN = 768;                                   // pixels de cette tuile
+const SOLPX = SOLN/SOLM;                            // 32 pixels par mètre
 function solCanvas(){
   const c = document.createElement('canvas'); c.width = c.height = SOLN;
   return [c, c.getContext('2d'), SOLPX];
 }
-const pois = (x,px,py,r,col) => { x.fillStyle = col; x.beginPath(); x.arc(px,py,r,0,6.3); x.fill(); };
-function sable(x, R, n, cols, rmin, rmax){         // moucheté simple, sans raccord de tuile
+const pois = (x,px,py,r,col) => { x.fillStyle = col;
+  wrapDraw(x,px,py,r,(a,b)=>{ x.beginPath(); x.arc(a,b,r,0,6.3); x.fill(); }, SOLN); };
+function sable(x, R, n, cols, rmin, rmax){
   for(let i=0;i<n;i++) pois(x, R()*SOLN, R()*SOLN, rmin+R()*(rmax-rmin), cols[(R()*cols.length)|0]);
 }
 const REPOS = [
   // 0 — fendillée fine : de petites plaques, des fentes étroites
   (x,R,S) => { x.fillStyle='#b09a6a'; x.fillRect(0,0,SOLN,SOLN);
-    sable(x,R,2600,['rgba(206,190,146,.30)','rgba(150,131,90,.26)'],.16*S,.42*S);
+    sable(x,R,3400,['rgba(206,190,146,.30)','rgba(150,131,90,.26)'],.16*S,.42*S);
     craquelures(x,R,.95*S,.17*S,.32,.06); },
   // 1 — grandes plaques : peu de dalles, fentes larges et franches
   (x,R,S) => { x.fillStyle='#b39a63'; x.fillRect(0,0,SOLN,SOLN);
-    sable(x,R,1900,['rgba(212,194,146,.28)','rgba(146,124,80,.24)'],.18*S,.48*S);
+    sable(x,R,2400,['rgba(212,194,146,.28)','rgba(146,124,80,.24)'],.18*S,.48*S);
     craquelures(x,R,2.6*S,.44*S,.48,.11); },
   // 2 — sèche et poussiéreuse : fentes moyennes, poussière claire et petits cailloux
   (x,R,S) => { x.fillStyle='#ac9767'; x.fillRect(0,0,SOLN,SOLN);
     craquelures(x,R,1.6*S,.30*S,.40,.08);
-    sable(x,R,3600,['rgba(224,211,170,.30)','rgba(126,107,70,.22)'],.15*S,.45*S);
-    for(let i=0;i<620;i++){ const px=R()*SOLN, py=R()*SOLN, r=(.12+R()*.16)*S;
+    sable(x,R,4600,['rgba(224,211,170,.30)','rgba(126,107,70,.22)'],.15*S,.45*S);
+    for(let i=0;i<800;i++){ const px=R()*SOLN, py=R()*SOLN, r=(.12+R()*.16)*S;
       pois(x,px+r*.4,py+r*.4,r,'rgba(60,46,24,.32)'); pois(x,px,py,r,'#c9b891'); } },
   // 3 — dalles bombées : le relief se lit, chaque plaque a son ombre
   (x,R,S) => { x.fillStyle='#ad9764'; x.fillRect(0,0,SOLN,SOLN);
-    sable(x,R,1500,['rgba(206,188,142,.24)'],.20*S,.50*S);
+    sable(x,R,1900,['rgba(206,188,142,.24)'],.20*S,.50*S);
     craquelures(x,R,2.1*S,.38*S,.54,.20); },
   // 4 — à peine fendue, encore un peu de chaume clair par-dessus
   (x,R,S) => { x.fillStyle='#b6a273'; x.fillRect(0,0,SOLN,SOLN);
     craquelures(x,R,1.25*S,.15*S,.24,.05);
-    for(let i=0;i<2600;i++){ const px=R()*SOLN, py=R()*SOLN, a=R()*6.28,
+    for(let i=0;i<3400;i++){ const px=R()*SOLN, py=R()*SOLN, a=R()*6.28,
         L=(.6+R()*1.1)*S, w=(.22+R()*.18)*S, col=CUT_TONS[(R()*CUT_TONS.length)|0];
       x.strokeStyle=col; x.lineWidth=w; x.lineCap='round';
-      x.beginPath(); x.moveTo(px,py); x.lineTo(px+Math.cos(a)*L, py+Math.sin(a)*L); x.stroke(); } }
+      wrapDraw(x,px,py,L+w,(u,v)=>{ x.beginPath(); x.moveTo(u,v);
+        x.lineTo(u+Math.cos(a)*L, v+Math.sin(a)*L); x.stroke(); }, SOLN); } }
 ];
 function soilTex(){
   const [c,x,S] = solCanvas();
   REPOS[SOL.repos % REPOS.length](x, rng(1028679), S);
   const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
-  t.repeat.set(2.9/P, 2.9/P);                       // l'uv de la parcelle compte en tuiles de 2,9 m
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  if (renderer.capabilities) t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  t.repeat.set(2.9/SOLM, 2.9/SOLM);                 // l'uv de la parcelle compte en tuiles de 2,9 m
   return t;
 }
 (function parcelle(){
