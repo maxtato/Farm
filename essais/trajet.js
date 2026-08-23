@@ -26,11 +26,15 @@ const OUT=__dirname+'/sorties/', PORT=8871;
      v.pos.x += o.x-ball.x; v.pos.z += o.z-ball.z; v.h.position.set(v.pos.x,0,v.pos.z);
      raccrocher(v);
      const w = pilote();
-     w.pos.set(0,0,Z0+P*.72); w.heading = Math.PI;      // dans le champ, tourné vers le sud
+     // L'essai « obstacle » vise un vrai bâtiment : on achète le petit silo, posé au bord
+     // de la cour, et on part quarante mètres au sud de lui, nez au nord. Les autres
+     // partent en plein champ, tournés vers le sud.
+     if (q.silo){ acheterSilo(); const S = SILOS[0]; w.pos.set(S.x, 0, S.z + 40); w.heading = 0; }
+     else { w.pos.set(X0+P*.5, 0, Z0+P*.72); w.heading = Math.PI; }
      w.h.position.set(w.pos.x,0,w.pos.z); w.h.rotation.y = w.heading;
      camLook.set(w.pos.x,1,w.pos.z);
      zoom = q.z; PITCH = 0.8727; applyPitch(); applyCamera();
-   }, {z:opt.z||1.0});
+   }, {z:opt.z||1.0, silo:!!opt.silo});
    await p.waitForTimeout(1500);
    if(opt.champ!==false){ if(await p.evaluate(()=>window.__FARM_DEBUG().manuel))
        await p.evaluate(()=>document.getElementById('btnAuto').click());
@@ -85,8 +89,9 @@ const OUT=__dirname+'/sorties/', PORT=8871;
    const t=i/29; return [0.50+Math.sin(t*7)*0.13, 0.66-0.44*t]; }));
  await essai('crochet',  Array.from({length:30},(_,i)=>{
    const t=i/29; return t<0.5 ? [0.50, 0.66-0.36*t*2] : [0.50+0.30*(t-0.5)*2, 0.30+0.20*(t-0.5)*2]; }));
- await essai('obstacle', Array.from({length:26},(_,i)=>[0.42+0.22*i/25, 0.40+0.52*i/25]),
-   {champ:false, z:0.9});
+ // tracé tiré droit sur le silo : là, et là seulement, il a le droit de couper
+ await essai('obstacle', Array.from({length:26},(_,i)=>[0.50, 0.78-0.62*i/25]),
+   {champ:false, z:0.9, silo:true});
  fs.writeFileSync(OUT+'trajet.json', JSON.stringify(releve));
  console.log('ERREURS :', e.length, e.join(' | '));
  await b.close(); srv.close();

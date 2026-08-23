@@ -27,7 +27,7 @@ const D=__dirname+'/sorties/';
    acheterPorteur('tracteur',0);
    ['sol','semis','engrais','benne'].forEach(t=>acheterOutil(t,0));
    acheterPorteur('moiss',0); acheterPorteur('pulve',0); acheterSilo();
-   camLook.set(GATE.x-6,1,YARD+18); zoom=.78; PITCH=42*Math.PI/180; YAW=.3;
+   camLook.set((COUR.x0+COUR.x1)/2, 1, COUR.z1); zoom=.78; PITCH=42*Math.PI/180; YAW=.3;
    applyPitch(); applyCamera();
    return { engins:engins.map(v=>({k:v.kind, roues:v.g.userData.wheels.length,
                                    outil:v.outil, metier:v.metier})),

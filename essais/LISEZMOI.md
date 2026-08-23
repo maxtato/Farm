@@ -11,9 +11,17 @@ Chromium, et on interroge la sonde `window.__FARM_DEBUG()` du jeu.
     node essais/etats.js          # captures des états du sol
     node essais/smoke.js          # démarrage complet, relevé de toutes les valeurs
     node essais/parc.js           # niveaux de tracteur, bennes, décrochage, sauvegarde
-    node essais/engins.js         # planches des trois attelages et des trois bennes
+    node essais/achats.js         # la boutique, achat par achat, et la cour qui se remplit
+    node essais/carte.js          # la campagne de haut, la ferme, la cour de près
+    node essais/plan.js           # plan en texte : libre / route / champ / obstacle
+    node essais/calage.js         # où poser la parcelle et la cour sans mordre sur la carte
 
 Les images sortent dans `essais/sorties/`.
+
+`plan.js` et `calage.js` ne rendent rien : ils mesurent la carte. Le premier
+imprime le voisinage du hangar case par case, le second cherche le meilleur
+emplacement pour la parcelle de travail et la cour. C'est ainsi qu'elles ont été
+placées, plutôt qu'à l'estime.
 
 `trajet.js` enregistre le dessin et la position de l'engin image par image dans
 `sorties/trajet.json` ; `plot.js` superpose les deux. C'est ce relevé qui sert à
