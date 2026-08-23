@@ -67,16 +67,14 @@ function groundH(x,z){
 }
 const P = 44, NS = 256, CS = P/NS;                 // cellules de 17 cm : le passage a un bord net
 // La ferme n'est plus au centre du monde : elle est posée sur la carte, au corps de ferme
-// dont le hangar sert de point de départ. Tout le reste — parcelle jouable, parc, silo —
-// se cale autour de lui.
-// Le corps de ferme de la carte occupe la clairière au nord ; une route le longe. La
-// parcelle de travail et la cour se posent donc de l'autre côté de cette route, sur la
-// grande étendue d'herbe libre au sud, calées à huit mètres de tout chemin, de tout champ
-// de la carte et de tout arbre — l'emplacement a été cherché à la mesure (essais/calage.js).
+// dont le hangar sert de point de départ. Ce corps de ferme occupe une clairière, et une
+// route le longe au sud. La parcelle de travail et la cour se posent donc de l'autre côté
+// de cette route, sur la grande étendue d'herbe libre : à huit mètres de tout chemin, de
+// tout champ de la carte et de tout arbre. L'emplacement a été cherché à la mesure, pas à
+// l'estime — voir essais/calage.js et essais/plan.js.
 const HANGAR = { x:-108.41, z:-69.07 };
-const X0 = -102, Z0 = -16;                  // la parcelle de travail
+const X0 = -102, Z0 = -16;                          // la parcelle de travail
 const COUR = { x0:-103, x1:-57, z0:-38, z1:-20 };   // la cour, entre la route et la parcelle
-const YARD = COUR.z0;
 const cell = new Uint8Array(NS*NS);           // état du sol : logique seule, plus aucun rendu par texture
 function cellIndex(x,z){
   const ix = Math.floor((x-X0)/CS), jz = Math.floor((z-Z0)/CS);
