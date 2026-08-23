@@ -293,8 +293,8 @@ const STAGES = [
   { k:'grow',    n:'Pousse',   ic:'🌿', d:'La culture mûrit' },
   { k:'harvest', n:'Moisson',  ic:'🌾', d:'Moissonneuse — la benne vient au transfert' }
 ];
-// De quoi équiper une ferme au minimum — déchaumeuse, semoir, moissonneuse, tracteur de
-// transport et petite benne font 16 500 — et un peu de marge pour choisir où mettre le
+// De quoi équiper une ferme au minimum — un tracteur, une déchaumeuse, un semoir, une
+// benne et une moissonneuse font 16 500 — et un peu de marge pour choisir où mettre le
 // reste. Tout ce qui suit se gagne au silo.
 const COINS0 = 18000;
 let stage = 0, coins = COINS0, stock = 0;

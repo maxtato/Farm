@@ -166,30 +166,42 @@ function drawParc(){
   }
 
   // ---- ce qu'on peut acheter ----
-  titreParc('🛒 Acheter du matériel');
-  Object.keys(PORTEURS).forEach(kind => {
-    const P = PORTEURS[kind];
-    P.prix.forEach((prix, i) => {
-      ligne(P.emo, P.n + ' — ' + P.nom[i], P.det(i), fmt(prix) + ' 🪙', coins >= prix, () => {
-        const v = acheterPorteur(kind, i);
-        if (!v){ sfx('deny'); return; }
-        sfx('buy'); toast(P.n + ' ' + P.nom[i].toLowerCase() + ' livré au parc', 'good');
-        drawVeh(); drawPanel();
-      });
+  // Un seul article par famille, au premier calibre. On en prend autant qu'on veut, et
+  // c'est en cliquant dessus au parc qu'une pièce monte en gamme — pas en rachetant.
+  titreParc('🚜 Tracteurs');
+  elBody.insertAdjacentHTML('beforeend',
+    '<div class="note">Un tracteur sert à tout : c\u2019est l\u2019outil accroché derrière qui ' +
+    'décide de son métier. Il en faut au moins un.</div>');
+  (function(){
+    const P = PORTEURS.tracteur, prix = P.prix[0];
+    ligne(P.emo, P.n, P.det(0), fmt(prix) + ' 🪙', coins >= prix, () => {
+      const v = acheterPorteur('tracteur', 0);
+      if (!v){ sfx('deny'); return; }
+      sfx('buy'); toast('Tracteur livré au parc', 'good'); drawVeh(); drawPanel();
+    });
+  })();
+  titreParc('🔧 Remorques et outils');
+  elBody.insertAdjacentHTML('beforeend',
+    '<div class="note">Tout cela s\u2019accroche derrière n\u2019importe quel tracteur, et se ' +
+    'décroche sur place au bouton \u2693 pour aller en prendre un autre.</div>');
+  TYPES_OUTIL.forEach(type => {
+    const D = OUTILS[type], prix = D.prix[0];
+    ligne(D.emo, D.n, D.det(0), fmt(prix) + ' 🪙', coins >= prix, () => {
+      if (!acheterOutil(type, 0)){ sfx('deny'); return; }
+      sfx('buy'); toast(D.n + ' livré au fond de la cour', 'good');
+      drawHitch(); drawPanel();
     });
   });
-  titreParc('🔧 Outils à atteler');
-  TYPES_OUTIL.forEach(type => {
-    const D = OUTILS[type];
-    D.prix.forEach((prix, i) => {
-      const besoin = D.force[i];
-      ligne(D.emo, D.n + ' ' + (i+1),
-            D.det(i) + ' — demande un tracteur ' + PORTEURS.tracteur.nom[besoin].toLowerCase(),
-            fmt(prix) + ' 🪙', coins >= prix, () => {
-              if (!acheterOutil(type, i)){ sfx('deny'); return; }
-              sfx('buy'); toast(D.n + ' livré au fond de la cour', 'good');
-              drawHitch(); drawPanel();
-            });
+  titreParc('⚙️ Engins automoteurs');
+  elBody.insertAdjacentHTML('beforeend',
+    '<div class="note">Ceux-là roulent seuls, sans tracteur. Leur outil — barre de coupe, ' +
+    'rampes — monte en gamme séparément de la machine.</div>');
+  ['moiss','pulve'].forEach(kind => {
+    const P = PORTEURS[kind], prix = P.prix[0];
+    ligne(P.emo, P.n, P.det(0), fmt(prix) + ' 🪙', coins >= prix, () => {
+      const v = acheterPorteur(kind, 0);
+      if (!v){ sfx('deny'); return; }
+      sfx('buy'); toast(P.n + ' livré au parc', 'good'); drawVeh(); drawPanel();
     });
   });
   titreParc('🏢 Silos');

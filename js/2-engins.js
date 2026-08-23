@@ -557,7 +557,7 @@ function becCoupe(g, mnt, W){
 // qu'il ait la force de le tirer — c'est tout ce que `force` dit : le niveau de tracteur
 // minimum. Le reste — largeur de travail, encombrement, prix — se lit ici.
 const OUTILS = {
-  sol:     { n:'Déchaumeuse', emo:'🚜', metier:'prep', prix:[3200,8500,19000],
+  sol:     { n:'Déchaumeuse', emo:'⚒️', metier:'prep', prix:[3200,8500,19000],
              larg:[3.4,4.6,6.8], force:[0,1,2], near:-.5,  far:.15,
              det:i => nb(LARG.prep[i]) + ' m de disques' },
   semis:   { n:'Semoir', emo:'🌱', metier:'sow', prix:[2800,7500,17000],
