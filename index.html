@@ -1627,11 +1627,19 @@ function followPath(v, dt){
   // Le tracteur suit la ligne et l'outil la suit derrière lui : en cours de route c'est
   // donc bien le tracteur qui consomme les points. Le dernier, en revanche, c'est l'outil
   // qui doit l'atteindre — c'est là que le joueur a voulu que l'effet s'arrête.
+  const sn0 = Math.sin(v.heading), cs0 = Math.cos(v.heading);
   while (v.head < v.path.length){
     const der = v.head === v.path.length - 1;
     const P = der ? outilXZ(v, _out) : v.pos;
-    if (Math.hypot(v.path[v.head].x-P.x, v.path[v.head].z-P.z) >= 2.0) break;
-    v.head++; avance = true;
+    const dx = v.path[v.head].x - P.x, dz = v.path[v.head].z - P.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 2.0){ v.head++; avance = true; continue; }
+    // Dépassé : le dernier point est derrière nous et à portée. Faire demi-tour pour le
+    // cueillir ferait tourner l'engin en rond autour du bout du tracé au lieu de le finir.
+    // Ce raccourci ne vaut QUE pour le dernier point : appliqué à tous, il avalait d'un
+    // coup tout le début du dessin quand l'engin ne pointait pas déjà dans le bon sens.
+    if (der && d < 6 && dx*sn0 + dz*cs0 < 0){ v.head++; avance = true; continue; }
+    break;
   }
   // Sauter des points du tracé, on ne s'y autorise que dans deux cas, et pas un de plus :
   //   — à l'accrochage, parce que le joueur commence rarement son trait pile sur l'engin et
@@ -1671,7 +1679,7 @@ function followPath(v, dt){
   // L'engin partait alors tourner en rond sans jamais accrocher la ligne. On sépare donc
   // les deux cas : tant qu'on n'est pas sur le tracé, on va droit sur son premier point ;
   // une fois dessus, on avance LE LONG du tracé, ce qui ne peut plus revenir en arrière.
-  const LOOK = Math.max(4.0, v.speed*.7);
+  const LOOK = Math.max(2.5, Math.min(8, v.speed*.50));
   let i = v.head;
   if (dTete < LOOK){
     let reste = LOOK - dTete;
@@ -1690,15 +1698,23 @@ function followPath(v, dt){
            Math.hypot(v.path[i].x-v.pos.x, v.path[i].z-v.pos.z) < MINI) i++;
   }
   // Le dessin tourne : on lève le pied. Un engin lancé à dix mètres par seconde vise loin
-  // devant et rogne les courbes ; ralenti, il vise court et colle au trait. C'est la
-  // différence entre suivre un dessin et en prendre la direction générale.
+  // devant et rogne les courbes ; ralenti, il vise court et colle au trait. On ne mesure
+  // plus ça sur un seul angle — trop bruyant quand le point suivant est à un mètre — mais
+  // sur le braquage cumulé du tracé jusqu'au point visé : zéro sur une ligne droite, un
+  // radian et demi sur un zigzag serré.
   {
-    const a1 = Math.atan2(v.path[v.head].x-v.pos.x, v.path[v.head].z-v.pos.z);
-    const a2 = Math.atan2(v.path[i].x-v.path[v.head].x, v.path[i].z-v.path[v.head].z);
-    let da = a2 - a1;
-    while (da >  Math.PI) da -= 6.28318;
-    while (da < -Math.PI) da += 6.28318;
-    v.mul = Math.max(.42, 1 - Math.abs(da)*.62);
+    let courbe = 0, prec = null;
+    for(let k = v.head; k < i && k+1 < v.path.length; k++){
+      const a = Math.atan2(v.path[k+1].x-v.path[k].x, v.path[k+1].z-v.path[k].z);
+      if (prec !== null){
+        let d2 = a - prec;
+        while (d2 >  Math.PI) d2 -= 6.28318;
+        while (d2 < -Math.PI) d2 += 6.28318;
+        courbe += Math.abs(d2);
+      }
+      prec = a;
+    }
+    v.mul = Math.max(.5, 1 - courbe*.5);
   }
   // Coincé pour de bon. On ne mesure plus ça à la vitesse : un engin qui rebondit contre la
   // grange à trois mètres par seconde n'est pas lent, il n'avance simplement plus vers son
@@ -3663,6 +3679,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
 })();
 
 // sonde de mise au point : lecture seule, pratique pour vérifier une partie sans y jouer
+window.__FARM_LISTE_OBST = () => OBST.map(o => [o.x, o.z, o.r]);
 window.__FARM_DEBUG = () => ({
   coins:Math.round(coins), stock:Math.round(stock), totalT:Math.round(totalT), harvests,
   stage, etape:STAGES[stage].n, culture:crop().id, jour:day, heure:+(dayT*24).toFixed(2),
