@@ -938,26 +938,109 @@ function setCell(i,s2){
 }
 function fillCells(s2){ cell.fill(s2); for(let k=0;k<4;k++) cellN[k] = k===s2 ? NS*NS : 0; }
 
-(function ground(){
-  const c = document.createElement('canvas'); c.width=c.height=256;
+// ---------- l'herbe ----------
+// Le revêtement du prototype, à son échelle : une tuile de quatre mètres à cent vingt-huit
+// pixels le mètre. Bandes de tonte, taches de densité, brins courbés de vingt à trente-cinq
+// centimètres et quelques fleurs — le tout dans une seule image. Le sol ondule doucement
+// par-dessous, et de vraies touffes en volume viennent s'y poser.
+const HERBE_M = 4;                                     // mètres couverts par une tuile
+function herbeTex(){
+  const px = 512;
+  const c = document.createElement('canvas'); c.width = c.height = px;
   const x = c.getContext('2d');
-  x.fillStyle='#5cb033'; x.fillRect(0,0,256,256);
-  x.fillStyle='#68be3a'; for(let i=0;i<256;i+=56) x.fillRect(i,0,28,256);
-  for(let i=0;i<900;i++){                              // brins d'herbe
-    const px=Math.random()*256, py=Math.random()*256;
-    x.strokeStyle = Math.random()>.5 ? 'rgba(126,204,74,.55)' : 'rgba(58,120,32,.45)';
-    x.lineWidth = 1.4;
-    x.beginPath(); x.moveTo(px,py); x.lineTo(px+(Math.random()-.5)*3, py-2-Math.random()*4); x.stroke();
+  x.fillStyle = '#5cb033'; x.fillRect(0,0,px,px);
+  x.fillStyle = '#68be3a';
+  for(let i=0;i<px;i+=px/4.6) x.fillRect(i,0,px/9.2,px);           // bandes de tonte
+  for(let i=0;i<90;i++){                                          // variations de densité
+    const a = Math.random()*px, b = Math.random()*px, r = px*(.02+Math.random()*.06);
+    const g = x.createRadialGradient(a,b,0,a,b,r);
+    g.addColorStop(0, Math.random()>.5 ? 'rgba(112,196,64,.30)' : 'rgba(58,120,32,.26)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = g; x.beginPath(); x.arc(a,b,r,0,6.3); x.fill();
+  }
+  x.lineCap = 'round';
+  for(let i=0;i<1500;i++){                                        // brins, 20 à 35 cm au sol
+    const a = Math.random()*px, b = Math.random()*px;
+    x.strokeStyle = Math.random()>.5 ? 'rgba(146,222,90,.6)' : 'rgba(52,112,28,.42)';
+    x.lineWidth = px/150;
+    x.beginPath(); x.moveTo(a,b);
+    x.quadraticCurveTo(a+(Math.random()-.5)*px/34, b-px/38,
+                       a+(Math.random()-.5)*px/22, b-px/22-Math.random()*px/22);
+    x.stroke();
+  }
+  for(let i=0;i<125;i++){                                         // fleurs
+    x.fillStyle = ['#f3f0c8','#f5e58a','#ffffff'][(Math.random()*3)|0];
+    x.beginPath(); x.arc(Math.random()*px, Math.random()*px, px/160, 0, 6.3); x.fill();
   }
   const t = new THREE.CanvasTexture(c);
-  t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(20,20);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  if (renderer.capabilities) t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  return t;
+}
+// creux et bosses très doux. On les efface sous la parcelle et sous la cour : leurs bords
+// sont posés à plat, une bosse dessous les ferait percer.
+const dRect = (x,z,x0,x1,z0,z1) =>
+  Math.hypot(Math.max(x0-x, 0, x-x1), Math.max(z0-z, 0, z-z1));
+function herbeY(x, z){
+  const d = Math.min(dRect(x,z, X0-3, X0+P+3, Z0-3, Z0+P+3),
+                     dRect(x,z, -43, 43, YARD-6, YARD+14));
+  const k = Math.min(1, d/11);
+  return (Math.sin(x*.13+z*.09)*.5 + Math.sin(x*.31-z*.24)*.28) * .14 * k;
+}
+(function ground(){
+  const t = herbeTex();
+  t.repeat.set(400/HERBE_M, 400/HERBE_M);
   t.center.set(.5,.5); t.rotation = Math.PI/4.2;
-  const g = new THREE.Mesh(new THREE.PlaneGeometry(400,400),
-                           gouache(new THREE.MeshLambertMaterial({map:t}), .4, true));
+  const geo = new THREE.PlaneGeometry(400,400,90,90);
+  const pos = geo.attributes.position;
+  for(let i=0;i<pos.count;i++) pos.setZ(i, herbeY(pos.getX(i), -pos.getY(i)));
+  pos.needsUpdate = true; geo.computeVertexNormals();
+  const g = new THREE.Mesh(geo, gouache(new THREE.MeshLambertMaterial({map:t}), .4, true));
   g.rotation.x = -Math.PI/2; g.receiveShadow = true; g.renderOrder = -13; scene.add(g);
   const y = new THREE.Mesh(new THREE.PlaneGeometry(80,16),
                            gouache(new THREE.MeshLambertMaterial({color:'#a9b06b'}), .42, true));
   y.rotation.x = -Math.PI/2; y.position.set(0,.01,YARD+4); y.receiveShadow = true; y.renderOrder = -12; scene.add(y);
+})();
+// Les touffes : des paquets de brins en volume, posés autour de l'aire de jeu seulement —
+// couvrir quatre cents mètres de côté à cette densité coûterait trois cent mille objets.
+(function touffes(){
+  const R = 64, PAS = 1.05;
+  const geo = new THREE.ConeGeometry(.028,.30,3); geo.translate(0,.15,0);
+  const cols = ['#7cc94a','#8fd457','#a3c05c'];         // deux verts clairs et un ton sec
+  const lots = cols.map(() => []);
+  for(let x=-R; x<R; x+=PAS) for(let z=Z0+P/2-R; z<Z0+P/2+R; z+=PAS){
+    const px = x + (Math.random()-.5)*PAS*.9, pz = z + (Math.random()-.5)*PAS*.9;
+    // Seulement le long des bords. Une touffe de trente centimètres ne se voit qu'à contre-jour
+    // du sol nu ou de la cour ; en pleine prairie, à quarante mètres de haut, elle disparaît
+    // dans la texture — et couvrir tout le pourtour coûterait quarante mille objets pour rien.
+    const d = Math.min(dRect(px,pz, X0, X0+P, Z0, Z0+P),
+                       dRect(px,pz, -41, 41, YARD-4.5, YARD+12.5));
+    if (d < 1.1 || d > 13) continue;
+    // par paquets : une touffe, c'est cinq ou six brins serrés, pas un brin isolé
+    const n = 3 + (Math.random()*3|0), k = (Math.random()*cols.length)|0;
+    for(let b=0;b<n;b++){
+      const a = Math.random()*6.283, r = Math.random()*(.14+Math.random()*.2);
+      lots[Math.random() < .78 ? k : (Math.random()*cols.length)|0]
+        .push(px+Math.cos(a)*r, pz+Math.sin(a)*r);
+    }
+  }
+  const d = new THREE.Object3D();
+  cols.forEach((col,k) => {
+    const L = lots[k], n = L.length/2;
+    const im = new THREE.InstancedMesh(geo,
+      gouache(new THREE.MeshLambertMaterial({ color:col }), .3, true), Math.max(1,n));
+    im.castShadow = false; im.receiveShadow = false;
+    for(let q=0;q<n;q++){
+      const x = L[q*2], z = L[q*2+1];
+      d.position.set(x, herbeY(x,z), z);
+      d.rotation.set((Math.random()-.5)*.7, Math.random()*3, (Math.random()-.5)*.7);
+      const sc = .52 + Math.random()*.85;               // 16 à 41 cm : ras
+      d.scale.set(sc*.85, sc, sc*.85); d.updateMatrix();
+      im.setMatrixAt(q, d.matrix);
+    }
+    im.instanceMatrix.needsUpdate = true;
+    im.frustumCulled = false; scene.add(im);
+  });
 })();
 
 // ---------- la parcelle : un bloc de terre en surépaisseur, ni plat ni rectiligne ----------
