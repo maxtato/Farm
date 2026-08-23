@@ -142,6 +142,24 @@ function drawParc(){
     }
     c.appendChild(b); elBody.appendChild(c);
   });
+  elBody.insertAdjacentHTML('beforeend',
+    '<div class="note">Les silos se montent dans la cour. La benne se vide au plus proche, ' +
+    'et garder la récolte au lieu de la brader à la moisson fait monter le prix payé.</div>');
+  SILOS.forEach(S => {
+    const a = silosOwned[S.id];
+    const c = card(S.emo, S.n, S.d);
+    const b = document.createElement('button');
+    if (a){ b.className = 'buy max'; b.disabled = true; b.textContent = 'bâti'; }
+    else {
+      b.className = 'buy'; b.textContent = fmt(S.prix) + ' 🪙';
+      b.disabled = coins < S.prix;
+      b.onclick = () => {
+        if (!acheterSilo(S.id)){ sfx('deny'); return; }
+        sfx('buy'); toast(S.n + ' bâti dans la cour', 'good'); drawPanel();
+      };
+    }
+    c.appendChild(b); elBody.appendChild(c);
+  });
 }
 const fr = n => n.toFixed(1).replace('.', ',');
 function drawCrops(){

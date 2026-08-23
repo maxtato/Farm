@@ -224,6 +224,7 @@ function work(v, dt){
   if (v.kind === 'prep'){
     const n = applyTool(v, i => setCell(i,1));
     if (n){
+      vierge = false;                    // la parcelle a été travaillée : ce n'est plus une friche
       laySwath(v, 0);
       popDust(v.pos.x - Math.sin(v.heading)*3.5, v.pos.z - Math.cos(v.heading)*3.5);
       // le déchaumage enfouit ce qui traînait : plants levés comme dépôt de paille
@@ -295,7 +296,7 @@ function work(v, dt){
       }
       if (cut){
         v.hop = Math.min(CAP, v.hop + cut*crop().yieldK*RENDK);
-        applyTool(v, i => setCell(i,0));
+        applyTool(v, i => setCell(i,4));      // moissonné : ni friche, ni terre travaillée
         laySwath(v, 3);
         if (Math.random()<.3) popDust(v.pos.x-Math.sin(v.heading)*2.5,
                                       v.pos.z-Math.cos(v.heading)*2.5);

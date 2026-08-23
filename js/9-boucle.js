@@ -15,7 +15,9 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   if (had && stage > 0) primeField(stage);   // on reprend la parcelle telle que l'étape la suppose
   // Toute la flotte est là dès le lancement, rangée sur la cour à côté du hangar. On ne la
   // découvre plus au fur et à mesure : les cinq engins attendent, on prend celui qu'on veut.
-  if (!had){ for(let k=0;k<plants.length;k++) plants[k].r = 1; redrawPlants(); }
+  // Première partie : la parcelle n'a jamais été touchée — c'est une friche, avec ses
+  // repousses sèches, pas le chaume d'une moisson qu'on n'a pas faite.
+  if (!had){ for(let k=0;k<plants.length;k++) plants[k].r = 2; redrawPlants(); }
   KINDS.forEach(fleetGet);
   startStage();                              // ni remise à nu ni semence : c'est l'affaire du cycle
   if (fleet[STAGES[stage].k]) driven = STAGES[stage].k;
@@ -149,7 +151,14 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
 
   // livraison : on amène la benne au silo et elle se vide
   if (hauler){
-    if (hauler.hop > .2 && hauler.pos.distanceTo(SILO) < 6){
+    // On se vide au silo le plus proche : le silo d'origine, ou l'un de ceux qu'on a
+    // fait bâtir. Inutile de traverser toute la cour si on en a un sous la main.
+    let depot = null, dmin = 6;
+    for(let i=0;i<DEPOTS.length;i++){
+      const d = hauler.pos.distanceTo(DEPOTS[i]);
+      if (d < dmin){ dmin = d; depot = DEPOTS[i]; }
+    }
+    if (hauler.hop > .2 && depot){
       const give = Math.min(hauler.hop, 160*dt);
       const c = CROPS.find(x => x.id === hauler.cropId) || CROPS[0];
       const pay = give*c.price*PRICEK;
@@ -157,8 +166,8 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
       hauler.paid += pay;
       contractDeliver(c.id, give);
       if (hauler.paid > 700){                  // une tranche encaissée : le gain part vers le compteur
-        floatCoin(SILO.x, SILO.z-2, '+' + fmt(hauler.paid));
-        for(let i=0;i<4;i++) flyCoin(SILO.x, SILO.z-2, i*70);
+        floatCoin(depot.x, depot.z-2, '+' + fmt(hauler.paid));
+        for(let i=0;i<4;i++) flyCoin(depot.x, depot.z-2, i*70);
         hauler.paid = 0; sfx('coin');
       }
       if (hauler.hop <= .2){ hauler.cropId = crop().id; sfx('cash'); save(); toast('Benne vidée au silo', 'good'); }
@@ -322,7 +331,7 @@ window.__FARM_DEBUG = () => ({
     for(let k=Math.max(0,v.head-3); k<Math.min(v.path.length, v.head+8); k++)
       m = Math.min(m, Math.hypot(v.path[k].x-v.pos.x, v.path[k].z-v.pos.z));
     return +m.toFixed(2); })(),
-  cellules:(function(){ const o=[0,0,0,0]; for(let i=0;i<cell.length;i++) o[cell[i]]++;
+  cellules:(function(){ const o=[0,0,0,0,0]; for(let i=0;i<cell.length;i++) o[cell[i]]++;
     return o.map(v=>+(100*v/cell.length).toFixed(1)); })(),
   murs:(function(){ let m=0; for(const p of plants) if (p.g > .55) m++; return m; })(),
   suivi:(function(){ const v = pilote(); if (!v) return null;

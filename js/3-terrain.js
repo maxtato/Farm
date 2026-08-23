@@ -73,12 +73,14 @@ function cellIndex(x,z){
   if (ix<0||jz<0||ix>=NS||jz>=NS) return -1;
   return jz*NS+ix;
 }
-const cellN = [NS*NS, 0, 0, 0];               // combien de cellules dans chaque état
+// 0 friche · 1 labouré · 2 semé · 3 fertilisé · 4 moissonné. La friche et le chaume
+// partageaient le même code : on ne pouvait pas les dessiner différemment.
+const cellN = [NS*NS, 0, 0, 0, 0];            // combien de cellules dans chaque état
 function setCell(i,s2){
   if (i<0 || cell[i]===s2) return false;
   cellN[cell[i]]--; cellN[s2]++; cell[i] = s2; return true;
 }
-function fillCells(s2){ cell.fill(s2); for(let k=0;k<4;k++) cellN[k] = k===s2 ? NS*NS : 0; }
+function fillCells(s2){ cell.fill(s2); for(let k=0;k<5;k++) cellN[k] = k===s2 ? NS*NS : 0; }
 
 // ---------- l'herbe ----------
 // Le revêtement du prototype, à son échelle : une tuile de quatre mètres à cent vingt-huit
@@ -250,12 +252,29 @@ function drawCut(x, R){
     straw(x,R,px,py,a,L,w,CUT_TONS[(R()*CUT_TONS.length)|0]);
   }
 }
-// La terre au repos — celle du premier lancement, celle qu'on retrouve entre deux cycles —
-// c'est le chaume : exactement le sol que laisse la moissonneuse. Le cycle se referme donc
-// sur lui-même, et on ne voit aucune couture entre le champ fauché et le champ au repos.
+// La friche : le champ tel qu'on l'achète, jamais retourné. C'est le sol de fond de la
+// parcelle, celui qu'on voit au tout premier lancement. Terre grise et sèche, mottes
+// tassées jetées sans ordre, repousses courtes en tous sens — rien n'y est aligné, et
+// c'est justement ce qui la distingue du chaume que laisse la moissonneuse, lui peigné
+// en rangs. Tout ce qui vient après — labour, semis, engrais, chaume — se pose par-dessus.
+const FRICHE_TONS = ['#9c9558', '#7f8a44', '#8d8a4e'];
+function drawFriche(x, R){
+  x.fillStyle = '#8b7c52'; x.fillRect(0,0,TS,TS);
+  for(let i=0;i<170;i++){                        // mottes tassées, deux gris de terre
+    const px=R()*TS, py=R()*TS, r=5.5+R()*13;    // 6 à 21 cm au sol, sur une tuile de 2,9 m
+    blob(x,px+r*.3,py+r*.32,r,'rgba(52,44,24,.34)');
+    blob(x,px,py,r*.88, R()>.5 ? '#94855c' : '#7a6a45');
+    blob(x,px-r*.28,py-r*.3,r*.32,'rgba(214,203,166,.26)');
+  }
+  speck(x,R,130,['rgba(64,56,32,.32)','rgba(168,158,110,.3)'],2.4,7);
+  for(let i=0;i<220;i++){                        // repousses sèches, courtes, désordonnées
+    const px=R()*TS, py=R()*TS, a=R()*6.28, L=10+R()*16, w=2.6+R()*2.2;
+    straw(x,R,px,py,a,L,w,FRICHE_TONS[(R()*FRICHE_TONS.length)|0]);
+  }
+}
 function soilTex(){
   const [c,x] = cv();
-  drawCut(x, rng(1028679));
+  drawFriche(x, rng(714203));
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
@@ -516,7 +535,11 @@ function addObst(x,z,r){ OBST.push({ x, z, r }); }
 })();
 for(let i=0;i<40;i++){
   const s = .8+Math.random()*.6, side = i%2?1:-1;
-  const x = side*(P/2+4+Math.random()*16), z = Z0-10+Math.random()*(P+34);
+  const x = side*(P/2+4+Math.random()*16);
+  // La cour reste dégagée : les bâtiments s'y installent, et un arbre planté au milieu
+  // du hameau ou dans un silo passerait mal. Ce qui tombe là est renvoyé plein sud.
+  let z = Z0-10+Math.random()*(P+34);
+  if (z > Z0+P+1) z = Z0 - 10 - Math.random()*16;
   cyl(.32,.44,1.7*s,6, C.trunk, x,.85*s,z);
   cyl(0,2*s,3.4*s,7, C.leaf, x,3*s,z).rotation.y = Math.random()*3;
   addObst(x, z, .7 + s*.5);

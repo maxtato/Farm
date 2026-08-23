@@ -180,7 +180,13 @@ chunks.forEach(c => {
   c.straw = new THREE.InstancedMesh(geoStraw,
     gouache(new THREE.MeshLambertMaterial({ vertexColors:true }), .3, true), Math.max(1,c.list.length));
   c.straw.position.set(c.cx,0,c.cz); c.straw.receiveShadow = true;
-  c.straw.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(c.straw);
+  c.straw.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  // La teinte par instance doit exister AVANT la première compilation : créée après coup,
+  // three garde le programme d'origine, sans l'attribut, et la couleur reste ignorée.
+  const tc = new Float32Array(Math.max(1,c.list.length)*3).fill(1);
+  c.straw.instanceColor = new THREE.InstancedBufferAttribute(tc,3);
+  c.straw.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  scene.add(c.straw);
   [c.young,c.ripe].forEach(m => {
     m.position.set(c.cx,0,c.cz); m.castShadow = false; m.receiveShadow = false;
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(m);
@@ -216,7 +222,8 @@ const MOTTE = [
   { s:[.26,.46], c:['#7a6a45','#94855c'] },   // 0 · friche, terre grise et tassée
   { s:[.32,.60], c:['#7d6039','#8a6a3f'] },   // 1 · labouré, la motte est retournée
   { s:[.15,.29], c:['#7c5f3d','#8a6c47'] },   // 2 · semé, lit rappuyé, motte cassée menu
-  { s:[.15,.29], c:['#5c452b','#684f34'] }    // 3 · fertilisé, la même en mouillée
+  { s:[.15,.29], c:['#5c452b','#684f34'] },   // 3 · fertilisé, la même en mouillée
+  { s:[.11,.22], c:['#836f45','#97815a'] }    // 4 · moissonné, terre sèche entre les chaumes
 ];
 const SILLON = .46;                                     // un sillon tous les 46 cm
 (function(){
@@ -259,6 +266,10 @@ function majMottes(){
 }
 
 const dummy = new THREE.Object3D();
+// `p.r` distingue deux dépôts au sol qui partagent le même touffe : 1 = la paille jaune
+// que laisse la moissonneuse, 2 = les repousses sèches de la friche, plus courtes et
+// tirant sur le gris-vert. La teinte se pose par instance, la géométrie ne change pas.
+const TON_PAILLE = new THREE.Color(1,1,1), TON_FRICHE = new THREE.Color(.68,.72,.64);
 function writePlant(k){
   const p = plants[k], c = chunks[p.ci];
   const ripe = Math.max(0, Math.min(1, (p.g-.62)/.18));
@@ -269,8 +280,9 @@ function writePlant(k){
   dummy.scale.setScalar(h*ripe); dummy.updateMatrix();
   c.ripe.setMatrixAt(p.i, dummy.matrix);
   dummy.rotation.set(0, p.rot*1.7, 0);
-  dummy.scale.setScalar(p.r ? p.s : 0); dummy.updateMatrix();
+  dummy.scale.setScalar(p.r ? p.s*(p.r === 2 ? .74 : 1) : 0); dummy.updateMatrix();
   c.straw.setMatrixAt(p.i, dummy.matrix);
+  c.straw.setColorAt(p.i, p.r === 2 ? TON_FRICHE : TON_PAILLE);
   c.dirty = true;
 }
 function redrawPlants(){
@@ -278,6 +290,7 @@ function redrawPlants(){
   chunks.forEach(c => {
     c.young.instanceMatrix.needsUpdate = c.ripe.instanceMatrix.needsUpdate = true;
     c.straw.instanceMatrix.needsUpdate = true;
+    if (c.straw.instanceColor) c.straw.instanceColor.needsUpdate = true;
   });
 }
 // bascule de culture : on échange la géométrie des tuiles, les instances restent en place

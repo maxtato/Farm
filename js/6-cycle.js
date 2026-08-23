@@ -305,6 +305,19 @@ let worker = null, hauler = null;
 // Les trois tracteurs ne sont pas interchangeables : la puissance décide de la largeur de
 // l'outil porté et du poids de remorque admissible. Une benne se décroche sur place et se
 // reprend plus tard — c'est le même tracteur qui va en chercher une autre.
+// Vierge tant qu'aucun outil n'a mordu la parcelle : c'est ce qui décide entre friche et
+// chaume au repos. Le premier passage de déchaumeuse l'éteint pour de bon.
+let vierge = true;
+const silosOwned = { petit:false, grand:false };
+// Prime de stockage : garder la récolte au lieu de la vendre le jour même se paie.
+const primeSilos = () => SILOS.reduce((k,S) => k + (silosOwned[S.id] ? S.prime : 0), 0);
+function acheterSilo(id){
+  const S = siloDef(id);
+  if (!S || silosOwned[id] || coins < S.prix) return false;
+  coins -= S.prix; silosOwned[id] = true;
+  montreSilo(id); applyUpgrades(); save();
+  return true;
+}
 let nivTr = 0;
 const bennesOwned = { b8:true, b14:false, b22:false };
 let benneAtt = 'b8';                 // benne accrochée, ou null quand le tracteur roule seul
@@ -601,7 +614,7 @@ function applyUpgrades(){
   const B = typeof benneAttDef === 'function' ? benneAttDef() : null;
   TRCAP  = B ? Math.round(B.cap*(1 + .28*lv.tremie)) : 0;
   GROWK  = 1 + .22*lv.semence;
-  PRICEK = 1 + .16*lv.negoce;
+  PRICEK = (1 + .16*lv.negoce) * (1 + primeSilos());
 }
 applyUpgrades();
 
@@ -714,7 +727,7 @@ function save(){
   try {
     localStorage.setItem(SKEY, JSON.stringify({
       v:1, coins, stock, totalT, harvests, lv, owned, cropI, stage, day, dayT,
-      nivTr, bennes:bennesOwned, benneAtt,
+      nivTr, bennes:bennesOwned, benneAtt, vierge, silos:silosOwned,
       posees: bennesPosees.map(r => ({ id:r.id, hop:Math.round(r.hop),
                 x:+r.x.toFixed(2), z:+r.z.toFixed(2), ang:+r.ang.toFixed(3), pl:r.pl })),
       contract, son:SND.isOn(), ctrl:ctrlMode, conduit:driven,
@@ -729,6 +742,8 @@ function restore(){
   coins = +d.coins || 0; stock = +d.stock || 0;
   totalT = +d.totalT || 0; harvests = +d.harvests || 0;
   UPGRADES.forEach(u => { lv[u.id] = Math.max(0, Math.min(u.max, +d.lv?.[u.id] || 0)); });
+  SILOS.forEach(S => { if (d.silos && d.silos[S.id]){ silosOwned[S.id] = true; montreSilo(S.id); } });
+  vierge = d.vierge === undefined ? (+d.harvests || 0) === 0 && (+d.stage || 0) === 0 : !!d.vierge;
   nivTr = Math.max(0, Math.min(2, +d.nivTr || 0));
   BENNES.forEach(b => { if (d.bennes && d.bennes[b.id]) bennesOwned[b.id] = true; });
   bennesOwned.b8 = true;                                  // la petite benne fait partie du lot
@@ -773,10 +788,18 @@ function paintParcel(layer){
 }
 function primeField(st){
   SWATH.reset();
-  const state = [0,1,2,3,3][st], g0 = [0,0,.05,.34,1][st], layer = [-1,0,1,2,2][st];
+  // À l'étape « préparer », la parcelle n'est pas dans le même état selon qu'on n'y a
+  // jamais touché ou qu'on vient d'en sortir une récolte : friche au tout premier jour,
+  // chaume ensuite. Le fond de parcelle EST la friche, il n'y a donc rien à peindre
+  // dessus tant qu'elle est vierge.
+  const repos = vierge ? 0 : 4;
+  const state = [repos,1,2,3,3][st], g0 = [0,0,.05,.34,1][st];
+  const layer = st === 0 ? (vierge ? -1 : 3) : [0,0,1,2,2][st];
   fillCells(state);
   if (layer >= 0) paintParcel(layer);
-  // la friche garde ses repousses sèches : c'est ce qui la distingue d'une terre travaillée
-  for(let k=0;k<plants.length;k++){ plants[k].g = g0; plants[k].r = state === 0 ? 1 : 0; }
+  // La friche porte ses repousses sèches, le chaume sa paille de moisson ; une terre
+  // travaillée, elle, est nue.
+  const sec = state === 0 ? 2 : state === 4 ? 1 : 0;
+  for(let k=0;k<plants.length;k++){ plants[k].g = g0; plants[k].r = sec; }
   redrawPlants();
 }
