@@ -60,7 +60,7 @@ function traceAdd(v, p){
 function traceClear(v){
   if (!v) return;
   v.path = []; v.head = 0; v.accroche = false; v.prog = undefined; v.progT = 0;
-  v.rate = 0; v.detour = 0; v.sauts = 0; v.dTete = undefined; v.dTeteT = 0;
+  v.rate = 0; v.detour = 0; v.sauts = 0; v.teteT = 0;
   if (v.trace){ v.trace.geo.setDrawRange(0,0); v.trace.mesh.visible = false; }
 }
 function traceLeft(v){ return v && v.path ? Math.max(0, v.path.length - v.head) : 0; }
@@ -96,21 +96,18 @@ function followPath(v, dt){
   //     l'engin se mettait à raboter le mur en oscillant, sans jamais passer.
   // Le point visé restant derrière l'obstacle, c'est bien lui qui plaquait l'engin dessus ;
   // le lâcher est la seule façon d'en sortir. En plein champ, rien de tout cela ne s'ouvre.
-  // Point hors d'atteinte. Le signal n'est pas le contact — l'engin se cale contre un
-  // bâtiment sans jamais le toucher vraiment, à quelques centimètres, et ni le frottement
-  // ni le choc ne se déclenchent. Le signal, c'est qu'on N'APPROCHE PLUS : la distance à la
-  // tête du tracé ne diminue plus depuis plusieurs secondes. Il y a donc un obstacle entre
-  // elle et nous, et c'est ce point-là qui nous plaque dessus. On l'abandonne, un par un,
-  // jusqu'à retomber sur un point qu'on peut réellement atteindre — chercher le plus proche
-  // ne servait à rien ici, tous les points restants sont derrière le bâtiment, donc plus
-  // loin. En champ libre la distance décroît sans arrêt et rien de ceci ne se déclenche.
-  if (v.head < v.path.length - 1){
-    const dh = Math.hypot(v.path[v.head].x - v.pos.x, v.path[v.head].z - v.pos.z);
-    if (v.dTete === undefined || dh < v.dTete - .3){ v.dTete = dh; v.dTeteT = 0; }
-    else if ((v.dTeteT = (v.dTeteT || 0) + dt) > 3){
-      v.head++; v.sauts = (v.sauts || 0) + 1; avance = true;
-      v.dTete = undefined; v.dTeteT = 0;
-    }
+  // Point hors d'atteinte. Ni le contact ni la distance ne font un signal utilisable :
+  // l'engin se cale à quelques centimètres d'un bâtiment sans jamais le toucher — donc pas
+  // de frottement, pas de choc — et il oscille le long de la façade, si bien qu'il se
+  // rapproche périodiquement de la tête et remet à zéro tout compteur fondé sur l'approche.
+  // Les deux ont été essayés et mesurés, les deux ont échoué de cette façon.
+  // Le seul signal qui tienne est le plus bête : la tête du tracé n'avance plus. En champ
+  // libre elle avance moins d'une seconde sur l'autre ; passé trois secondes et demie sans
+  // bouger, c'est qu'un obstacle s'est mis entre elle et nous et que ce point-là est ce qui
+  // plaque l'engin dessus. On l'abandonne, un par un, jusqu'à en retrouver un atteignable.
+  v.teteT = avance ? 0 : (v.teteT || 0) + dt;
+  if (v.head < v.path.length - 1 && v.teteT > 3.5){
+    v.head++; v.sauts = (v.sauts || 0) + 1; avance = true; v.teteT = 0;
   }
   v.detour = Math.max(0, (v.detour || 0) - dt);
   if (v.head < v.path.length - 1 && v.detour > 0){
@@ -133,7 +130,7 @@ function followPath(v, dt){
     return;
   }
   if (v.head > 80){ v.path.splice(0, v.head); v.head = 0; avance = true; }
-  if (avance){ traceDraw(v); v.prog = undefined; v.progT = 0; v.dTete = undefined; v.dTeteT = 0; }
+  if (avance){ traceDraw(v); v.prog = undefined; v.progT = 0; }
   const dTete = Math.hypot(v.path[v.head].x-v.pos.x, v.path[v.head].z-v.pos.z);
   // accroché : on est arrivé sur la ligne. À partir de là, plus de raccourci sans obstacle.
   if (dTete < 3) v.accroche = true;
