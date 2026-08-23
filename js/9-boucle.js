@@ -331,6 +331,9 @@ window.__FARM_DEBUG = () => ({
   grains:+GRAIN.value.toFixed(3),
   ruban:SWATH.pose(),
   sauts:(function(){ const v = pilote(); return v ? (v.sauts||0) : 0; })(),
+  // depuis combien de secondes de jeu la tête du tracé n'a pas bougé : c'est ce compteur
+  // qui décide d'abandonner un point devenu inatteignable, il doit être lisible au banc
+  teteT:+(pilote() ? (pilote().teteT || 0) : 0).toFixed(2),
   // distance libre au plus proche obstacle, gabarit compris : négatif = ça touche
   frole:(function(){ const v = pilote(); if (!v) return undefined;
     const sn = Math.sin(v.heading), cs = Math.cos(v.heading); let m = 1e9;

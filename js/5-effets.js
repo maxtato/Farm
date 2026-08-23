@@ -102,11 +102,11 @@ function followPath(v, dt){
   // rapproche périodiquement de la tête et remet à zéro tout compteur fondé sur l'approche.
   // Les deux ont été essayés et mesurés, les deux ont échoué de cette façon.
   // Le seul signal qui tienne est le plus bête : la tête du tracé n'avance plus. En champ
-  // libre elle avance moins d'une seconde sur l'autre ; passé trois secondes et demie sans
-  // bouger, c'est qu'un obstacle s'est mis entre elle et nous et que ce point-là est ce qui
+  // libre elle avance moins d'une seconde sur l'autre ; passé deux secondes sans avoir
+  // bougé, c'est qu'un obstacle s'est mis entre elle et nous et que ce point-là est ce qui
   // plaque l'engin dessus. On l'abandonne, un par un, jusqu'à en retrouver un atteignable.
   v.teteT = avance ? 0 : (v.teteT || 0) + dt;
-  if (v.head < v.path.length - 1 && v.teteT > 3.5){
+  if (v.head < v.path.length - 1 && v.teteT > 2){
     v.head++; v.sauts = (v.sauts || 0) + 1; avance = true; v.teteT = 0;
   }
   v.detour = Math.max(0, (v.detour || 0) - dt);
