@@ -73,8 +73,10 @@ const P = 44, NS = 256, CS = P/NS;                 // cellules de 17 cm : le pas
 // tout champ de la carte et de tout arbre. L'emplacement a été cherché à la mesure, pas à
 // l'estime — voir essais/calage.js et essais/plan.js.
 const HANGAR = { x:-108.41, z:-69.07 };
-const X0 = -102, Z0 = -16;                          // la parcelle de travail
-const COUR = { x0:-103, x1:-57, z0:-38, z1:-20 };   // la cour, entre la route et la parcelle
+const X0 = -102, Z0 = -8;                           // la parcelle de travail
+// La cour s'étend jusqu'au silo : c'est une cour de ferme, elle est en sable comme celle
+// du corps de ferme de la carte, et non plus un carré d'herbe au milieu des champs.
+const COUR = { x0:-103, x1:-30, z0:-38, z1:-14 };   // la cour, entre la route et la parcelle
 const cell = new Uint8Array(NS*NS);           // état du sol : logique seule, plus aucun rendu par texture
 function cellIndex(x,z){
   const ix = Math.floor((x-X0)/CS), jz = Math.floor((z-Z0)/CS);
@@ -173,7 +175,7 @@ function herbeY(x, z){
     // du sol nu ou de la cour ; en pleine prairie, à quarante mètres de haut, elle disparaît
     // dans la texture — et couvrir tout le pourtour coûterait quarante mille objets pour rien.
     const d = Math.min(dRect(px,pz, X0, X0+P, Z0, Z0+P),
-                       dRect(px,pz, COUR.x0+2, COUR.x1-2, COUR.z0+2, COUR.z1-2));
+                       dRect(px,pz, COUR.x0, COUR.x1, COUR.z0, COUR.z1));
     if (d < 1.1 || d > 13) continue;
     // par paquets : une touffe, c'est cinq ou six brins serrés, pas un brin isolé
     const n = 3 + (Math.random()*3|0), k = (Math.random()*cols.length)|0;

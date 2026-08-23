@@ -13,6 +13,7 @@ Chromium, et on interroge la sonde `window.__FARM_DEBUG()` du jeu.
     node essais/parc.js           # niveaux de tracteur, bennes, décrochage, sauvegarde
     node essais/achats.js         # la boutique, achat par achat, et la cour qui se remplit
     node essais/carte.js          # la campagne de haut, la ferme, la cour de près
+    node essais/sols.js           # chacun sur son sol : sable, terre, herbe
     node essais/plan.js           # plan en texte : libre / route / champ / obstacle
     node essais/calage.js         # où poser la parcelle et la cour sans mordre sur la carte
 

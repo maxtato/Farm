@@ -27,5 +27,6 @@ const LOG=D+'carte.log';
  await vue('carte-vue.png', .14, 62, 0, 0);              // toute la campagne
  await vue('carte-ferme.png', .42, 46, -80, -30);        // la ferme : cour, parcelle, hangar
  await vue('carte-pres.png', .95, 40, -85, -30);         // la cour et le hangar, de près
+ await vue('carte-cour.png', .55, 88, -66, -26);         // la cour à la verticale, pour le calage
  await b.close(); srv.close();
 })();

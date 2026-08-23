@@ -88,11 +88,13 @@ function buisson(){
 }
 
 
-function surface(pts){
-  const f = new THREE.Shape();
-  f.moveTo(pts[0][0], -pts[0][1]);
-  for(let i=1;i<pts.length;i++) f.lineTo(pts[i][0], -pts[i][1]);
-  f.closePath();
+// `trous` : des contours à évider — la parcelle du joueur au milieu d'un champ, par exemple.
+function surface(pts, trous){
+  const trace = (c, o) => { o.moveTo(c[0][0], -c[0][1]);
+                            for(let i=1;i<c.length;i++) o.lineTo(c[i][0], -c[i][1]);
+                            o.closePath(); return o; };
+  const f = trace(pts, new THREE.Shape());
+  (trous || []).forEach(t => f.holes.push(trace(t, new THREE.Path())));
   const g = new THREE.ShapeGeometry(f, 10);
   g.rotateX(-Math.PI/2);
   const nb = g.attributes.position.count, nor = new Float32Array(nb*3);
@@ -361,12 +363,15 @@ function contourParcelle(bord){
     else if (c === 5){ segs.push([bas(), droit()]); segs.push([haut(), gauche()]); }
     else if (c === 10){ segs.push([gauche(), bas()]); segs.push([droit(), haut()]); }
   }
-  if (!segs.length) return decaler(bord, MARGE);
-  // chaînage en boucles, on garde la plus longue
+  if (!segs.length) return [];
+  // Chaînage en boucles. On les garde toutes, et plus seulement la plus longue : un
+  // obstacle au milieu d'un îlot — la parcelle du joueur, sa cour — perce un trou dans la
+  // terre, et un îlot peut même s'en trouver coupé en deux morceaux. Ne retenir que la
+  // plus grande boucle faisait alors disparaître le champ entier.
   const clef = p => (Math.round(p[0]*50)/50)+','+(Math.round(p[1]*50)/50);
   const depuis = new Map();
   segs.forEach(sg => { const k = clef(sg[0]); (depuis.get(k) || depuis.set(k,[]).get(k)).push(sg); });
-  const vus = new Set(); let best = [];
+  const vus = new Set(); const boucles = [];
   segs.forEach(sg => {
     if (vus.has(sg)) return;
     const boucle = []; let cur = sg;
@@ -375,10 +380,10 @@ function contourParcelle(bord){
       const suivants = depuis.get(clef(cur[1])) || [];
       cur = suivants.find(x => !vus.has(x));
     }
-    if (boucle.length > best.length) best = boucle;
+    if (boucle.length >= 8) boucles.push(boucle);
   });
-  if (best.length < 8) return decaler(bord, MARGE);
-  return lisser(simplifier(nettoyer(best, .6), .25), 1, true);
+  return boucles.map(b => lisser(simplifier(nettoyer(b, .6), .25), 1, true))
+                .filter(b => b.length >= 3);
 }
 function alea(seed){ return function(){ seed |= 0; seed = seed + 0x6D2B79F5 | 0;
   let t = Math.imul(seed ^ seed>>>15, 1 | seed);
@@ -392,18 +397,11 @@ function alea(seed){ return function(){ seed |= 0; seed = seed + 0x6D2B79F5 | 0;
 const CARTE = { n:7, taille:540, gigue:.32, seed:7 };
 const parcelles = [];                     // contours des champs en friche, pour la suite
 const routes = [];                        // axes des chemins et des routes, pour le calage
-// La clairière de la ferme : le corps de ferme de la carte, la cour et la parcelle de
-// travail. Aucun champ de la campagne ne s'y pose — la ferme reste dans son herbe au lieu
-// d'être bâtie au beau milieu d'une friche. Les arbres, eux, sont ceux de la carte : ils
-// gardent leur place, y compris ici.
-const ZJ = { x0:-126, x1:-28, z0:-126, z1:36 };
-// Un îlot ne se juge pas à son centre : un grand champ dont le milieu tombe au loin peut
-// très bien recouvrir la ferme. C'est son emprise entière qu'il faut regarder.
-function mordSurLaFerme(pts){
-  const b = bbox(pts);
-  return !(b.cx + b.w/2 < ZJ.x0 || b.cx - b.w/2 > ZJ.x1 ||
-           b.cz + b.d/2 < ZJ.z0 || b.cz - b.d/2 > ZJ.z1);
-}
+const SABLES = [];                        // les places de sable : cour de ferme et placettes
+// La parcelle de travail et la cour du joueur ne creusent plus une clairière dans la
+// campagne : elles entrent dans la liste des obstacles, comme les placettes et les
+// bâtiments. La terre des champs voisins les contourne au lieu de disparaître.
+const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
 (function carte(){
   const R = alea(CARTE.seed), N = CARTE.n, T = CARTE.taille, pas = T/N;
   // maillage déformé : le tour reste carré, l'intérieur bouge
@@ -442,10 +440,16 @@ function mordSurLaFerme(pts){
     B.aire = (B.i1-B.i0)*(B.j1-B.j0);
     B.type = 'champ';
   });
-  // quelques îlots restent en herbe, quelques-uns partent en bois
+  // quelques îlots partent en bois ; le plus central des petits porte le corps de ferme,
+  // dont l'îlot entier est une cour de sable — c'est là que sont posés le hangar, les
+  // maisons et le silo à cellules.
   blocs.slice().sort((a,b) => (a.c.cx*7+a.c.cz*3) - (b.c.cx*7+b.c.cz*3))
     .filter((_,k) => k % Math.max(1, Math.floor(blocs.length/4)) === 0).slice(0,4)
     .forEach(B => B.type = 'prairie');
+  const petits = blocs.filter(B => B.aire === 1 && B.type === 'champ');
+  const pool = petits.length ? petits : blocs;
+  const FERME = pool.reduce((a,b) => -Math.hypot(b.c.cx,b.c.cz) > -Math.hypot(a.c.cx,a.c.cz) ? b : a, pool[0]);
+  FERME.type = 'ferme';
   const grand = blocs.reduce((a,b) => b.aire > a.aire ? b : a, blocs[0]);
   [[-120,-61],[65,34],[-118,137],[29,153],[121,127]].forEach(([x,z]) => {
     const B = blocs.find(b => b !== grand && b.type === 'champ' && dedansPoly(b.pts, x, z));
@@ -474,29 +478,102 @@ function mordSurLaFerme(pts){
              moities: [ P2.slice(a, b+1).concat(gros.slice(1,-1).reverse()),
                         P2.slice(b).concat(P2.slice(0, a+1)).concat(gros.slice(1,-1)) ] };
   }
+  // ---------- placettes : la petite place de sable des carrefours ----------
+  // Un îlot sur trois reçoit, dans un de ses coins, un rectangle de sable adossé aux deux
+  // routes du croisement. C'est là que la carte pose ses maisons isolées et ses silos :
+  // sous eux il n'y a jamais eu d'herbe. Le tirage est celui de la carte, à la virgule
+  // près — il faut le même pour retrouver les mêmes coins.
+  const PLACETTES = [];
+  blocs.filter(B => B.type === 'champ')
+    .sort((a,b) => Math.atan2(a.c.cz, a.c.cx) - Math.atan2(b.c.cz, b.c.cx))
+    .forEach((B, idx) => {
+      if (idx % 3 !== 0) return;
+      const P2 = B.pts, n = P2.length;
+      const nrm = (x,z) => { const L = Math.hypot(x,z)||1; return [x/L, z/L]; };
+      let C = null, u = null, w = null;
+      for(let essai=0; essai<n; essai++){            // on cherche un vrai coin, pas un sommet plat
+        const k = ((R()*n)|0 + essai) % n;
+        const c0 = P2[k], a0 = P2[(k-1+n)%n], b0 = P2[(k+1)%n];
+        if (Math.hypot(b0[0]-c0[0], b0[1]-c0[1]) < 34) continue;
+        if (Math.hypot(a0[0]-c0[0], a0[1]-c0[1]) < 26) continue;
+        const u0 = nrm(b0[0]-c0[0], b0[1]-c0[1]), w0 = nrm(a0[0]-c0[0], a0[1]-c0[1]);
+        const cs = u0[0]*w0[0] + u0[1]*w0[1];
+        if (cs > .25 || cs < -.8) continue;          // angle compris entre 75 et 143 degrés
+        C = c0; u = u0; w = w0; break;
+      }
+      if (!C) return;
+      const RB = 2.1;                                // en deçà de la demi-route : le sable se fond
+      const O = [ C[0] + (u[0]+w[0])*RB, C[1] + (u[1]+w[1])*RB ];
+      const W = 27, D = 19, M = 3.5;                 // même bande d'herbe que le long des routes
+      const coins = [ O,
+                      [O[0]+u[0]*W, O[1]+u[1]*W],
+                      [O[0]+u[0]*W+w[0]*D, O[1]+u[1]*W+w[1]*D],
+                      [O[0]+w[0]*D, O[1]+w[1]*D] ];
+      const zone = [
+        [O[0] - u[0]*M - w[0]*M,         O[1] - u[1]*M - w[1]*M],
+        [O[0] + u[0]*(W+M) - w[0]*M,     O[1] + u[1]*(W+M) - w[1]*M],
+        [O[0] + u[0]*(W+M) + w[0]*(D+M), O[1] + u[1]*(W+M) + w[1]*(D+M)],
+        [O[0] - u[0]*M + w[0]*(D+M),     O[1] - u[1]*M + w[1]*(D+M)]
+      ];
+      PLACETTES.push({ coins, zone, dehors:[coins[1], coins[2], coins[3]] });
+    });
+  // ---------- ce que la terre doit contourner ----------
+  // Les placettes, les bâtiments, les arbres isolés — et la ferme du joueur, sa parcelle
+  // de travail comme sa cour. Le champ de distance de `contourParcelle` s'en écarte de
+  // MARGE_OBS : la friche vient jusqu'au bord sans jamais passer dessous.
+  OBSTACLES = PLACETTES.map(pl => pl.zone);
+  BATIMENTS.forEach(([f, x, z]) => OBSTACLES.push(carre(x, z, 16)));
+  OBSTACLES.push([[X0,Z0],[X0+P,Z0],[X0+P,Z0+P],[X0,Z0+P]]);
+  OBSTACLES.push([[COUR.x0,COUR.z0],[COUR.x1,COUR.z0],[COUR.x1,COUR.z1],[COUR.x0,COUR.z1]]);
+  // Un îlot vraiment boisé reste en herbe : c'est le seul endroit où elle survit à la
+  // terre. Un ou deux arbres seulement, et c'est la friche qui les contourne.
+  blocs.forEach(B => {
+    const dedans = ARBRES.filter(a => dedansPoly(B.pts, a[2], a[3]));
+    B.plante = dedans.length >= 3;
+    if (!B.plante) dedans.forEach(a => OBSTACLES.push(carre(a[2], a[3], 7)));
+  });
   // ---------- les champs, tous en friche, avec la terre du jeu ----------
   // `surface` fabrique ses coordonnées de texture à partir de la forme : deux parcelles
   // voisines montreraient donc le même bout d'image, à des échelles différentes. On les
   // réécrit en repère sol, au pas de la parcelle de départ, pour que le motif soit continu
   // d'un champ à l'autre et de la même finesse partout.
   const TERRE = gouache(new THREE.MeshLambertMaterial({ map:soilTex(), side:THREE.DoubleSide }), .3, true);
-  function champ(pts){
-    const g = surface(pts), p = g.attributes.position, uv = new Float32Array(p.count*2);
-    for(let i=0;i<p.count;i++){ uv[i*2] = p.getX(i)/2.9; uv[i*2+1] = p.getZ(i)/2.9; }
-    g.setAttribute('uv', new THREE.BufferAttribute(uv,2));
-    const m = new THREE.Mesh(g, TERRE);
-    m.position.y = .06; m.receiveShadow = true; m.renderOrder = -11; scene.add(m);
-    parcelles.push(pts);
-    const bd = ruban(pts, .7, '#8a7343', .12, true); if (bd) scene.add(bd);
+  // `boucles` sort des carrés marchants : une ou plusieurs frontières, sans indication de
+  // ce qui est plein et de ce qui est vide. Une boucle contenue dans un nombre impair
+  // d'autres est un trou ; les autres sont des morceaux de terre. Chaque trou revient au
+  // plus petit morceau qui l'entoure.
+  function champ(boucles){
+    if (!boucles.length) return;
+    const aires = boucles.map(b => Math.abs(aireSignee(b)));
+    const dedans = (a, b) => dedansPoly(b, boucles[a][0][0], boucles[a][0][1]);
+    const englobants = boucles.map((_, i) =>
+      boucles.map((_, j) => j).filter(j => j !== i && dedans(i, j)));
+    const morceaux = new Map();                       // indice du morceau -> ses trous
+    boucles.forEach((_, i) => { if (englobants[i].length % 2 === 0) morceaux.set(i, []); });
+    boucles.forEach((_, i) => {
+      if (englobants[i].length % 2 === 0) return;      // c'en est un, pas un trou
+      const mere = englobants[i].reduce((a, j) => aires[j] < aires[a] ? j : a, englobants[i][0]);
+      if (morceaux.has(mere)) morceaux.get(mere).push(i);
+    });
+    morceaux.forEach((trous, i) => {
+      const pts = boucles[i];
+      const g = surface(pts, trous.map(t => boucles[t]));
+      const p = g.attributes.position, uv = new Float32Array(p.count*2);
+      for(let k=0;k<p.count;k++){ uv[k*2] = p.getX(k)/2.9; uv[k*2+1] = p.getZ(k)/2.9; }
+      g.setAttribute('uv', new THREE.BufferAttribute(uv,2));
+      const m = new THREE.Mesh(g, TERRE);
+      m.position.y = .06; m.receiveShadow = true; m.renderOrder = -11; scene.add(m);
+      parcelles.push(pts);
+      [pts].concat(trous.map(t => boucles[t])).forEach(c => {
+        const bd = ruban(c, .7, '#8a7343', .12, true); if (bd) scene.add(bd);
+      });
+    });
   }
   blocs.forEach(B => {
-    if (B.type === 'prairie') return;                       // laissé en herbe
+    if (B.type === 'ferme' || B.plante) return;             // la cour, et les îlots boisés
     const coupable = B.aire >= 4 && Math.min(B.i1-B.i0, B.j1-B.j0) >= 2;
     const coupe = coupable ? (B.coupe = coupure(B)) : null;
-    (coupe ? coupe.moities : [B.pts]).forEach(m => {
-      const pts = contourParcelle(m);
-      if (!mordSurLaFerme(pts)) champ(pts);
-    });
+    (coupe ? coupe.moities : [B.pts]).forEach(m => champ(contourParcelle(m)));
     if (coupe){
       const bv = ruban(coupe.chemin, 8.4, '#9db354', .045, false); if (bv) scene.add(bv);
       const md = ruban(coupe.chemin, 5.6, '#c9b184', .078, false); if (md) scene.add(md);
@@ -509,6 +586,34 @@ function mordSurLaFerme(pts){
     const bd = ruban(pts, 8.4, '#9db354', .04, true); if (bd) scene.add(bd);
     const md = ruban(pts, 5.6, '#c9b184', .07, true); if (md) scene.add(md);
     routes.push({ pts, ferme:true });
+  });
+  // ---------- le sable : la cour du corps de ferme, puis les placettes ----------
+  // Posé après la terre et sous les bâtiments : c'est le sol qu'ils ont toujours eu.
+  const SABLE = gouache(new THREE.MeshLambertMaterial({ color:'#c9b184', side:THREE.DoubleSide }), .25, true);
+  {
+    const contour = lisser(densifier(decaler(FERME.pts, 2.0), 7), 2, true);
+    SABLES.push(contour);
+    const m = new THREE.Mesh(surface(contour), SABLE);
+    m.position.y = .075; m.receiveShadow = true; m.renderOrder = -10; scene.add(m);
+  }
+  // La cour du joueur : même sable, même rôle. Sans elle le parc à engins et le silo qu'on
+  // achète se posaient sur l'herbe, au milieu des champs.
+  {
+    const C = COUR;
+    const coins = [[C.x0,C.z0],[C.x1,C.z0],[C.x1,C.z1],[C.x0,C.z1]];
+    const contour = lisser(densifier(coins, 5), 2, true);   // coins adoucis, comme les placettes
+    SABLES.push(contour);
+    const m = new THREE.Mesh(surface(contour), SABLE);
+    m.position.y = .072; m.receiveShadow = true; m.renderOrder = -10; scene.add(m);
+  }
+  PLACETTES.forEach(pl => {
+    const pts = lisser(densifier(pl.coins, 5), 2, true);
+    SABLES.push(pts);
+    const m = new THREE.Mesh(surface(pts), SABLE);
+    m.position.y = .069; m.receiveShadow = true; m.renderOrder = -10; scene.add(m);
+    // liseré vert sur les seuls côtés intérieurs : ceux qui longent la route se fondent
+    const bv = ruban(lisser(densifierPas(pl.dehors, 3), 2, false), 2.6, '#9db354', .045, false);
+    if (bv) scene.add(bv);
   });
   // ---------- le mobilier de la carte ----------
   // Ni bois ni arbres engendrés : la carte a les siens, relevés un par un avec leur
