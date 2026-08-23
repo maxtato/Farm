@@ -170,7 +170,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   // le joueur est prévenu une seule fois par remplissage
   if (cFull && !combine.warned){ combine.warned = true; toast('Trémie pleine — prends la benne', 'bad'); sfx('deny'); }
   if (combine && !cFull) combine.warned = false;
-  drawVeh();
+  drawVeh(); drawHitch();
 
   if (combine && !combine.done && !manual){
     let left = 0;
@@ -246,8 +246,12 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   else if (S.k === 'sow'){   gf = (cellN[2]+cellN[3])/NC;          gl = 'Semis ' + Math.round(gf*100) + ' %'; }
   else if (S.k === 'fert'){  gf = cellN[3]/NC;                     gl = 'Engrais ' + Math.round(gf*100) + ' %'; }
   else if (S.k === 'grow'){  gf = sown ? ripe/sown : 0;            gl = 'Maturité ' + Math.round(gf*100) + ' %'; }
-  else if (driven === 'trailer' && hauler){ gf = hauler.hop/TRCAP; gl = 'Benne ' + Math.round(gf*100) + ' %'; }
-  else {                     gf = combine ? combine.hop/CAP : (hauler ? hauler.hop/TRCAP : 0);
+  else if (driven === 'trailer' && hauler){
+    // décroché, le tracteur ne porte rien : la jauge le dit au lieu d'afficher NaN
+    gf = TRCAP ? hauler.hop/TRCAP : 0;
+    gl = TRCAP ? 'Benne ' + Math.round(gf*100) + ' %' : 'Sans benne';
+  }
+  else {                     gf = combine ? combine.hop/CAP : (hauler && TRCAP ? hauler.hop/TRCAP : 0);
                              gl = (combine ? 'Trémie ' : 'Benne ') + Math.round(gf*100) + ' %'; }
   elGauge.firstElementChild.style.width = (gf*100).toFixed(1) + '%';
   elGVal.textContent = gl;
@@ -355,13 +359,16 @@ window.__FARM_DEBUG = () => ({
   vis:+(worker && worker.g.userData.auger ? worker.g.userData.auger.rotation.y : -1).toFixed(2),
   // écart goulotte -> benne : c'est lui qui déclenche le transfert, pas la distance des engins
   ecart:(function(){
-    if (!worker || worker.kind !== 'harvest' || !hauler) return -1;
+    if (!worker || worker.kind !== 'harvest' || !hauler || !hauler.g.userData.bin) return -1;
     worker.h.updateMatrixWorld(true); hauler.h.updateMatrixWorld(true);
     const a = new THREE.Vector3(), b = new THREE.Vector3();
     worker.g.userData.spout.getWorldPosition(a); hauler.g.userData.bin.getWorldPosition(b);
     return +Math.hypot(a.x-b.x, a.z-b.z).toFixed(2);
   })(),
   capBenne:+(hauler ? hauler.heading : 0).toFixed(3),
+  nivTr, benneAtt, posees:bennesPosees.map(r => ({ id:r.id, x:+r.x.toFixed(1), z:+r.z.toFixed(1),
+          hop:Math.round(r.hop) })),
+  largOutil:+(worker && worker.g.userData.tool ? worker.g.userData.tool.W : 0).toFixed(1),
   grain:grains.reduce((n,d)=>n+(d.m.visible?1:0),0),
   terre:SOIL.live(), graines:SEED.live(), gouttes:spray.reduce((n,d)=>n+(d.m.visible?1:0),0),
   paille:plants.reduce((n,p)=>n+(p.r?1:0),0),

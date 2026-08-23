@@ -10,6 +10,8 @@ Chromium, et on interroge la sonde `window.__FARM_DEBUG()` du jeu.
     node essais/trajet.js         # fidélité au dessin, puis `node essais/plot.js`
     node essais/etats.js          # captures des états du sol
     node essais/smoke.js          # démarrage complet, relevé de toutes les valeurs
+    node essais/parc.js           # niveaux de tracteur, bennes, décrochage, sauvegarde
+    node essais/engins.js         # planches des trois attelages et des trois bennes
 
 Les images sortent dans `essais/sorties/`.
 
