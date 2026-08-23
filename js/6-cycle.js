@@ -293,7 +293,11 @@ const STAGES = [
   { k:'grow',    n:'Pousse',   ic:'🌿', d:'La culture mûrit' },
   { k:'harvest', n:'Moisson',  ic:'🌾', d:'Moissonneuse — la benne vient au transfert' }
 ];
-let stage = 0, coins = 0, stock = 0;
+// De quoi équiper une ferme au minimum — déchaumeuse, semoir, moissonneuse, tracteur de
+// transport et petite benne font 16 500 — et un peu de marge pour choisir où mettre le
+// reste. Tout ce qui suit se gagne au silo.
+const COINS0 = 18000;
+let stage = 0, coins = COINS0, stock = 0;
 // Toute la flotte vit sur la carte. On passe d'un engin à l'autre sans que le précédent
 // disparaisse : il garde son tracé, continue de rouler et continue de travailler. `worker`
 // et `hauler` ne sont plus que des vues sur la flotte, rafraîchies à chaque image.
@@ -308,6 +312,10 @@ let worker = null, hauler = null;
 // Vierge tant qu'aucun outil n'a mordu la parcelle : c'est ce qui décide entre friche et
 // chaume au repos. Le premier passage de déchaumeuse l'éteint pour de bon.
 let vierge = true;
+// Rien n'est donné : la partie commence sur un terrain nu, sans un engin sur la cour.
+// -1 = poste vide. Chaque métier a son niveau propre, acheté séparément.
+const nivDe = { prep:-1, sow:-1, fert:-1, harvest:-1, trailer:-1 };
+const possede = k => nivDe[k] >= 0;
 const silosOwned = { petit:false, grand:false };
 // Prime de stockage : garder la récolte au lieu de la vendre le jour même se paie.
 const primeSilos = () => SILOS.reduce((k,S) => k + (silosOwned[S.id] ? S.prime : 0), 0);
@@ -318,17 +326,18 @@ function acheterSilo(id){
   montreSilo(id); applyUpgrades(); save();
   return true;
 }
-let nivTr = 0;
-const bennesOwned = { b8:true, b14:false, b22:false };
-let benneAtt = 'b8';                 // benne accrochée, ou null quand le tracteur roule seul
+const bennesOwned = { b8:false, b14:false, b22:false };
+let benneAtt = null;                 // benne accrochée, ou null quand le tracteur roule seul
 const bennesPosees = [];             // { id, obj, x, z, ang, hop, obst[] }
 const benneAttDef = () => (benneAtt ? benneDef(benneAtt) : null);
-const benneCompatible = b => b.force <= nivTr;
+// C'est le tracteur de transport qui décide de ce qu'on peut atteler : sans tracteur,
+// aucune benne ne s'accroche, et un compact ne prend pas une 22 m³.
+const benneCompatible = b => b.force <= nivDe.trailer;
 function optFor(kind){
-  return { niv:nivTr, benne: kind === 'trailer' ? benneAtt : null };
+  return { niv:Math.max(0, nivDe[kind]), benne: kind === 'trailer' ? benneAtt : null };
 }
 function fleetGet(kind){
-  if (!KINDS.includes(kind)) return null;
+  if (!KINDS.includes(kind) || !possede(kind)) return null;
   if (!fleet[kind]){
     const v = vehicle(kind, optFor(kind)), n = KINDS.indexOf(kind);
     // Rangés côte à côte au fond de la cour, derrière les bâtiments. Alignés devant, comme
@@ -363,6 +372,23 @@ function rebuildVeh(kind){
 // Le niveau vaut pour toute la flotte : le pulvérisateur et la moissonneuse changent de
 // machine eux aussi, pas seulement les engins d'attelage.
 function rebuildTracteurs(){ KINDS.forEach(k => { if (fleet[k]) rebuildVeh(k); }); }
+// Ce que coûte vraiment une machine : son prix, moins la moitié de celle qu'elle remplace.
+function repriseDe(k, i){
+  const M = machDef(k);
+  return (M && nivDe[k] >= 0 && nivDe[k] < i) ? Math.round(M.prix[nivDe[k]]*.5) : 0;
+}
+function acheterEngin(k, i){
+  const M = machDef(k);
+  if (!M || i < 0 || i >= M.prix.length || nivDe[k] >= i) return null;
+  const reprise = repriseDe(k,i), net = M.prix[i] - reprise;
+  if (coins < net) return null;
+  coins -= net;
+  const neuf = !possede(k);
+  nivDe[k] = i;
+  if (neuf) fleetGet(k); else rebuildVeh(k);
+  applyUpgrades(); save();
+  return { net, reprise, neuf };
+}
 // Une benne posée est un obstacle comme un autre : on l'inscrit avec les mêmes disques que
 // ceux qu'elle avait en roulant, sinon les autres engins lui passeraient au travers.
 function obstBenne(rec){
@@ -504,6 +530,9 @@ function nextStage(){
 function switchTo(i){
   if (i === stage) return;
   stage = i; startStage();
+  const k = STAGES[i].k;
+  if (KINDS.includes(k) && !possede(k))
+    toast(STAGES[i].ic + ' ' + STAGES[i].n + ' — aucune machine pour ce chantier', 'bad');
 }
 
 // ---------- son : tout est synthétisé, aucun fichier à charger ----------
@@ -729,7 +758,7 @@ function save(){
   try {
     localStorage.setItem(SKEY, JSON.stringify({
       v:1, coins, stock, totalT, harvests, lv, owned, cropI, stage, day, dayT,
-      nivTr, bennes:bennesOwned, benneAtt, vierge, silos:silosOwned,
+      niv:nivDe, bennes:bennesOwned, benneAtt, vierge, silos:silosOwned,
       posees: bennesPosees.map(r => ({ id:r.id, hop:Math.round(r.hop),
                 x:+r.x.toFixed(2), z:+r.z.toFixed(2), ang:+r.ang.toFixed(3), pl:r.pl })),
       contract, son:SND.isOn(), ctrl:ctrlMode, conduit:driven,
@@ -746,9 +775,12 @@ function restore(){
   UPGRADES.forEach(u => { lv[u.id] = Math.max(0, Math.min(u.max, +d.lv?.[u.id] || 0)); });
   SILOS.forEach(S => { if (d.silos && d.silos[S.id]){ silosOwned[S.id] = true; montreSilo(S.id); } });
   vierge = d.vierge === undefined ? (+d.harvests || 0) === 0 && (+d.stage || 0) === 0 : !!d.vierge;
-  nivTr = Math.max(0, Math.min(2, +d.nivTr || 0));
+  // Une sauvegarde d'avant l'achat des engins avait toute la flotte, à un niveau unique :
+  // on la lui rend telle quelle plutôt que de la déshabiller sans prévenir.
+  if (d.niv) KINDS.forEach(k => { nivDe[k] = Math.max(-1, Math.min(2, d.niv[k] === undefined ? -1 : +d.niv[k])); });
+  else { const n = Math.max(0, Math.min(2, +d.nivTr || 0)); KINDS.forEach(k => nivDe[k] = n); }
   BENNES.forEach(b => { if (d.bennes && d.bennes[b.id]) bennesOwned[b.id] = true; });
-  bennesOwned.b8 = true;                                  // la petite benne fait partie du lot
+  if (!d.niv && !d.bennes) bennesOwned.b8 = true;          // ancienne partie : elle avait la petite benne
   // Une benne trop lourde pour le tracteur enregistré ne peut pas rester attelée : on la
   // laisse au parc plutôt que de la traîner avec un engin qui n'en a pas la force.
   benneAtt = (d.benneAtt && bennesOwned[d.benneAtt] && benneCompatible(benneDef(d.benneAtt)))
@@ -758,8 +790,11 @@ function restore(){
     if (!benneDef(r.id) || !bennesOwned[r.id]) return;
     poserBenne({ id:r.id, hop:+r.hop || 0, x:+r.x || 0, z:+r.z || 0, ang:+r.ang || 0, pl:r.pl });
   });
-  // au pire — sauvegarde d'avant les niveaux — la benne de départ existe quelque part
-  if (!benneAtt && !bennesPosees.some(r => r.id === 'b8')) benneAtt = 'b8';
+  // une benne possédée mais nulle part — ni attelée, ni posée — reviendrait à la perdre
+  BENNES.forEach(B => {
+    if (bennesOwned[B.id] && benneAtt !== B.id && !bennesPosees.some(r => r.id === B.id))
+      livrerBenne(B.id);
+  });
   CROPS.forEach(c => { if (d.owned && d.owned[c.id]) owned[c.id] = true; });
   cropI = Math.max(0, Math.min(CROPS.length-1, +d.cropI || 0));
   if (!owned[CROPS[cropI].id]) cropI = 0;

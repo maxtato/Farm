@@ -23,7 +23,7 @@ const D=__dirname+'/sorties/';
  // Les trois attelages, un niveau par image
  for(const [i,nom] of [[0,'compact'],[1,'standard'],[2,'gros']]){
    await pose('engins-'+nom+'.png', new Function('', `
-     coins=99999; nivTr=${i}; applyUpgrades(); rebuildTracteurs();
+     coins=999999; ['prep','sow','fert','harvest','trailer'].forEach(k=>acheterEngin(k,${i}));
      ['prep','sow','trailer'].forEach(fleetGet);
      ['fert','harvest'].forEach(k=>{if(fleet[k])fleet[k].h.visible=false;});
      ['prep','sow','trailer'].forEach(k=>{if(fleet[k])fleet[k].h.visible=true;});
@@ -36,7 +36,7 @@ const D=__dirname+'/sorties/';
  // Le pulvérisateur et la moissonneuse, un niveau par image
  for(const [i,nom] of [[0,'compact'],[1,'standard'],[2,'gros']]){
    await pose('engins-recolte-'+nom+'.png', new Function('', `
-     coins=99999; nivTr=${i}; applyUpgrades(); rebuildTracteurs();
+     coins=999999; ['prep','sow','fert','harvest','trailer'].forEach(k=>acheterEngin(k,${i}));
      ['fert','harvest'].forEach(fleetGet);
      ['prep','sow','trailer'].forEach(k=>{if(fleet[k])fleet[k].h.visible=false;});
      ['fert','harvest'].forEach(k=>{if(fleet[k])fleet[k].h.visible=true;});
@@ -51,7 +51,7 @@ const D=__dirname+'/sorties/';
  await pose('engins-bennes.png', () => {
    bennesPosees.slice().forEach(r=>{retirerObst(r);scene.remove(r.obj);libere(r.obj);});
    bennesPosees.length=0;
-   nivTr=2; benneAtt=null; applyUpgrades(); rebuildTracteurs();
+   coins=999999; ['trailer'].forEach(k=>acheterEngin(k,2)); benneAtt=null; applyUpgrades(); rebuildTracteurs();
    ['fert','harvest','prep','sow'].forEach(k=>{if(fleet[k])fleet[k].h.visible=false;});
    [['b8',-14],['b14',-1],['b22',14]].forEach(([id,x])=>{
      bennesOwned[id]=true; poserBenne({id,hop:0,x,z:YARD+13,ang:Math.PI*.5});});

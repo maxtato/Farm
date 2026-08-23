@@ -20,7 +20,10 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   if (!had){ for(let k=0;k<plants.length;k++) plants[k].r = 2; redrawPlants(); }
   KINDS.forEach(fleetGet);
   startStage();                              // ni remise à nu ni semence : c'est l'affaire du cycle
+  // On conduit l'engin du chantier s'il existe, sinon le premier qu'on possède ; et si le
+  // parc est vide, le bouton du bas mène droit à la boutique.
   if (fleet[STAGES[stage].k]) driven = STAGES[stage].k;
+  else { const l = KINDS.filter(possede); if (l.length) driven = l[0]; }
   syncFleet(); drawVeh(); camFollow();
   { const v = pilote(); if (v) camLook.set(v.pos.x, 1, v.pos.z); }
   applyCtrl();
@@ -375,7 +378,7 @@ window.__FARM_DEBUG = () => ({
     return +Math.hypot(a.x-b.x, a.z-b.z).toFixed(2);
   })(),
   capBenne:+(hauler ? hauler.heading : 0).toFixed(3),
-  nivTr, benneAtt, posees:bennesPosees.map(r => ({ id:r.id, x:+r.x.toFixed(1), z:+r.z.toFixed(1),
+  niv:Object.assign({}, nivDe), benneAtt, posees:bennesPosees.map(r => ({ id:r.id, x:+r.x.toFixed(1), z:+r.z.toFixed(1),
           hop:Math.round(r.hop) })),
   largOutil:+(worker && worker.g.userData.tool ? worker.g.userData.tool.W : 0).toFixed(1),
   grain:grains.reduce((n,d)=>n+(d.m.visible?1:0),0),

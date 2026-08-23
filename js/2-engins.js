@@ -375,14 +375,42 @@ function benneGrande(p){
   return { fill, roues, Lt:8.15, W:2.9 };
 }
 const BENNES = [
-  { id:'b8',  n:'Benne 8 m³',  emo:'🛻', vol:8,  cap:1800, force:0, prix:0,
+  { id:'b8',  n:'Benne 8 m³',  emo:'🛻', vol:8,  cap:1800, force:0, prix:1600,
     f:bennePetite,  Lt:4.85, W:2.1, d:'un essieu — n’importe quel tracteur la tire' },
-  { id:'b14', n:'Benne 14 m³', emo:'🛻', vol:14, cap:3200, force:1, prix:4800,
+  { id:'b14', n:'Benne 14 m³', emo:'🛻', vol:14, cap:3200, force:1, prix:5200,
     f:benneMoyenne, Lt:5.95, W:2.7, d:'deux essieux et rehausse — tracteur standard' },
-  { id:'b22', n:'Benne 22 m³', emo:'🛻', vol:22, cap:5200, force:2, prix:11500,
+  { id:'b22', n:'Benne 22 m³', emo:'🛻', vol:22, cap:5200, force:2, prix:12000,
     f:benneGrande,  Lt:8.15, W:2.9, d:'trois essieux — grande puissance obligatoire' }
 ];
 const benneDef = id => BENNES.find(b => b.id === id) || null;
+
+// ---------- le catalogue : rien n'est donné, tout s'achète ----------
+// Un poste par métier, trois machines par poste. Les niveaux ne sont pas liés entre eux :
+// on peut mener une grande moissonneuse avec un petit semoir, c'est au joueur de décider
+// où passe l'argent. Reprendre une machine pour en acheter une meilleure rend la moitié
+// de son prix, sinon acheter petit d'abord serait toujours une erreur.
+const nb = n => n.toFixed(1).replace('.', ',');
+const MACHINES = [
+  { k:'prep', n:'Déchaumeuse', emo:'🚜', prix:[3200,8500,19000],
+    nom:['Compacte','Standard','Large'],
+    det:i => 'tracteur ' + TRACTEURS[i].n.toLowerCase() + ' · disques sur ' + nb(LARG.prep[i]) + ' m' },
+  { k:'sow', n:'Semoir', emo:'🌱', prix:[2800,7500,17000],
+    nom:['Compact','Standard','Large'],
+    det:i => 'tracteur ' + TRACTEURS[i].n.toLowerCase() + ' · ' + nb(LARG.sow[i]) + ' m de rangs' },
+  { k:'fert', n:'Pulvérisateur', emo:'💧', prix:[3600,9500,21000],
+    nom:['Cuve traînée','Cuve traînée renforcée','Automoteur'],
+    det:i => (i < 2 ? 'derrière un tracteur ' + TRACTEURS[i].n.toLowerCase() : 'machine autonome')
+             + ' · rampes de ' + nb(RAMPE[i]) + ' m' },
+  { k:'harvest', n:'Moissonneuse', emo:'🌾', prix:[6500,15000,34000],
+    nom:['Compacte','Compacte renforcée','Grande machine'],
+    det:i => (i < 2 ? 'moissonneuse compacte' : 'grande moissonneuse') +
+             ' · coupe de ' + nb(BEC[i]) + ' m' },
+  { k:'trailer', n:'Tracteur de transport', emo:'🛻', prix:[2400,6000,13500],
+    nom:['Compact','Standard','Grande puissance'],
+    det:i => 'tracteur ' + TRACTEURS[i].n.toLowerCase() + ' · tire jusqu\u2019à ' +
+             BENNES[i].vol + ' m³' }
+];
+const machDef = k => MACHINES.find(m => m.k === k) || null;
 
 // Repliée, la vis doit longer le corps vers l'arrière — à 2,25 rad elle dépassait
 // encore sur le côté, et du mauvais côté qui plus est.

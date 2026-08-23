@@ -1,6 +1,4 @@
-// Le parc : trois tracteurs, trois bennes, décrochage et réattelage.
-// On pilote le jeu par ses propres fonctions plutôt que par l'écran — une seconde de jeu
-// coûte dix secondes réelles sur cette machine, on ne conduit donc pas jusqu'à la benne.
+// Le parc : terrain nu au départ, tout s'achète, et la sauvegarde retient ce qu'on possède.
 const {chromium}=require('playwright');const serve=require('./srv');const fs=require('fs');
 const D=__dirname+'/sorties/';
 (async()=>{
@@ -15,75 +13,61 @@ const D=__dirname+'/sorties/';
  await p.goto('http://localhost:8879/',{waitUntil:'load'});
  await p.waitForFunction(()=>typeof window.__FARM_DEBUG==='function',null,{timeout:60000});
  await p.waitForTimeout(2500);
- const dit=(t,v)=>console.log(String(t).padEnd(34),JSON.stringify(v));
+ const dit=(t,v)=>console.log(String(t).padEnd(36),JSON.stringify(v));
 
- const d0=await p.evaluate(()=>{const d=window.__FARM_DEBUG();
-   return {niv:d.nivTr,benne:d.benneAtt,posees:d.posees,trCap:d.trCapMax,
-           largPrep:fleet.prep?fleet.prep.g.userData.tool.W:null};});
- dit('départ',d0);
+ dit('terrain nu', await p.evaluate(()=>({
+   sous:coins, niv:__FARM_DEBUG().niv, flotte:__FARM_DEBUG().flotte.length,
+   bennes:Object.assign({},bennesOwned), attelee:benneAtt, trCap:TRCAP,
+   bouton:document.getElementById('vehBtn').textContent })));
 
- // --- niveau 1 : tracteur standard ---
- const d1=await p.evaluate(()=>{coins=40000;nivTr=1;applyUpgrades();rebuildTracteurs();
-   fleetGet('prep');fleetGet('sow');fleetGet('trailer');
-   return {prep:fleet.prep.g.userData.tool.W, sow:fleet.sow.g.userData.tool.W,
-           corps:fleet.trailer.corps, rad:fleet.trailer.rad};});
- dit('standard : largeurs, gabarit',d1);
- // --- niveau 2 ---
- const d2=await p.evaluate(()=>{nivTr=2;applyUpgrades();rebuildTracteurs();
-   return {prep:fleet.prep.g.userData.tool.W, sow:fleet.sow.g.userData.tool.W};});
- dit('grande puissance : largeurs',d2);
+ // --- la chaîne minimale : déchaumeuse, semoir, moissonneuse, transport, benne ---
+ dit('chaîne minimale', await p.evaluate(()=>{
+   const pris=[]; let reste=coins;
+   [['prep',0],['sow',0],['harvest',0],['trailer',0]].forEach(([k,i])=>{
+     const r=acheterEngin(k,i); pris.push([k, r?r.net:null]); });
+   coins-=BENNES[0].prix; bennesOwned.b8=true; livrerBenne('b8');
+   return { pris, depense:reste-coins, reste:coins,
+            flotte:__FARM_DEBUG().flotte.map(f=>f.k), posees:bennesPosees.length };
+ }));
 
- // --- achat des deux bennes, elles arrivent au parc ---
- const d3=await p.evaluate(()=>{['b14','b22'].forEach(id=>{bennesOwned[id]=true;livrerBenne(id);});
-   return {posees:__FARM_DEBUG().posees, obst:OBST.length};});
- dit('deux bennes livrées',d3);
-
- // --- décrochage sur place ---
- const d4=await p.evaluate(()=>{driven='trailer';syncFleet();fleet.trailer.hop=900;
-   const n=decrocher();
-   return {nom:n, benne:__FARM_DEBUG().benneAtt, trCap:TRCAP, hop:fleet.trailer.hop,
-           posees:__FARM_DEBUG().posees, corps:fleet.trailer.corps};});
- dit('décroché',d4);
-
- // --- on amène la boule sur la 22 m³ et on rattelle ---
- const d5=await p.evaluate(()=>{
-   const r=bennesPosees.find(x=>x.id==='b22');
-   const v=fleet.trailer, ball=pointAttelage(v);
-   v.pos.x += r.x-ball.x; v.pos.z += r.z-ball.z;      // la boule pile sur l'attache
-   v.h.position.set(v.pos.x,0,v.pos.z);
+ // --- on attelle la benne et on vérifie la capacité ---
+ dit('attelage', await p.evaluate(()=>{
+   driven='trailer'; syncFleet();
+   const r=bennesPosees[0], v=fleet.trailer, ball=pointAttelage(v);
+   v.pos.x+=r.x-ball.x; v.pos.z+=r.z-ball.z; v.h.position.set(v.pos.x,0,v.pos.z);
    const n=raccrocher();
-   return {nom:n, benne:__FARM_DEBUG().benneAtt, trCap:TRCAP,
-           posees:__FARM_DEBUG().posees, corps:fleet.trailer.corps, obst:OBST.length};});
- dit('rattelé 22 m³',d5);
+   return { nom:n, trCap:TRCAP, benne:benneAtt };
+ }));
 
- // --- une benne trop lourde pour un compact reste à terre ---
- const d6=await p.evaluate(()=>{decrocher();nivTr=0;applyUpgrades();rebuildTracteurs();
-   const r=bennesPosees.find(x=>x.id==='b22');
-   const v=fleet.trailer, ball=pointAttelage(v);
-   v.pos.x += r.x-ball.x; v.pos.z += r.z-ball.z; v.h.position.set(v.pos.x,0,v.pos.z);
-   return {tenté:raccrocher(), benne:__FARM_DEBUG().benneAtt};});
- dit('compact + 22 m³ (doit refuser)',d6);
+ // --- reprise : acheter mieux rend la moitié de l'ancienne ---
+ dit('reprise du semoir', await p.evaluate(()=>{
+   coins=40000; const avant=coins, r=acheterEngin('sow',2);
+   return { paye:r&&r.net, reprise:r&&r.reprise, niveau:nivDe.sow,
+            largeur:fleet.sow.g.userData.tool.W, debit:avant-coins };
+ }));
+
+ // --- une benne trop lourde pour le tracteur de transport reste en vente barrée ---
+ dit('22 m³ avec transport compact', await p.evaluate(()=>({
+   compatible:benneCompatible(benneDef('b22')), nivTransport:nivDe.trailer })));
+ dit('après transport grande puissance', await p.evaluate(()=>{
+   acheterEngin('trailer',2);
+   return { compatible:benneCompatible(benneDef('b22')), nivTransport:nivDe.trailer };
+ }));
 
  // --- sauvegarde et relecture ---
- const d7=await p.evaluate(()=>{nivTr=2;applyUpgrades();rebuildTracteurs();
-   const r=bennesPosees.find(x=>x.id==='b22');
-   const v=fleet.trailer, ball=pointAttelage(v);
-   v.pos.x += r.x-ball.x; v.pos.z += r.z-ball.z; v.h.position.set(v.pos.x,0,v.pos.z);
-   raccrocher(); fleet.trailer.hop=2000; save();
-   return JSON.parse(localStorage.getItem('ferme.cycle.v1'));});
- dit('sauvegarde',{niv:d7.nivTr,benneAtt:d7.benneAtt,bennes:d7.bennes,posees:d7.posees});
-
+ const sv = await p.evaluate(()=>{ save();
+   return JSON.parse(localStorage.getItem('ferme.cycle.v1')); });
+ dit('sauvegarde', {niv:sv.niv, bennes:sv.bennes, benneAtt:sv.benneAtt, posees:sv.posees.length});
  await p.reload({waitUntil:'load'});
  await p.waitForFunction(()=>typeof window.__FARM_DEBUG==='function',null,{timeout:60000});
  await p.waitForTimeout(2500);
- const d8=await p.evaluate(()=>{const d=__FARM_DEBUG();
-   return {niv:d.nivTr,benne:d.benneAtt,posees:d.posees,trCap:d.trCapMax,obst:OBST.length};});
- dit('après rechargement',d8);
+ dit('après rechargement', await p.evaluate(()=>({
+   niv:__FARM_DEBUG().niv, flotte:__FARM_DEBUG().flotte.map(f=>f.k),
+   trCap:TRCAP, posees:bennesPosees.length })));
 
- // --- l'onglet Parc s'ouvre et se dessine ---
- const d9=await p.evaluate(()=>{openPanel('parc');
+ const n = await p.evaluate(()=>{openPanel('parc');
    return document.querySelectorAll('#body .card').length;});
- dit('cartes dans l’onglet Parc',d9);
+ dit('cartes dans l’onglet Parc', n);
  await p.waitForTimeout(900);
  await p.screenshot({path:D+'parc-onglet.png'});
  await p.evaluate(()=>closePanel());
