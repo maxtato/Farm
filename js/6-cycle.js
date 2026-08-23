@@ -245,8 +245,16 @@ function lanesFor(W){
   for(let i=0;i<cols;i++){
     const x = X0 + W/2 + i*((P-W)/Math.max(1,cols-1));
     let z0 = null, z1 = null;
-    for(let z=Z0; z<=Z0+P; z+=PAS)
-      if (parcelInset(x,z) > 0){ if (z0 === null) z0 = z; z1 = z; }
+    // On sonde toute la largeur de l'outil, pas seulement son axe. Sur un champ qui
+    // s'évase — et une parcelle de la carte s'évase toujours — le bord du passage atteint
+    // de la terre que son milieu n'atteint pas : un rang calé sur le seul milieu laissait
+    // la moitié du champ intacte, et le chantier se déclarait fini quand même.
+    for(let u=-W/2; u<=W/2+1e-6; u+=Math.max(.5, W/6))
+      for(let z=Z0; z<=Z0+P; z+=PAS)
+        if (parcelInset(x+u, z) > 0){
+          if (z0 === null || z < z0) z0 = z;
+          if (z1 === null || z > z1) z1 = z;
+        }
     if (z0 === null || z1 - z0 < W*.5) continue;
     const a = z0 - 3, b = z1 + 3;
     L.push(new THREE.Vector3(x,0, i%2 ? b : a));

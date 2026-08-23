@@ -25,23 +25,28 @@ const D=__dirname+'/sorties/', LOG=D+'cycle.log';
    const ids = { sol:att('sol'), semis:att('semis'), engrais:att('engrais'), benne:att('benne') };
    ids.moiss = acheterPorteur('moiss',2).pid;
    setAuto();                                  // pilote automatique
-   setSpeed(3);                                // la machine d'essai est lente : on la compense
+   setSpeed(6);                                // la machine d'essai est lente : on la compense
    return { engins:engins.length, outils:outils.length, ids };
  }));
+ // Compter le temps de jeu écoulé, pas le temps réel : sur cette machine sans carte
+ // graphique une seconde de jeu en coûte trois, et un tour complet fait dix minutes de jeu.
  const etapes = [];
- let dernier = -1;
- for(let t=0; t<900; t++){
+ let dernier = -1, fini = false;
+ for(let t=0; t<2400; t++){
    const d = await p.evaluate(()=>{ const q = window.__FARM_DEBUG();
      return { stage:q.stage, etape:q.etape, cell:q.cellules, coins:q.coins, stock:q.stock,
               hop:q.hop, moissons:q.harvests, jour:q.jour }; });
    if (d.stage !== dernier){ dernier = d.stage; etapes.push({ t:+(t*0.6).toFixed(0), ...d }); dit('->', d); }
-   if (d.moissons >= 1){ dit('RÉCOLTE LIVRÉE', d); break; }
-   await p.waitForTimeout(600);
+   if (d.moissons >= 1){ dit('RÉCOLTE LIVRÉE', d); fini = true; break; }
+   if (t % 120 === 0) dit('   t=' + t, d);
+   await p.waitForTimeout(1000);
  }
+ if (!fini) dit('BUDGET ÉPUISÉ : 2400 relevés sans livraison');
  const fin = await p.evaluate(()=>{ const q = window.__FARM_DEBUG();
    return { coins:q.coins, stock:q.stock, moissons:q.harvests, cellules:q.cellules,
             bloques:engins.filter(v=>v.frotte>4).map(v=>v.pid) }; });
  dit('fin :', fin);
- dit(fin.moissons >= 1 ? 'OK : le tour complet passe' : 'ÉCHEC : la récolte n\'est pas arrivée au silo');
+ dit(fin.moissons >= 1 ? 'OK : le tour complet passe'
+                       : 'ÉCHEC : la récolte n\'est pas arrivée au silo');
  await b.close(); srv.close();
 })();
