@@ -96,11 +96,14 @@ function drawShop(){
 function drawParc(){
   elBody.insertAdjacentHTML('beforeend', statsHTML());
   elBody.insertAdjacentHTML('beforeend',
-    '<div class="note">Le tracteur vaut pour la déchaumeuse, le semoir et le transport. ' +
-    'Sa puissance fixe la largeur des outils et la benne qu\u2019il peut tirer.</div>');
+    '<div class="note">Le niveau vaut pour toute la flotte : déchaumeuse, semoir, transport, ' +
+    'mais aussi pulvérisateur et moissonneuse. Il fixe la largeur des outils et la benne ' +
+    'qu\u2019on peut tirer. Au dernier niveau, le pulvérisateur devient un automoteur et la ' +
+    'moissonneuse une grande machine.</div>');
   TRACTEURS.forEach((t,i) => {
     const ici = i === nivTr, avant = i < nivTr;
-    const sub = t.d + ' — déchaumeuse ' + fr(LARG.prep[i]) + ' m, semoir ' + fr(LARG.sow[i]) + ' m';
+    const sub = t.d + ' — déchaumeuse ' + fr(LARG.prep[i]) + ' m, semoir ' + fr(LARG.sow[i]) +
+                ' m, rampes ' + fr(RAMPE[i]) + ' m, coupe ' + fr(BEC[i]) + ' m';
     const c = card(t.emo, t.n, sub);
     const b = document.createElement('button');
     if (ici){ b.className = 'buy max'; b.textContent = 'en service'; b.disabled = true; }

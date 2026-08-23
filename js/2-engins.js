@@ -234,6 +234,8 @@ const TRACTEURS = [
     demi:1.90, nez:4.15, d:'3,0 m de voie — les outils larges et toutes les bennes' }
 ];
 const LARG = { prep:[3.4,4.6,6.8], sow:[2.4,3.6,5.4] };
+const RAMPE = [9, 12.9, 18];            // largeur de rampe du pulvérisateur, par niveau
+const BEC   = [4.8, 6.2, 9.2];          // largeur de la barre de coupe, par niveau
 
 // Disques de collision de la partie tractée : découpés le long de la flèche, serrés sur la
 // caisse. Une seule grosse bulle faisait éviter les obstacles de bien trop loin.
@@ -386,6 +388,149 @@ const benneDef = id => BENNES.find(b => b.id === id) || null;
 // encore sur le côté, et du mauvais côté qui plus est.
 const AUG_FOLD = Math.PI/2, AUG_OPEN = 0;
 
+// ---------- pulvérisation : la cuve traînée, puis l'automoteur ----------
+function detailCuve(p, R, L, x, y, z, col, dk){
+  const c = cyl(R,R,L,18, col, x,y,z, p); c.rotation.z = Math.PI/2;
+  rbox(L*.96,.07,.07, dk, x,y+R*.62,z, p, .02);          // filets longitudinaux
+  rbox(L*.96,.06,.06, dk, x,y+R*.28,z, p, .02);
+  cyl(.26,.3,.22,12, dk, x,y+R+.02,z, p);                // bouchon, au milieu de la cuve
+}
+// Cuve traînée : elle s'attelle derrière le tracteur du niveau, comme n'importe quel outil.
+function cuveTrainee(p){
+  const col = '#e8b41c', dk = '#b8352a', z = -2.55, roues = [];
+  rbox(.24,.24,1.55, C.dark, 0,.85,-.78, p, .07);        // timon jusqu'à la boule
+  rbox(1.7,.42,3.1, dk, 0,.95,z+.15, p, .1);
+  detailCuve(p, 1.05, 2.6, 0, 1.9, z, '#e9e2cd', dk);
+  rbox(2,.3,.3, dk, 0,1.1,z+.95, p, .08);
+  rbox(2,.3,.3, dk, 0,1.1,z-.95, p, .08);
+  rbox(1.7,.95,.66, col, 0,1.55,z-1.62, p, .14);         // bâti porteur des rampes
+  rbox(1.8,.22,.74, dk, 0,1.97,z-1.62, p, .06);
+  rbox(1.8,.22,.74, dk, 0,1.13,z-1.62, p, .06);
+  [1,-1].forEach(k => roues.push(wheel(.62,.42,k*1.07,.62,z,p)));
+  return { boom:[0,1.6,z-1.62], dk, roues, Lt:4.7, W:5.2 };
+}
+function pulveAutomoteur(g){
+  const dk = C.blueDark, av = [], ar = [];
+  rbox(2.3,1.1,4.2, C.blue, 0,2.55,-.2, g, .2);
+  rbox(2.45,.42,4.4, dk, 0,1.95,-.2, g, .14);
+  rbox(1.9,1.2,1.6, C.blue, 0,3.65,1.4, g, .16);
+  glazing(1.9,.9,1.62, C.blue, 0,3.76,1.4, g);
+  door(1.2,1.6, dk, .95,3.68,1.4, g, 1); door(1.2,1.6, dk, -.95,3.68,1.4, g, -1);
+  rbox(2.12,.16,1.8, C.dark, 0,4.3,1.4, g, .06);
+  beacon(-.7,4.44,1.4,g); tail(2.3,2.35,-2.42,g);
+  rbox(2.36,.62,.22, C.dark, 0,2.18,1.96, g, .06); lamps(2.3,2.22,2.02,g);
+  detailCuve(g, 1.15, 3, 0, 3.5, -1.4, '#e9e2cd', dk);
+  rbox(1.8,1.2,.9, C.blue, 0,3.25,-2.95, g, .16);        // bloc arrière porteur de rampes
+  rbox(1.92,.24,1, dk, 0,3.85,-2.95, g, .07);
+  rbox(1.92,.24,1, dk, 0,2.65,-2.95, g, .07);
+  rbox(.3,1.7,.3, dk, .78,2.4,-2.6, g, .06);             // jambes de liaison au châssis
+  rbox(.3,1.7,.3, dk,-.78,2.4,-2.6, g, .06);
+  ladder(1.6,1.3,2.4,.7,g);
+  [[1.56,1.7],[-1.56,1.7]].forEach(([x,z]) => {
+    rbox(.4,1.7,.4, dk, x*.85,1.5,z, g, .1); av.push(wheel(.98,.52,x,.98,z,g)); });
+  [[1.56,-2.1],[-1.56,-2.1]].forEach(([x,z]) => {
+    rbox(.4,1.7,.4, dk, x*.85,1.5,z, g, .1); ar.push(wheel(.98,.52,x,.98,z,g)); });
+  return { boom:[0,3.25,-2.95], dk, wheels:av.concat(ar), vire:ar };
+}
+// Un segment de rampe : la poutre double et ses buses, dessinée dans son propre groupe
+// pour que la rampe puisse se replier en trois brisures.
+function segRampe(a, L, dk){
+  rbox(L,.17,.17, dk, L/2,.16,0, a, .05);
+  rbox(L,.13,.13, dk, L/2,-.22,0, a, .04);
+  for(let i=0;i<Math.round(L/.45);i++){
+    cyl(.03,.07,.16,5, C.gold, .25+i*.45,-.44,0, a);
+    rbox(.09,.12,.09, C.dark, .25+i*.45,-.32,0, a, .03);
+  }
+}
+function rampes(p, mnt, span){
+  const half = span/2, bras = [], [bx,by,bz] = mnt.boom;
+  const L1 = half*.42, L2 = half*.34, L3 = half*.24;
+  [1,-1].forEach(sg => {
+    const side = new THREE.Group(); side.position.set(bx,by,bz);
+    side.rotation.y = sg>0?0:Math.PI; p.add(side);
+    const a1 = new THREE.Group(); a1.position.set(.62,0,0); side.add(a1); segRampe(a1,L1,mnt.dk);
+    const a2 = new THREE.Group(); a2.position.set(L1,0,0); a1.add(a2);   segRampe(a2,L2,mnt.dk);
+    const a3 = new THREE.Group(); a3.position.set(L2,0,0); a2.add(a3);   segRampe(a3,L3,mnt.dk);
+    bras.push({a1,a2,a3});
+  });
+  const mk = new THREE.Object3D(); mk.position.set(0,0,bz); p.add(mk);
+  return { mk, fold:f => bras.forEach(({a1,a2,a3}) => {
+    a1.rotation.z = (1-f)*1.48; a2.rotation.z = -(1-f)*2.85; a3.rotation.z = (1-f)*2.85; }) };
+}
+
+// ---------- moisson : deux machines, trois barres de coupe ----------
+// La vis de déchargement n'est pas dans les références — elle y est dessinée couchée le
+// long du corps. Ici elle doit s'ouvrir vers la benne, on la remonte donc articulée.
+function visDechargement(g, x, y, z, L){
+  const piv = new THREE.Group(); piv.position.set(x,y,z); piv.rotation.y = AUG_FOLD; g.add(piv);
+  cyl(.26,.26,L,8, C.metal, L/2,0,0, piv).rotation.z = Math.PI/2;
+  rbox(.34,.5,.34, C.steel, .35,-.28,0, piv, .06);
+  rbox(.62,.58,.62, C.metal, L+.05,-.28,0, piv, .12);                    // la goulotte
+  const spout = new THREE.Object3D(); spout.position.set(L+.05,-.66,0); piv.add(spout);
+  return { piv, spout };
+}
+function moissCompacte(g){
+  const av = [], ar = [];
+  rbox(2.4,1.3,3.4, '#c4432f', 0,1.55,-.3, g, .18);
+  rbox(2.5,.44,3.5, '#8e2418', 0,.95,-.3, g, .14);
+  rbox(2.2,.95,1.7, '#c4432f', 0,2.62,-1.1, g, .16);
+  rbox(2.3,.14,1.8, '#8e2418', 0,3.14,-1.1, g, .05);
+  const fw = new THREE.Group(); fw.position.set(0,2.19,-1.1); g.add(fw);  // le grain dans la trémie
+  const fg = new THREE.BoxGeometry(1.8,.86,1.4); fg.translate(0,.43,0);
+  fw.add(new THREE.Mesh(fg, mat(C.gold))); fw.scale.y = .02;
+  rbox(1.7,1.1,1.5, '#c4432f', 0,2.75,.8, g, .16);
+  glazing(1.7,.85,1.52, '#c4432f', 0,2.86,.8, g);
+  door(1.1,1.5, '#8e2418', .86,2.78,.8, g, 1); door(1.1,1.5,'#8e2418',-.86,2.78,.8,g,-1);
+  rbox(1.94,.14,1.7, C.dark, 0,3.36,.8, g, .05);
+  beacon(-.62,3.48,.8,g); lamps(1.9,3.2,1.6,g); tail(2.1,1.5,-2.05,g);
+  const vis = visDechargement(g, .5, 3.22, -.6, 3.2);
+  [1,-1].forEach(k => av.push(wheel(.95,.56,k*1.6,.95,.9,g)));
+  [1,-1].forEach(k => ar.push(wheel(.55,.38,k*1.5,.55,-1.95,g)));
+  return { head:[0,0,2.5], y:.9, fill:fw, vis, wheels:av.concat(ar), vire:ar,
+           corps:[[2.5,2.1],[0,1.9],[-1.9,1.7]] };
+}
+function moissGrande(g){
+  const av = [], ar = [];
+  rbox(2.8,1.5,4.2, '#f0b41d', 0,1.7,-.4, g, .18);
+  rbox(2.9,.5,4.3, '#22262a', 0,1,-.4, g, .14);
+  rbox(2.6,1.15,2.1, '#f0b41d', 0,2.92,-1.4, g, .16);
+  rbox(2.7,.16,2.2, '#22262a', 0,3.55,-1.4, g, .05);
+  const fw = new THREE.Group(); fw.position.set(0,2.39,-1.4); g.add(fw);
+  const fg = new THREE.BoxGeometry(2.2,1.02,1.8); fg.translate(0,.51,0);
+  fw.add(new THREE.Mesh(fg, mat(C.gold))); fw.scale.y = .02;
+  rbox(1.9,1.25,1.7, '#f0b41d', 0,3.05,.9, g, .16);
+  glazing(1.9,.94,1.72, '#f0b41d', 0,3.18,.9, g);
+  door(1.25,1.7, '#22262a', .95,3.08,.9, g, 1); door(1.25,1.7, '#22262a',-.95,3.08,.9,g,-1);
+  rbox(2.14,.16,1.9, C.dark, 0,3.72,.9, g, .06);
+  rbox(2.1,.2,.36, C.dark, 0,3.6,1.42, g, .06);            // bandeau au ras du toit
+  for(let i=0;i<2;i++) phares(.2+i*.4, 3.6, 1.6, g);
+  rbox(1.9,.22,.5, C.dark, 0,3.91,.95, g, .07);            // panneau de lumière sur le toit
+  for(let i=0;i<2;i++) phares(.2+i*.4, 3.91, 1.16, g);
+  beacon(-.72,3.86,.9,g); lamps(2.2,3.5,1.78,g); tail(2.5,1.65,-2.45,g);
+  ladder(1.9,1.5,1.5,.4,g);
+  rbox(2.35,.85,1.35, '#f0b41d', 0,2.35,-2.45, g, .16);    // capot moteur arrière
+  rbox(2.45,.2,1.45, '#22262a', 0,2.82,-2.45, g, .06);
+  rbox(2.15,.6,.16, C.dark, 0,2.3,-3.1, g, .05);           // calandre de radiateur
+  for(let i=0;i<6;i++) rbox(.09,.48,.1, '#3a4148', -.8+i*.32,2.3,-3.16, g, .02);
+  rbox(2.9,.7,1.1, '#22262a', 0,1,-2.6, g, .12);           // éparpilleur
+  const vis = visDechargement(g, .6, 3.62, -.9, 3.8);
+  [1,-1].forEach(k => av.push(wheel(1.12,.68,k*1.86,1.12,1.1,g)));
+  [1,-1].forEach(k => ar.push(wheel(.62,.42,k*1.73,.62,-2.3,g)));
+  return { head:[0,0,2.9], y:1, fill:fw, vis, wheels:av.concat(ar), vire:ar,
+           corps:[[3.1,2.5],[0,2.3],[-2.5,2.1]] };
+}
+function becCoupe(g, mnt, W){
+  const [x0,,z0] = mnt.head, y = mnt.y;
+  rbox(1.9,1.1*y,1.1, C.cream, x0,1.35*y,z0-.8, g, .14);
+  rbox(W,.7*y,1.3, C.metal, x0,1*y,z0+.2, g, .14);
+  rbox(W,.34,.5, C.dark, x0,.6*y,z0+.7, g, .08);
+  for(let i=0;i<Math.round(W/.48);i++) rbox(.16,.1,.34, C.steel, -W/2+.24+i*.48,.6*y,z0+.95, g, .03);
+  const r = reel(W-.5,.72*y,5, x0,1.5*y,z0+.5, g, C.gold);   // rabatteur, sur la barre de coupe
+  [1,-1].forEach(k => cyl(0,.22,1.5,5, C.cream, k*(W/2-.15),.95*y,z0+.75, g).rotation.x = Math.PI/2);
+  const mk = new THREE.Object3D(); mk.position.set(0,0,z0+.95); g.add(mk);
+  return { reel:r, mk };
+}
+
 // ---------- engins ----------
 // `opt.niv` = niveau de tracteur (0..2), `opt.benne` = identifiant de remorque attelée
 // ou null quand le tracteur roule seul, décroché.
@@ -422,74 +567,47 @@ function build(kind, opt){
     }
   }
   else if (kind === 'fert'){
-    rbox(2.4,1.2,4.4, C.blue, 0,2.5,-.2, g, .22);
-    rbox(2.5,.4,4.5, C.blueDark, 0,1.9,-.2, g, .14);
-    rbox(2.48,.24,3.4, C.blueDark, 0,2.9,-.4, g, .05);
-    rbox(1.9,1.2,1.6, C.blue, 0,3.65,1.4, g, .16);
-    glazing(1.9,.9,1.62, C.blue, 0,3.76,1.4, g);
-    door(1.2,1.6, C.blueDark, .95,3.68,1.4, g, 1); door(1.2,1.6, C.blueDark, -.95,3.68,1.4, g, -1);
-    rbox(2.12,.16,1.8, C.dark, 0,4.3,1.4, g, .06);
-    beacon(-.7,4.44,1.4,g); tail(2.3,2.35,-2.42,g);
-    rbox(2.36,.62,.22, C.dark, 0,2.18,1.96, g, .06);      // calandre basse
-    for(let i=0;i<7;i++) rbox(.1,.46,.1, C.steel, -.9+i*.3,2.18,2.03, g, .03);
-    lamps(2.3,2.22,2.02,g);                               // phares en bas
-    cyl(1.15,1.15,3,14, C.cream, 0,3.4,-1.3, g).rotation.z = Math.PI/2;
-    [[1.3,1.6],[-1.3,1.6],[1.3,-2],[-1.3,-2]].forEach(([x,z]) => rbox(.34,1.6,.34, C.blueDark, x,1.5,z, g, .1));
-    const w = [ wheel(.95,.5,1.56,.95,1.6,g), wheel(.95,.5,-1.56,.95,1.6,g),
-                wheel(.95,.5,1.56,.95,-2,g), wheel(.95,.5,-1.56,.95,-2,g) ];
-    const arms = [];
-    [1,-1].forEach(s => {
-      const side = new THREE.Group(); side.position.set(0,3.3,-2.2); side.rotation.y = s>0?0:Math.PI; g.add(side);
-      const a1 = new THREE.Group(); a1.position.set(1.05,0,0); side.add(a1);
-      rbox(1.9,.16,.16, C.blueDark, .95,0,0, a1, .06);
-      const a2 = new THREE.Group(); a2.position.set(1.9,0,0); a1.add(a2);
-      rbox(1.6,.14,.14, C.blueDark, .8,0,0, a2, .05);
-      const a3 = new THREE.Group(); a3.position.set(1.6,0,0); a2.add(a3);
-      rbox(1.3,.12,.12, C.blueDark, .65,0,0, a3, .05);
-      [[a1,1.9],[a2,1.6],[a3,1.3]].forEach(([a,L]) => {
-        for(let i=0;i<Math.round(L/.42);i++) cyl(.03,.07,.16,5, C.gold, .2+i*.42,-.16,0, a);
-      });
-      arms.push({a1,a2,a3});
-    });
-    // la rampe est l'outil du pulvérisateur : sans cette déclaration, applyTool ne trouvait
-    // aucune zone de travail et l'étape engrais ne fertilisait rien
-    const mkF = new THREE.Object3D(); mkF.position.set(0,0,-2.4); g.add(mkF);
-    d = { wheels:w, steer:[{w:w[2],k:-1},{w:w[3],k:-1}], spinners:[],
-          tool:{ obj:mkF, W:8.6, near:-.55, far:.55 },
-          fold:f => arms.forEach(({a1,a2,a3}) => { a1.rotation.z=(1-f)*1.48; a2.rotation.z=-(1-f)*2.85; a3.rotation.z=(1-f)*2.85; }) };
-    d.fold(1);
+    // Trois niveaux là aussi : cuve traînée derrière le tracteur du parc pour les deux
+    // premiers, automoteur pour le dernier. La rampe s'élargit d'un cran à chaque fois.
+    const span = RAMPE[niv];
+    let mnt, wheels, steer, corps, mk;
+    if (niv < 2){
+      const t = TR.f(g);
+      const hitch = new THREE.Group(); hitch.position.set(0,0,t.ball); g.add(hitch);
+      const cv = cuveTrainee(hitch);
+      const r = rampes(hitch, cv, span);
+      mk = r.mk; mnt = r;
+      wheels = t.wheels.concat(cv.roues);
+      steer = t.avant.map(w => ({ w, k:1 }));
+      corps = [[ (t.ball + TR.nez)/2, TR.demi ]].concat(discsTractes(t.ball, cv.Lt, cv.W));
+      d = { wheels, steer, spinners:[], hitch,
+            tool:{ obj:mk, W:span, near:-.55, far:.55 }, corps, niv, fold:r.fold };
+    } else {
+      const a = pulveAutomoteur(g);
+      const r = rampes(g, a, span);
+      mk = r.mk;
+      d = { wheels:a.wheels, steer:a.vire.map(w => ({ w, k:-1 })), spinners:[],
+            tool:{ obj:mk, W:span, near:-.55, far:.55 },
+            corps:[[.5,1.9],[-3.1,2.5]], niv, fold:r.fold };
+    }
+    d.fold(1);                                     // rampes dépliées, comme avant
   }
   else {
-    rbox(2.8,1.5,4.4, C.red, 0,1.7,-.2, g, .18);
-    rbox(2.9,.5,4.5, C.redDark, 0,1,-.2, g, .14);
-    rbox(2.88,.26,3.4, C.redDark, 0,2.15,-.4, g, .05);
-    rbox(2.6,1.1,2, C.red, 0,2.9,-1.2, g, .16);
-    const fw = new THREE.Group(); fw.position.set(0,2.36,-1.2); g.add(fw);
-    const fg = new THREE.BoxGeometry(2.2,1.05,1.6); fg.translate(0,.52,0);
-    fw.add(new THREE.Mesh(fg, mat(C.gold))); fw.scale.y = .02;
-    rbox(1.9,1.25,1.7, C.red, 0,3.05,.9, g, .16);
-    glazing(1.9,.94,1.72, C.red, 0,3.18,.9, g);
-    door(1.25,1.7, C.redDark, .95,3.08,.9, g, 1); door(1.25,1.7, C.redDark, -.95,3.08,.9, g, -1);
-    rbox(2.14,.16,1.9, C.dark, 0,3.72,.9, g, .06);
-    beacon(-.72,3.86,.9,g); tail(2.5,1.65,-2.45,g);
-    rbox(2.1,.2,.36, C.dark, 0,3.92,1.42, g, .06);          // barre d'éclairage sur le toit
-    for(let i=0;i<2;i++) phares(.2+i*.4, 3.92, 1.6, g);
-    lamps(2.2,3.5,1.78,g);
-    // vis de déchargement : rangée le long du corps pendant la coupe, déployée à trémie pleine
-    const augPiv = new THREE.Group(); augPiv.position.set(.6,3.62,.2); augPiv.rotation.y = AUG_FOLD; g.add(augPiv);
-    cyl(.26,.26,3.8,8, C.metal, 1.9,0,0, augPiv).rotation.z = Math.PI/2;
-    rbox(.34,.5,.34, C.steel, .35,-.28,0, augPiv, .06);
-    rbox(.62,.58,.62, C.metal, 3.85,-.28,0, augPiv, .12);                    // la goulotte
-    const spout = new THREE.Object3D(); spout.position.set(3.85,-.66,0); augPiv.add(spout);
-    rbox(6,.7,1.3, C.metal, 0,1,3.1, g, .14);
-    rbox(6,.34,.5, C.dark, 0,.6,3.6, g, .08);
-    ladder(1.9,1.5,1.5,.4,g);
-    const r = reel(5.7,.72,5, 0,1.8,3.4, g, C.gold);
-    const mkH = new THREE.Object3D(); mkH.position.set(0,0,3.45); g.add(mkH);   // barre de coupe
-    const w = [ wheel(1.12,.68,1.86,1.12,1.1,g), wheel(1.12,.68,-1.86,1.12,1.1,g),
-                wheel(.62,.42,1.73,.62,-2.1,g), wheel(.62,.42,-1.73,.62,-2.1,g) ];
-    d = { wheels:w, steer:[{w:w[2],k:-1},{w:w[3],k:-1}], spinners:[{spin:r,rate:1.1}],
-          fill:fw, auger:augPiv, spout:spout, tool:{ obj:mkH, W:6.0, near:-.35, far:.4 } };
+    // Moissonneuse compacte pour les deux premiers niveaux, grande pour le dernier ; et
+    // une barre de coupe qui passe de 4,8 à 9,2 m. Trémie, vis de déchargement et
+    // goulotte restent en place : c'est par elles que la benne se remplit.
+    const M = (niv < 2 ? moissCompacte : moissGrande)(g);
+    const b = becCoupe(g, M, BEC[niv]);
+    const W = BEC[niv];
+    const corps = M.corps.slice();
+    // La coupe est large mais mince : un disque à sa demi-largeur déborderait de quatre
+    // mètres devant la machine et la ferait s'écarter des obstacles de bien trop loin.
+    // On le plafonne, comme on l'a toujours fait pour les rampes du pulvérisateur.
+    corps[0] = [ M.head[2] + .7, Math.max(2.0, Math.min(3.0, W*.45)) ];
+    d = { wheels:M.wheels, steer:M.vire.map(w => ({ w, k:-1 })),
+          spinners:[{ spin:b.reel, rate:1.1 }],
+          fill:M.fill, auger:M.vis.piv, spout:M.vis.spout,
+          tool:{ obj:b.mk, W, near:-.35, far:.4 }, corps, niv };
   }
   JELLY = false;
   g.userData = d;

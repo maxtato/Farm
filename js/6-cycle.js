@@ -360,7 +360,9 @@ function rebuildVeh(kind){
   if (typeof drawVeh === 'function') drawVeh();
   return v;
 }
-function rebuildTracteurs(){ ['prep','sow','trailer'].forEach(k => { if (fleet[k]) rebuildVeh(k); }); }
+// Le niveau vaut pour toute la flotte : le pulvérisateur et la moissonneuse changent de
+// machine eux aussi, pas seulement les engins d'attelage.
+function rebuildTracteurs(){ KINDS.forEach(k => { if (fleet[k]) rebuildVeh(k); }); }
 // Une benne posée est un obstacle comme un autre : on l'inscrit avec les mêmes disques que
 // ceux qu'elle avait en roulant, sinon les autres engins lui passeraient au travers.
 function obstBenne(rec){
