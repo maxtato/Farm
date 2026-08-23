@@ -225,9 +225,20 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
     if (d.t > d.life) d.m.visible = false;
   });
 
-  // caméra : suit l'engin piloté
-  // caméra quasi figée : elle ne bouge que si l'engin sort d'une zone morte centrale
-  // la caméra reste où on l'a posée : plus aucun recadrage automatique
+  // Caméra. Au manche, elle suit l'engin : on ne conduit pas à l'aveugle, et le véhicule
+  // reste au centre tant qu'on pousse le manche — ou une touche du clavier, qui alimente
+  // le même manche. Dès qu'on lâche, elle s'arrête où elle est.
+  // Quand on dessine un parcours ou qu'on double-tape, en revanche, elle ne bouge pas d'un
+  // pouce : là on regarde le champ, on choisit un endroit, et un recadrage sous les doigts
+  // déplacerait le trait qu'on est en train de tracer.
+  if (manual && jmag > .12){
+    const v = pilote();
+    if (v){
+      const k = Math.min(1, raw*4.5);              // rattrapage souple, jamais un saut
+      camLook.x += (Math.max(X0-60, Math.min(X0+P+60, v.pos.x)) - camLook.x)*k;
+      camLook.z += (Math.max(Z0-60, Math.min(Z0+P+70, v.pos.z)) - camLook.z)*k;
+    }
+  }
   camera.position.copy(camLook).add(camOff);
   camera.lookAt(camLook);
   // Le soleil est accroché au point visé pour que l'ombre porte là où on regarde. S'il y
