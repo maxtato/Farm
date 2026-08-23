@@ -398,9 +398,6 @@ const CARTE = { n:7, taille:540, gigue:.32, seed:7 };
 const parcelles = [];                     // contours des champs en friche, pour la suite
 const routes = [];                        // axes des chemins et des routes, pour le calage
 const SABLES = [];                        // les places de sable : cour de ferme et placettes
-// La parcelle de travail et la cour du joueur ne creusent plus une clairière dans la
-// campagne : elles entrent dans la liste des obstacles, comme les placettes et les
-// bâtiments. La terre des champs voisins les contourne au lieu de disparaître.
 const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
 (function carte(){
   const R = alea(CARTE.seed), N = CARTE.n, T = CARTE.taille, pas = T/N;
@@ -523,8 +520,6 @@ const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
   // MARGE_OBS : la friche vient jusqu'au bord sans jamais passer dessous.
   OBSTACLES = PLACETTES.map(pl => pl.zone);
   BATIMENTS.forEach(([f, x, z]) => OBSTACLES.push(carre(x, z, 16)));
-  OBSTACLES.push([[X0,Z0],[X0+P,Z0],[X0+P,Z0+P],[X0,Z0+P]]);
-  OBSTACLES.push([[COUR.x0,COUR.z0],[COUR.x1,COUR.z0],[COUR.x1,COUR.z1],[COUR.x0,COUR.z1]]);
   // Un îlot vraiment boisé reste en herbe : c'est le seul endroit où elle survit à la
   // terre. Un ou deux arbres seulement, et c'est la friche qui les contourne.
   blocs.forEach(B => {
@@ -596,16 +591,6 @@ const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
     const m = new THREE.Mesh(surface(contour), SABLE);
     m.position.y = .075; m.receiveShadow = true; m.renderOrder = -10; scene.add(m);
   }
-  // La cour du joueur : même sable, même rôle. Sans elle le parc à engins et le silo qu'on
-  // achète se posaient sur l'herbe, au milieu des champs.
-  {
-    const C = COUR;
-    const coins = [[C.x0,C.z0],[C.x1,C.z0],[C.x1,C.z1],[C.x0,C.z1]];
-    const contour = lisser(densifier(coins, 5), 2, true);   // coins adoucis, comme les placettes
-    SABLES.push(contour);
-    const m = new THREE.Mesh(surface(contour), SABLE);
-    m.position.y = .072; m.receiveShadow = true; m.renderOrder = -10; scene.add(m);
-  }
   PLACETTES.forEach(pl => {
     const pts = lisser(densifier(pl.coins, 5), 2, true);
     SABLES.push(pts);
@@ -641,4 +626,17 @@ const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
     scene.add(g);
     addObst(x, z, n > 1 ? 6 : 1.1);            // un bosquet se contourne d'un bloc
   });
+  // ---------- le champ que l'on cultive ----------
+  // Le plus proche du hangar parmi ceux d'une taille jouable : ni un mouchoir de poche, ni
+  // un champ de six mille mètres carrés qu'on mettrait une journée à labourer. C'est une
+  // parcelle de la carte comme les autres, déjà dessinée : on ne fait que s'y caler.
+  const jouable = parcelles.filter(q => {
+    const a = Math.abs(aireSignee(q)), b = bbox(q);
+    return a > 1200 && a < 6000 && b.w < 130 && b.d < 130;
+  });
+  const CHAMP = jouable.reduce((m, q) => {
+    const b = bbox(q), d = Math.hypot(b.cx - HANGAR.x, b.cz - HANGAR.z);
+    return (!m || d < m.d) ? { q, d } : m;
+  }, null);
+  calerChamp(CHAMP ? CHAMP.q : parcelles[0]);
 })();

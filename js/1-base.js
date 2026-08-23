@@ -39,9 +39,12 @@ const camLook = new THREE.Vector3(0,1,0);   // point visé — recalé sur la co
 // déplacent, l'écartement la zoome, la torsion la fait tourner autour de son point visé.
 let YAW = 0;
 function camFollow(){ const v = pilote(); if (v) camLook.set(v.pos.x, 1, v.pos.z); }
+// La campagne fait 540 m de côté : on doit pouvoir aller la voir jusqu'à ses ceintures,
+// pas seulement tourner autour de la parcelle de travail.
+const MONDE = 300;
 function camPan(dx, dz){
-  camLook.x = Math.max(X0-60, Math.min(X0+P+60, camLook.x + dx));
-  camLook.z = Math.max(Z0-90, Math.min(Z0+P+70, camLook.z + dz));
+  camLook.x = Math.max(-MONDE, Math.min(MONDE, camLook.x + dx));
+  camLook.z = Math.max(-MONDE, Math.min(MONDE, camLook.z + dz));
 }
 function setYaw(a){ YAW = a; applyPitch(); }
 const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
@@ -57,7 +60,9 @@ function applyCamera(){
   camDist = (VIEW/2) / Math.tan(FOV*Math.PI/360);
   camera.aspect = a;
   camera.near = Math.max(.5, camDist*.04);
-  camera.far  = camDist + 320;
+  // Le plan lointain suivait le recul de trois cents mètres : de quoi cadrer une ferme,
+  // pas une campagne. Dézoomé au maximum, la carte se faisait couper en deux.
+  camera.far  = camDist*1.6 + 1400;
   camera.updateProjectionMatrix();
   applyPitch();
 }
@@ -76,7 +81,8 @@ function showTag(txt){
   _zHide = setTimeout(() => _zTag.classList.remove('on'), 900);
 }
 function setZoom(z){
-  const nz = Math.max(.45, Math.min(3.2, z));
+  // Jusqu'à ×0,085 : de quoi tenir les 540 m de la carte dans l'écran d'un téléphone.
+  const nz = Math.max(.085, Math.min(3.2, z));
   if (Math.abs(nz - zoom) < 1e-4) return;
   zoom = nz; applyCamera();
   showTag('🔍 ×' + zoom.toFixed(2).replace('.', ','));

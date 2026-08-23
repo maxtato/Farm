@@ -236,14 +236,23 @@ function driveTo(v, target, dt, stop, large, outil){
   if (dec){ const T = outilXZ(v, _out2); return Math.hypot(vrai.x-T.x, vrai.z-T.z); }
   return Math.hypot(target.x-v.pos.x, target.z-v.pos.z);
 }
+// Les rangs balaient le champ colonne par colonne. Le champ n'étant plus un carré, chaque
+// colonne s'arrête là où la terre s'arrête : on cherche par balayage le premier et le
+// dernier point de la colonne qui tombent dedans, et on vise trois mètres au-delà pour que
+// l'outil sorte franchement du bord. Une colonne qui ne rencontre rien est sautée.
 function lanesFor(W){
-  const L = [], cols = Math.max(1, Math.ceil(P/W));
+  const L = [], cols = Math.max(1, Math.ceil(P/W)), PAS = 1;
   for(let i=0;i<cols;i++){
     const x = X0 + W/2 + i*((P-W)/Math.max(1,cols-1));
-    L.push(new THREE.Vector3(x,0, i%2 ? Z0+P+10 : Z0-10));
-    L.push(new THREE.Vector3(x,0, i%2 ? Z0-10 : Z0+P+10));
+    let z0 = null, z1 = null;
+    for(let z=Z0; z<=Z0+P; z+=PAS)
+      if (parcelInset(x,z) > 0){ if (z0 === null) z0 = z; z1 = z; }
+    if (z0 === null || z1 - z0 < W*.5) continue;
+    const a = z0 - 3, b = z1 + 3;
+    L.push(new THREE.Vector3(x,0, i%2 ? b : a));
+    L.push(new THREE.Vector3(x,0, i%2 ? a : b));
   }
-  return L;
+  return L.length ? L : [new THREE.Vector3(X0+P/2,0,Z0), new THREE.Vector3(X0+P/2,0,Z0+P)];
 }
 const _tp = new THREE.Vector3(), _tq = new THREE.Quaternion(), _tsc = new THREE.Vector3(),
       _te = new THREE.Euler(), _spout = new THREE.Vector3(), _bin = new THREE.Vector3();
@@ -374,7 +383,7 @@ function monter(anc){
 // Les engins neufs se rangent en épi au fond de la cour, derrière les bâtiments.
 // Les engins se rangent en épi dans la moitié ouest de la cour, les outils au sol dans la
 // moitié est : sans quoi un semoir posé se retrouvait sous le nez d'un tracteur.
-const placeParc = n => ({ x: COUR.x0 + 4 + (n % 8)*6.2, z: COUR.z0 + 5 + Math.floor(n/8)*8 });
+const placeParc = n => ({ x: COUR.x0 + 4 + (n % 6)*6.4, z: COUR.z0 + 5 + Math.floor(n/6)*8 });
 function creerEngin(kind, niv){
   const v = vehicle(kind === 'tracteur' ? { kind, niv, outil:null } : { kind, niv, bec:0 });
   v.pid = idSeq++; v.kind = kind; v.niv = niv; v.bec = 0; v.outil = null;
@@ -427,7 +436,7 @@ function majOutilPose(o){
   f.visible = o.hop > .5; f.scale.y = .01 + Math.min(1, o.hop/cap)*.99;
 }
 // Une pièce neuve arrive rangée au fond de la cour : on va la chercher avec un tracteur.
-const placeOutil = n => ({ x: COUR.x0 + 52 + (n % 4)*6.4, z: COUR.z0 + 5 + Math.floor(n/4)*8, ang: Math.PI });
+const placeOutil = n => ({ x: COUR.x0 + 4 + (n % 6)*6.4, z: COUR.z1 - 4, ang: Math.PI });
 function creerOutil(type, niv){
   const D = OUTILS[type]; if (!D) return null;
   const q = placeOutil(outils.filter(o => !o.porteur).length);

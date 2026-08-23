@@ -25,8 +25,10 @@ const LOG=D+'carte.log';
    await p.screenshot({path:D+nom}); dit('->',nom);
  };
  await vue('carte-vue.png', .14, 62, 0, 0);              // toute la campagne
- await vue('carte-ferme.png', .42, 46, -80, -30);        // la ferme : cour, parcelle, hangar
- await vue('carte-pres.png', .95, 40, -85, -30);         // la cour et le hangar, de près
- await vue('carte-cour.png', .55, 88, -66, -26);         // la cour à la verticale, pour le calage
+ await vue('carte-ferme.png', .42, 46, -85, -95);        // le corps de ferme et son parc
+ await vue('carte-pres.png', .95, 40, -95, -85);         // le parc, devant le hangar
+ { const c = await p.evaluate(()=>[X0+P/2, Z0+P/2]);
+   await vue('carte-champ.png', .5, 50, c[0], c[1]); }   // le champ que l'on cultive
+ await vue('carte-large.png', .085, 62, 0, 0);           // toute la carte, dézoom maximum
  await b.close(); srv.close();
 })();

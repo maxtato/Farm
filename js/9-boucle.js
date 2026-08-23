@@ -27,7 +27,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   // Rien dans le parc au premier lancement : on vise la cour, devant le hangar de départ.
   { const v = pilote();
     if (v) camLook.set(v.pos.x, 1, v.pos.z);
-    else camLook.set((COUR.x0+COUR.x1)/2, 1, COUR.z1 - 8); }
+    else camLook.set((COUR.x0+COUR.x1)/2, 1, (COUR.z0+COUR.z1)/2); }
   applyCtrl();
   if (!contract) newContract(); else drawContract();
   if (!had) setTimeout(() => openPanel('help'), 400);   // première partie : on montre les commandes
@@ -238,8 +238,8 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
     const v = pilote();
     if (v){
       const k = Math.min(1, raw*4.5);              // rattrapage souple, jamais un saut
-      camLook.x += (Math.max(X0-60, Math.min(X0+P+60, v.pos.x)) - camLook.x)*k;
-      camLook.z += (Math.max(Z0-90, Math.min(Z0+P+70, v.pos.z)) - camLook.z)*k;
+      camLook.x += (Math.max(-MONDE, Math.min(MONDE, v.pos.x)) - camLook.x)*k;
+      camLook.z += (Math.max(-MONDE, Math.min(MONDE, v.pos.z)) - camLook.z)*k;
     }
   }
   camera.position.copy(camLook).add(camOff);
@@ -269,7 +269,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
 
   // la jauge suit le chantier en cours : sol travaillé, puis maturité, puis trémie
   let gf = 0, gl = '';
-  const NC = NS*NS;
+  const NC = NIN || NS*NS;      // seules les cellules du champ comptent, pas tout le carré
   if (S.k === 'prep'){       gf = (cellN[1]+cellN[2]+cellN[3])/NC; gl = 'Sol ' + Math.round(gf*100) + ' %'; }
   else if (S.k === 'sow'){   gf = (cellN[2]+cellN[3])/NC;          gl = 'Semis ' + Math.round(gf*100) + ' %'; }
   else if (S.k === 'fert'){  gf = cellN[3]/NC;                     gl = 'Engrais ' + Math.round(gf*100) + ' %'; }

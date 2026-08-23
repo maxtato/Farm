@@ -24,8 +24,8 @@ const D=__dirname+'/sorties/', LOG=D+'cycle.log';
      raccrocher(v); return v.pid; };
    const ids = { sol:att('sol'), semis:att('semis'), engrais:att('engrais'), benne:att('benne') };
    ids.moiss = acheterPorteur('moiss',2).pid;
-   if (!manuel) document.getElementById('btnAuto').click();
-   setSpeed(3);
+   setAuto();                                  // pilote automatique
+   setSpeed(3);                                // la machine d'essai est lente : on la compense
    return { engins:engins.length, outils:outils.length, ids };
  }));
  const etapes = [];

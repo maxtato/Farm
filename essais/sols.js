@@ -29,13 +29,18 @@ const D=__dirname+'/sorties/', LOG=D+'sols.log';
      batHorsSable: bats.filter(q => !q.sable),
      batEnPleinChamp: bats.filter(q => q.terre),
      placesHorsCour: places.filter(([n,x,z]) => !surSable(x,z)).map(([n,x,z]) => n),
-     terreSurParcelle: surTerre(X0+P/2, Z0+P/2),
+     // Le champ de travail est désormais une parcelle de la carte : la terre doit y être,
+     // et c'est son absence qui serait la faute. On vérifie aussi qu'il a bien une forme —
+     // un masque vide voudrait dire que rien n'est cultivable.
+     champEstUneParcelleDeLaCarte: parcelles.some(q => dedansPoly(q, X0+P/2, Z0+P/2)),
+     cellulesCultivables: NIN, cotePlaceholder: +P.toFixed(1),
      terreSurCour: surTerre((COUR.x0+COUR.x1)/2, (COUR.z0+COUR.z1)/2)
    };
  });
  dit(JSON.stringify(r,null,1));
  const ko = r.batHorsSable.length + r.batEnPleinChamp.length + r.placesHorsCour.length
-          + (r.terreSurParcelle?1:0) + (r.terreSurCour?1:0);
+          + (r.champEstUneParcelleDeLaCarte?0:1) + (r.cellulesCultivables > 1000 ?0:1)
+          + (r.terreSurCour?1:0);
  dit(ko ? 'ÉCHEC : ' + ko + ' élément(s) mal posé(s)' : 'OK : tout est sur le bon sol');
  await b.close(); srv.close();
 })();

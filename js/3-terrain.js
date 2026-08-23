@@ -65,18 +65,17 @@ function groundH(x,z){
   return (Math.sin(x*.68 + z*.31)*.5 + Math.sin(x*.23 - z*.59)*.34
         + Math.sin((x+z)*1.11)*.16) * .055;
 }
-const P = 44, NS = 256, CS = P/NS;                 // cellules de 17 cm : le passage a un bord net
+// Le champ de travail n'est plus un carré posé sur le monde : c'est l'une des parcelles
+// de la carte, avec son contour à elle. `calerChamp` la reçoit une fois la carte engendrée
+// et cale tout dessus — la grille de cellules, le masque de découpe, la hauteur de terre.
+const NS = 256;
+let X0 = -120, Z0 = -200, P = 80, CS = P/NS;
 // La ferme n'est plus au centre du monde : elle est posée sur la carte, au corps de ferme
-// dont le hangar sert de point de départ. Ce corps de ferme occupe une clairière, et une
-// route le longe au sud. La parcelle de travail et la cour se posent donc de l'autre côté
-// de cette route, sur la grande étendue d'herbe libre : à huit mètres de tout chemin, de
-// tout champ de la carte et de tout arbre. L'emplacement a été cherché à la mesure, pas à
-// l'estime — voir essais/calage.js et essais/plan.js.
+// dont le hangar sert de point de départ. Le parc à engins tient sur la cour de sable de ce
+// corps de ferme, à côté du hangar — mesuré dans cette cour, à distance de ses bâtiments
+// (essais/sols.js). Le champ, lui, est choisi par la carte : voir plus bas `calerChamp`.
 const HANGAR = { x:-108.41, z:-69.07 };
-const X0 = -102, Z0 = -8;                           // la parcelle de travail
-// La cour s'étend jusqu'au silo : c'est une cour de ferme, elle est en sable comme celle
-// du corps de ferme de la carte, et non plus un carré d'herbe au milieu des champs.
-const COUR = { x0:-103, x1:-30, z0:-38, z1:-14 };   // la cour, entre la route et la parcelle
+const COUR = { x0:-112, x1:-64, z0:-100, z1:-78 };   // le parc, sur la cour du corps de ferme
 const cell = new Uint8Array(NS*NS);           // état du sol : logique seule, plus aucun rendu par texture
 function cellIndex(x,z){
   const ix = Math.floor((x-X0)/CS), jz = Math.floor((z-Z0)/CS);
@@ -85,12 +84,23 @@ function cellIndex(x,z){
 }
 // 0 friche · 1 labouré · 2 semé · 3 fertilisé · 4 moissonné. La friche et le chaume
 // partageaient le même code : on ne pouvait pas les dessiner différemment.
-const cellN = [NS*NS, 0, 0, 0, 0];            // combien de cellules dans chaque état
+const cellN = [0, 0, 0, 0, 0];                // combien de cellules dans chaque état
+// La grille couvre le rectangle englobant du champ ; le champ, lui, a la forme qu'il a.
+// MASQ porte la distance signée à son bord — positive dedans. Les cellules du dehors ne
+// se travaillent pas et ne comptent pas : sans quoi l'avancement plafonnerait à soixante
+// pour cent sur une parcelle qui n'est pas carrée.
+const MASQ = new Float32Array(NS*NS);
+let NIN = 0, POLY = null;
 function setCell(i,s2){
-  if (i<0 || cell[i]===s2) return false;
+  if (i<0 || MASQ[i] <= 0 || cell[i]===s2) return false;
   cellN[cell[i]]--; cellN[s2]++; cell[i] = s2; return true;
 }
-function fillCells(s2){ cell.fill(s2); for(let k=0;k<5;k++) cellN[k] = k===s2 ? NS*NS : 0; }
+function fillCells(s2){
+  for(let k=0;k<5;k++) cellN[k] = 0;
+  for(let i=0;i<cell.length;i++){
+    if (MASQ[i] > 0){ cell[i] = s2; cellN[s2]++; } else cell[i] = 0;
+  }
+}
 
 // ---------- l'herbe ----------
 // Le revêtement du prototype, à son échelle : une tuile de quatre mètres à cent vingt-huit
@@ -131,14 +141,11 @@ function herbeTex(){
   if (renderer.capabilities) t.anisotropy = renderer.capabilities.getMaxAnisotropy();
   return t;
 }
-// creux et bosses très doux. On les efface sous la parcelle et sous la cour : leurs bords
-// sont posés à plat, une bosse dessous les ferait percer.
+// Creux et bosses très doux, et seulement au-delà de la carte.
 const dRect = (x,z,x0,x1,z0,z1) =>
   Math.hypot(Math.max(x0-x, 0, x-x1), Math.max(z0-z, 0, z-z1));
 function herbeY(x, z){
-  const d = Math.min(dRect(x,z, X0-3, X0+P+3, Z0-3, Z0+P+3),
-                     dRect(x,z, COUR.x0-3, COUR.x1+3, COUR.z0-3, COUR.z1+3));
-  const k = Math.min(1, d/11);
+  const k = 1;
   // La campagne est plate, et il le faut : ses champs et ses routes sont des surfaces
   // posées à quatre ou sept centimètres du sol, quand l'ondulation du pré en fait
   // quatorze. Elle les traversait donc par plaques vertes, au milieu des parcelles comme
@@ -162,95 +169,29 @@ function herbeY(x, z){
   const g = new THREE.Mesh(geo, gouache(new THREE.MeshLambertMaterial({map:t}), .4, true));
   g.rotation.x = -Math.PI/2; g.receiveShadow = true; g.renderOrder = -13; scene.add(g);
 })();
-// Les touffes : des paquets de brins en volume, posés autour de l'aire de jeu seulement —
-// couvrir quatre cents mètres de côté à cette densité coûterait trois cent mille objets.
-(function touffes(){
-  const R = 64, PAS = 1.05;
-  const geo = new THREE.ConeGeometry(.028,.30,3); geo.translate(0,.15,0);
-  const cols = ['#7cc94a','#8fd457','#a3c05c'];         // deux verts clairs et un ton sec
-  const lots = cols.map(() => []);
-  for(let x=X0+P/2-R; x<X0+P/2+R; x+=PAS) for(let z=Z0+P/2-R; z<Z0+P/2+R; z+=PAS){
-    const px = x + (Math.random()-.5)*PAS*.9, pz = z + (Math.random()-.5)*PAS*.9;
-    // Seulement le long des bords. Une touffe de trente centimètres ne se voit qu'à contre-jour
-    // du sol nu ou de la cour ; en pleine prairie, à quarante mètres de haut, elle disparaît
-    // dans la texture — et couvrir tout le pourtour coûterait quarante mille objets pour rien.
-    const d = Math.min(dRect(px,pz, X0, X0+P, Z0, Z0+P),
-                       dRect(px,pz, COUR.x0, COUR.x1, COUR.z0, COUR.z1));
-    if (d < 1.1 || d > 13) continue;
-    // par paquets : une touffe, c'est cinq ou six brins serrés, pas un brin isolé
-    const n = 3 + (Math.random()*3|0), k = (Math.random()*cols.length)|0;
-    for(let b=0;b<n;b++){
-      const a = Math.random()*6.283, r = Math.random()*(.14+Math.random()*.2);
-      lots[Math.random() < .78 ? k : (Math.random()*cols.length)|0]
-        .push(px+Math.cos(a)*r, pz+Math.sin(a)*r);
-    }
-  }
-  const d = new THREE.Object3D();
-  cols.forEach((col,k) => {
-    const L = lots[k], n = L.length/2;
-    const im = new THREE.InstancedMesh(geo,
-      gouache(new THREE.MeshLambertMaterial({ color:col }), .3, true), Math.max(1,n));
-    im.castShadow = false; im.receiveShadow = false;
-    for(let q=0;q<n;q++){
-      const x = L[q*2], z = L[q*2+1];
-      d.position.set(x, herbeY(x,z), z);
-      d.rotation.set((Math.random()-.5)*.7, Math.random()*3, (Math.random()-.5)*.7);
-      const sc = .52 + Math.random()*.85;               // 16 à 41 cm : ras
-      d.scale.set(sc*.85, sc, sc*.85); d.updateMatrix();
-      im.setMatrixAt(q, d.matrix);
-    }
-    im.instanceMatrix.needsUpdate = true;
-    im.frustumCulled = false; scene.add(im);
-  });
-})();
-
-// ---------- la parcelle : un bloc de terre en surépaisseur, ni plat ni rectiligne ----------
-// Le sol du champ domine l'herbe d'une vingtaine de centimètres : les engins y montent
-// pour de vrai. Le bord n'est pas une arête droite mais une découpe crantée, et le dessus
-// ondule sur deux échelles avec des mottes posées dessus.
-const LIP = .22;                                       // surépaisseur de la terre
-function soilBump(x,z){                                // le relief propre à la parcelle
-  return Math.sin(x*.41 + z*.23)*.055
-       + Math.sin(x*.19 - z*.47)*.042
-       + Math.sin((x+z)*.83)*.024
-       + Math.sin(x*1.63)*Math.sin(z*1.49)*.032
-       + Math.sin(x*2.71 + z*1.9)*.017 + Math.sin(z*2.53 - x*1.7)*.015;
+// ---------- le champ de travail : une parcelle de la carte, pas une dalle posée dessus ----
+// Il n'y a plus de bloc de terre en surépaisseur, plus de bord crénelé fabriqué, plus de
+// dalle carrée au milieu de la campagne : on travaille l'un des champs de la carte, dessiné
+// par elle, à sa forme et à sa texture. Ne restent ici que ce qu'il faut pour y jouer — de
+// quoi dire où est le dedans, à quelle hauteur est la terre, et où découper les passages.
+const LIP = .06;                                       // l'épaisseur des champs de la carte
+// Distance signée au bord, lue dans MASQ par interpolation : appelée pour chaque brin, pour
+// chaque motte et à chaque image, elle ne peut pas reparcourir un contour de soixante points.
+function parcelInset(x, z){
+  const u = (x-X0)/CS - .5, v = (z-Z0)/CS - .5;
+  const i = Math.floor(u), j = Math.floor(v);
+  if (i < 0 || j < 0 || i >= NS-1 || j >= NS-1) return -99;
+  const fu = u-i, fv = v-j, k = j*NS+i;
+  return (MASQ[k]*(1-fu)      + MASQ[k+1]*fu)*(1-fv)
+       + (MASQ[k+NS]*(1-fu)   + MASQ[k+NS+1]*fu)*fv;
 }
-// Le bord se dessine par harmoniques, de la grande ondulation au petit accident.
-// Un terme en marche d'escalier donnait des crans énormes et anguleux : ici tout est continu,
-// et c'est la finesse du maillage qui décide du détail visible.
-function edgeWob(t, seed){                             // écart du bord, en mètres
-  return Math.sin(t*.29 + seed)*.30
-       + Math.sin(t*.73 - seed*1.7)*.17
-       + Math.sin(t*1.61 + seed*2.1)*.085
-       + Math.sin(t*3.37 - seed*.9)*.042
-       + Math.sin(t*6.9  + seed*3.1)*.018;
-}
-// Le maillage épouse le bord au lieu de jeter les cellules qui dépassent : on déforme
-// le carré paramétrique près de ses côtés, donc plus aucune marche d'escalier.
-const EW = .09;                                        // part du côté touchée par la déformation
-const smooth3 = k => k*k*(3-2*k);
-function parcelPoint(u,v){
-  const bx = X0 + u*P, bz = Z0 + v*P;
-  const fl = Math.max(0, 1 - u/EW),     fr = Math.max(0, 1 - (1-u)/EW);
-  const fb = Math.max(0, 1 - v/EW),     ft = Math.max(0, 1 - (1-v)/EW);
-  return [ bx - smooth3(fl)*edgeWob(bz, 0.7) + smooth3(fr)*edgeWob(bz, 2.9),
-           bz - smooth3(fb)*edgeWob(bx, 4.1) + smooth3(ft)*edgeWob(bx, 5.7) ];
-}
-// distance signée au bord découpé : > 0 dedans
-function parcelInset(x,z){
-  const l = x - (X0        - edgeWob(z, 0.7));
-  const r = (X0 + P + edgeWob(z, 2.9)) - x;
-  const b = z - (Z0        - edgeWob(x, 4.1));
-  const t = (Z0 + P + edgeWob(x, 5.7)) - z;
-  return Math.min(l, r, b, t);
-}
-// hauteur du dessus de la terre : 0 sur l'herbe, la rampe de bord fait monter l'engin
-function parcelY(x,z){
-  const d = parcelInset(x,z);
+const dansChamp = (x, z) => parcelInset(x, z) > 0;
+// hauteur du dessus de la terre : 0 sur l'herbe, une rampe d'un mètre au bord du champ
+function parcelY(x, z){
+  const d = parcelInset(x, z);
   if (d <= 0) return 0;
-  const k = Math.min(1, d/1.15), sm = k*k*(3-2*k);
-  return (LIP + soilBump(x,z)) * sm;
+  const k = Math.min(1, d/1.15);
+  return LIP * k*k*(3-2*k);
 }
 // « Chaume clair » : le seul et même dessin pour le sol de départ et pour ce que la
 // moissonneuse laisse derrière elle. Les deux doivent se superposer sans se distinguer,
@@ -296,100 +237,58 @@ function soilTex(){
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
 }
-(function parcelle(){
-  const N = 220, W = N+1;                              // ~20 cm le long du bord : le contour lisse à l'œil
-  const pos = [], uvs = [], col = [], tri = [];
-  const px = new Float32Array(W*W), pz = new Float32Array(W*W), idx = new Int32Array(W*W);
-  const push = (x,y,z,shade) => {
-    pos.push(x,y,z); uvs.push((x-X0)/2.9, (z-Z0)/2.9); col.push(shade,shade,shade);
-    return pos.length/3 - 1;
-  };
-  for(let j=0;j<=N;j++) for(let i=0;i<=N;i++){
-    const k = j*W+i, p = parcelPoint(i/N, j/N), y = parcelY(p[0], p[1]);
-    px[k] = p[0]; pz[k] = p[1];
-    // creux à peine plus sombres, bosses à peine plus claires : le relief se devine
-    // sans peindre de grandes taches brunes sur le chaume
-    idx[k] = push(p[0], y, p[1], .95 + (y - LIP)*.8);
-  }
-  for(let j=0;j<N;j++) for(let i=0;i<N;i++){
-    const a = j*W+i, b = a+1, c = a+W, d = c+1;
-    tri.push(idx[a], idx[c], idx[b], idx[b], idx[c], idx[d]);
-  }
-  // jupe : les quatre bords descendent sous l'herbe, c'est ce qui donne l'épaisseur
-  // La tranche est presque verticale : elle ne reçoit quasiment pas de lumière et se
-  // dessinait en liseré noir tout autour du champ. On l'éclaircit franchement et on la
-  // raccourcit, pour qu'elle ne soit qu'un bord de terre, pas un contour d'encre.
-  const skirt = (k1,k2) => {
-    const t1 = push(px[k1], parcelY(px[k1],pz[k1]), pz[k1], 1.02);
-    const t2 = push(px[k2], parcelY(px[k2],pz[k2]), pz[k2], 1.02);
-    const b1 = push(px[k1], -.035, pz[k1], .86);
-    const b2 = push(px[k2], -.035, pz[k2], .86);
-    tri.push(t1,b1,t2, t2,b1,b2);
-  };
-  for(let i=0;i<N;i++){
-    skirt(i+1, i);                                     // v = 0
-    skirt(N*W+i, N*W+i+1);                             // v = 1
-    skirt(i*W, (i+1)*W);                               // u = 0
-    skirt((i+1)*W+N, i*W+N);                           // u = 1
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
-  geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uvs,2));
-  geo.setAttribute('color',    new THREE.Float32BufferAttribute(col,3));
-  geo.setIndex(tri);
-  geo.computeVertexNormals();
-  const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({
-    map:soilTex(), vertexColors:true, side:THREE.DoubleSide }));
-  gouache(m.material, .42, true);
-  m.receiveShadow = true; m.renderOrder = -11; scene.add(m);
-})();
-// mottes : de petits volumes posés sur la terre, plus denses près des bords
-function semerMottes(){
-  const clods = [], cg = new THREE.SphereGeometry(1, 6, 4);
-  for(let i=0;i<260;i++){
-    const x = X0 + Math.random()*P, z = Z0 + Math.random()*P;
-    const d = parcelInset(x,z);
-    if (d <= .25) continue;
-    if (d > 2.4 && Math.random() > .3) continue;
-    const r = .10 + Math.random()*.19;
-    const m = MX(x, parcelY(x,z) + r*.28, z, 0, Math.random()*3, 0, 1);
-    m.scale(new THREE.Vector3(r*1.5, r*.6, r*1.25));
-    clods.push({ g:cg, c: Math.random()>.5 ? '#8f7c4c' : '#6f5f38', m });
-  }
-  if (!clods.length) return;
-  const cm = new THREE.Mesh(merge(clods), new THREE.MeshLambertMaterial({ vertexColors:true }));
-  cm.castShadow = true; cm.receiveShadow = true; scene.add(cm);
-}
-
 // ---------- traînées de passage : un ruban continu, pas des rectangles bout à bout ----------
 // (des quads successifs faisaient un bord en dents de scie dans les courbes : ici les sommets
 //  sont partagés d'un échantillon au suivant, le bord est une polyligne lisse)
 // Le ruban de travail était rogné sur un rectangle droit : au bout de chaque passage il
 // s'arrêtait donc net, alors que la terre, elle, ondule. On le laisse déborder et c'est le
 // contour réel qui le découpe, au pixel près, dans le fragment shader.
+// La découpe se faisait sur un rectangle, avec le bord ondulé recalculé dans le shader.
+// Le champ n'est plus un rectangle : on découpe sur le masque du contour, la même image que
+// celle qui sert à MASQ. Les uniformes sont posés par `calerChamp`, après la carte.
+const MASQ_TEX = new THREE.DataTexture(new Uint8Array(NS*NS*4), NS, NS, THREE.RGBAFormat);
+const CLIP = { masque:{ value:MASQ_TEX }, orig:{ value:new THREE.Vector2() }, cote:{ value:1 } };
 function clipToParcel(m){
-  const L = X0.toFixed(3), Rr = (X0+P).toFixed(3), B = Z0.toFixed(3), T = (Z0+P).toFixed(3);
   gouache(m, .42, true);
   chainCompile(m, sh => {
+    sh.uniforms.uMasq = CLIP.masque;
+    sh.uniforms.uOrig = CLIP.orig;
+    sh.uniforms.uCote = CLIP.cote;
     sh.vertexShader = 'varying vec3 vWP;\n' + sh.vertexShader.replace(
       '#include <fog_vertex>',
       '#include <fog_vertex>\n  vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = ('varying vec3 vWP;\n' +
-      'float ewob(float t, float sd){\n' +
-      '  return sin(t*.29 + sd)*.30 + sin(t*.73 - sd*1.7)*.17 + sin(t*1.61 + sd*2.1)*.085\n' +
-      '       + sin(t*3.37 - sd*.9)*.042 + sin(t*6.9 + sd*3.1)*.018;\n}\n' +
-      sh.fragmentShader).replace(
+    sh.fragmentShader = ('varying vec3 vWP;\nuniform sampler2D uMasq;\n' +
+      'uniform vec2 uOrig;\nuniform float uCote;\n' + sh.fragmentShader).replace(
       '#include <clipping_planes_fragment>',
       '#include <clipping_planes_fragment>\n' +
-      '  float _l = vWP.x - (' + L + ' - ewob(vWP.z, 0.7));\n' +
-      '  float _r = (' + Rr + ' + ewob(vWP.z, 2.9)) - vWP.x;\n' +
-      '  float _b = vWP.z - (' + B + ' - ewob(vWP.x, 4.1));\n' +
-      '  float _t = (' + T + ' + ewob(vWP.x, 5.7)) - vWP.z;\n' +
-      '  if (min(min(_l,_r), min(_b,_t)) <= 0.0) discard;');
-  });
+      '  vec2 _uv = (vWP.xz - uOrig) / uCote;\n' +
+      '  if (_uv.x < 0.0 || _uv.x > 1.0 || _uv.y < 0.0 || _uv.y > 1.0) discard;\n' +
+      '  if (texture2D(uMasq, _uv).r < 0.5) discard;');
+  }, 'champMasque');
   return m;
 }
-
+// Le champ que la carte a retenu : on cale dessus la grille des cellules, le masque du
+// contour et la texture de découpe. Appelé une fois, depuis js/3c-carte.js.
+function calerChamp(poly){
+  POLY = poly;
+  let x0=1e9, x1=-1e9, z0=1e9, z1=-1e9;
+  poly.forEach(p => { x0=Math.min(x0,p[0]); x1=Math.max(x1,p[0]);
+                      z0=Math.min(z0,p[1]); z1=Math.max(z1,p[1]); });
+  P = Math.max(x1-x0, z1-z0) + 6;                      // grille carrée : trois mètres de marge
+  X0 = (x0+x1)/2 - P/2; Z0 = (z0+z1)/2 - P/2; CS = P/NS;
+  const px = MASQ_TEX.image.data;
+  NIN = 0;
+  for(let j=0;j<NS;j++) for(let i=0;i<NS;i++){
+    const k = j*NS+i, d = distBordSigne(poly, X0 + (i+.5)*CS, Z0 + (j+.5)*CS);
+    MASQ[k] = d;
+    const v = d > 0 ? 255 : 0;
+    px[k*4] = px[k*4+1] = px[k*4+2] = v; px[k*4+3] = 255;
+    if (d > 0) NIN++;
+  }
+  MASQ_TEX.needsUpdate = true;
+  CLIP.orig.value.set(X0, Z0); CLIP.cote.value = P;
+  fillCells(0);
+}
 // Les points de semence s'effacent avec la maturité : l'uniforme est partagé par le ruban,
 // qui les mélange lui-même à la terre labourée.
 const GRAIN = { value: 1 };
