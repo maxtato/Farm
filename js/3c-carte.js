@@ -391,10 +391,17 @@ function alea(seed){ return function(){ seed |= 0; seed = seed + 0x6D2B79F5 | 0;
 // la même. Les routes suivent le contour de chaque îlot, jamais le milieu d'une parcelle.
 const CARTE = { n:7, taille:540, gigue:.32, seed:7 };
 const parcelles = [];                     // contours des champs en friche, pour la suite
-// La parcelle de départ et la cour du joueur occupent déjà le centre : on n'y pose rien.
-function zoneJoueur(x, z){
-  return (x > X0-14 && x < X0+P+14 && z > Z0-14 && z < Z0+P+14) ||
-         (x > -46 && x < 46 && z > YARD-12 && z < YARD+30);
+// La parcelle de départ, la cour et le hameau occupent déjà le centre. Rien de la campagne
+// ne s'y pose : ni champ, ni arbre. La ferme se retrouve dans une clairière d'herbe au
+// milieu du bocage, au lieu d'être bâtie au beau milieu d'une friche.
+const ZJ = { x0:-52, x1:52, z0:Z0-16, z1:YARD+32 };
+const zoneJoueur = (x, z) => x > ZJ.x0 && x < ZJ.x1 && z > ZJ.z0 && z < ZJ.z1;
+// Un îlot ne se juge pas à son centre : un grand champ dont le milieu tombe au loin peut
+// très bien recouvrir la ferme. C'est son emprise entière qu'il faut regarder.
+function mordSurLaFerme(pts){
+  const b = bbox(pts);
+  return !(b.cx + b.w/2 < ZJ.x0 || b.cx - b.w/2 > ZJ.x1 ||
+           b.cz + b.d/2 < ZJ.z0 || b.cz - b.d/2 > ZJ.z1);
 }
 (function carte(){
   const R = alea(CARTE.seed), N = CARTE.n, T = CARTE.taille, pas = T/N;
@@ -483,10 +490,12 @@ function zoneJoueur(x, z){
   }
   blocs.forEach(B => {
     if (B.type === 'prairie') return;                       // laissé en herbe
-    if (zoneJoueur(B.c.cx, B.c.cz)) return;                 // la ferme du joueur est déjà là
     const coupable = B.aire >= 4 && Math.min(B.i1-B.i0, B.j1-B.j0) >= 2;
     const coupe = coupable ? (B.coupe = coupure(B)) : null;
-    (coupe ? coupe.moities : [B.pts]).forEach(m => champ(contourParcelle(m)));
+    (coupe ? coupe.moities : [B.pts]).forEach(m => {
+      const pts = contourParcelle(m);
+      if (!mordSurLaFerme(pts)) champ(pts);
+    });
     if (coupe){
       const bv = ruban(coupe.chemin, 8.4, '#9db354', .045, false); if (bv) scene.add(bv);
       const md = ruban(coupe.chemin, 5.6, '#c9b184', .078, false); if (md) scene.add(md);
