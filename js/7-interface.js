@@ -90,83 +90,118 @@ function drawShop(){
     if (confirm('Effacer la sauvegarde et repartir de zéro ?')) wipe();
   };
 }
-// ---------- le parc : trois tracteurs, trois bennes, et ce qui va avec quoi ----------
-// La puissance ne s'achète pas au détail : on change de tracteur. Le gabarit décide de la
-// largeur de l'outil porté et du poids de benne admissible — un compact ne tire pas 22 m³.
+// ---------- le parc : on achète des pièces, et chacune monte en gamme de son côté ----------
+// Deux moitiés : ce qu'on peut acheter neuf, en autant d'exemplaires qu'on veut, et ce
+// qu'on possède déjà, chaque pièce avec son bouton d'amélioration.
+function ligne(icone, titre, sous, boutonTexte, actif, action){
+  const c = card(icone, titre, sous);
+  const b = document.createElement('button');
+  if (!action){ b.className = 'buy max'; b.disabled = true; b.textContent = boutonTexte; }
+  else {
+    b.className = 'buy'; b.textContent = boutonTexte; b.disabled = !actif;
+    b.onclick = () => { if (!actif){ sfx('deny'); return; } action(); };
+  }
+  c.appendChild(b); elBody.appendChild(c);
+  return c;
+}
+const titreParc = t => elBody.insertAdjacentHTML('beforeend', '<div class="note"><b>' + t + '</b></div>');
 function drawParc(){
   elBody.insertAdjacentHTML('beforeend', statsHTML());
   elBody.insertAdjacentHTML('beforeend',
-    '<div class="note">La ferme démarre sur un terrain nu : tout s\u2019achète ici, et chaque ' +
-    'poste a son niveau propre. Acheter mieux reprend l\u2019ancienne machine pour la moitié ' +
-    'de son prix, alors commencer petit ne coûte rien.</div>');
-  MACHINES.forEach(M => {
-    elBody.insertAdjacentHTML('beforeend',
-      '<div class="note"><b>' + M.emo + ' ' + M.n + '</b>' +
-      (possede(M.k) ? '' : ' — pas encore au parc') + '</div>');
-    M.prix.forEach((prix, i) => {
-      const ici = nivDe[M.k] === i, depasse = nivDe[M.k] > i;
-      const reprise = repriseDe(M.k, i), net = prix - reprise;
-      const c = card(M.emo, M.nom[i], M.det(i) +
-        (reprise ? ' — reprise de l\u2019ancienne : ' + fmt(reprise) + ' 🪙' : ''));
-      const b = document.createElement('button');
-      if (ici){ b.className = 'buy max'; b.disabled = true; b.textContent = 'en service'; }
-      else if (depasse){ b.className = 'buy max'; b.disabled = true; b.textContent = 'remplacée'; }
+    '<div class="note">Rien n\u2019est solidaire de rien : on achète autant de tracteurs et ' +
+    'd\u2019outils qu\u2019on veut, et chaque pièce monte en gamme séparément. N\u2019importe ' +
+    'quel outil se pose derrière n\u2019importe quel tracteur assez fort pour le tirer, et le ' +
+    'bouton \u2693 du pupitre les décroche sur place.</div>');
+
+  // ---- ce qu'on possède ----
+  if (engins.length || outils.length){
+    titreParc('🏠 Au parc');
+    engins.forEach(v => {
+      const P = PORTEURS[v.kind], max = P.prix.length - 1;
+      const o = outilDe(v);
+      const sous = P.nom[v.niv] + ' · ' + (o ? OUTILS[o.type].n.toLowerCase() + ' ' + (o.niv+1)
+                                             : v.kind === 'tracteur' ? 'rien d\u2019attelé'
+                                             : P.outil.det(v.bec));
+      if (v.niv >= max) ligne(icoVeh(v), nomVeh(v), sous, 'au maximum', false, null);
       else {
-        b.className = 'buy'; b.textContent = fmt(net) + ' 🪙';
-        b.disabled = coins < net;
-        b.onclick = () => {
-          const r = acheterEngin(M.k, i);
-          if (!r){ sfx('deny'); return; }
-          sfx('buy'); drawVeh(); drawHitch();
-          toast(M.n + ' — ' + M.nom[i].toLowerCase() + ' au parc', 'good');
-          drawPanel();
-        };
+        const net = coutAmelioration(P.prix, v.niv, v.niv+1);
+        ligne(icoVeh(v), nomVeh(v), sous + ' — passer en ' + P.nom[v.niv+1].toLowerCase(),
+              fmt(net) + ' 🪙', coins >= net, () => {
+                if (ameliorerEngin(v.pid) === null){ sfx('deny'); return; }
+                sfx('buy'); toast(P.nom[v.niv].toLowerCase() + ' — machine remotorisée', 'good');
+                drawVeh(); drawPanel();
+              });
       }
-      c.appendChild(b); elBody.appendChild(c);
+      // la coupe et les rampes des automoteurs montent à part
+      if (P.outil && v.bec < 2){
+        const net = coutAmelioration(P.outil.prix, v.bec, v.bec+1);
+        ligne('📏', P.outil.n, P.outil.det(v.bec) + ' — passer à ' + P.outil.det(v.bec+1),
+              fmt(net) + ' 🪙', coins >= net, () => {
+                if (ameliorerBec(v.pid) === null){ sfx('deny'); return; }
+                sfx('buy'); toast(P.outil.n + ' élargie', 'good'); drawVeh(); drawPanel();
+              });
+      }
+    });
+    outils.forEach(o => {
+      const D = OUTILS[o.type];
+      const porteur = o.porteur ? enginPar(o.porteur) : null;
+      const ou = porteur ? 'attelé' : 'posé dans la cour';
+      if (o.niv >= 2) ligne(D.emo, D.n + ' ' + (o.niv+1), D.det(o.niv) + ' · ' + ou,
+                            'au maximum', false, null);
+      else {
+        const net = coutAmelioration(D.prix, o.niv, o.niv+1);
+        const trop = porteur && D.force[o.niv+1] > porteur.niv;
+        ligne(D.emo, D.n + ' ' + (o.niv+1),
+              D.det(o.niv) + ' · ' + ou + (trop ? ' — le tracteur qui le tire est trop léger'
+                                                : ' — passer à ' + D.det(o.niv+1)),
+              trop ? 'tracteur trop léger' : fmt(net) + ' 🪙',
+              !trop && coins >= net,
+              trop ? null : () => {
+                const r = ameliorerOutil(o.oid);
+                if (r === null || r === 'lourd'){ sfx('deny'); return; }
+                sfx('buy'); toast(D.n + ' élargi', 'good'); drawVeh(); drawPanel();
+              });
+      }
+    });
+  }
+
+  // ---- ce qu'on peut acheter ----
+  titreParc('🛒 Acheter du matériel');
+  Object.keys(PORTEURS).forEach(kind => {
+    const P = PORTEURS[kind];
+    P.prix.forEach((prix, i) => {
+      ligne(P.emo, P.n + ' — ' + P.nom[i], P.det(i), fmt(prix) + ' 🪙', coins >= prix, () => {
+        const v = acheterPorteur(kind, i);
+        if (!v){ sfx('deny'); return; }
+        sfx('buy'); toast(P.n + ' ' + P.nom[i].toLowerCase() + ' livré au parc', 'good');
+        drawVeh(); drawPanel();
+      });
     });
   });
-  elBody.insertAdjacentHTML('beforeend',
-    '<div class="note"><b>🛻 Bennes</b> — livrées au fond de la cour. On va les chercher avec ' +
-    'le tracteur de transport et on les attelle avec le bouton \u2693 du pupitre.</div>');
-  BENNES.forEach(B => {
-    const a = bennesOwned[B.id], att = benneAtt === B.id;
-    const cap = Math.round(B.cap*(1 + .28*lv.tremie));
-    const c = card(B.emo, B.n, B.d + ' — ' + fmt(cap) + ' de charge');
-    const b = document.createElement('button');
-    if (a){
-      b.className = 'buy max'; b.disabled = true;
-      b.textContent = att ? 'attelée' : 'au parc';
-    } else if (!benneCompatible(B)){
-      b.className = 'buy max'; b.disabled = true;
-      b.textContent = possede('trailer') ? 'tracteur trop léger' : 'sans tracteur';
-    } else {
-      b.className = 'buy'; b.textContent = fmt(B.prix) + ' 🪙';
-      b.disabled = coins < B.prix;
-      b.onclick = () => {
-        if (coins < B.prix || bennesOwned[B.id]){ sfx('deny'); return; }
-        coins -= B.prix; bennesOwned[B.id] = true; livrerBenne(B.id); sfx('buy');
-        toast(B.n + ' livrée au fond de la cour', 'good'); save(); drawPanel();
-      };
-    }
-    c.appendChild(b); elBody.appendChild(c);
+  titreParc('🔧 Outils à atteler');
+  TYPES_OUTIL.forEach(type => {
+    const D = OUTILS[type];
+    D.prix.forEach((prix, i) => {
+      const besoin = D.force[i];
+      ligne(D.emo, D.n + ' ' + (i+1),
+            D.det(i) + ' — demande un tracteur ' + PORTEURS.tracteur.nom[besoin].toLowerCase(),
+            fmt(prix) + ' 🪙', coins >= prix, () => {
+              if (!acheterOutil(type, i)){ sfx('deny'); return; }
+              sfx('buy'); toast(D.n + ' livré au fond de la cour', 'good');
+              drawHitch(); drawPanel();
+            });
+    });
   });
+  titreParc('🏢 Silos');
   elBody.insertAdjacentHTML('beforeend',
-    '<div class="note"><b>🏢 Silos</b> — la benne se vide au plus proche, et garder la récolte ' +
-    'au lieu de la brader à la moisson fait monter le prix payé.</div>');
+    '<div class="note">La benne se vide au plus proche, et garder la récolte au lieu de la ' +
+    'brader à la moisson fait monter le prix payé.</div>');
   SILOS.forEach(S => {
-    const a = silosOwned[S.id];
-    const c = card(S.emo, S.n, S.d);
-    const b = document.createElement('button');
-    if (a){ b.className = 'buy max'; b.disabled = true; b.textContent = 'bâti'; }
-    else {
-      b.className = 'buy'; b.textContent = fmt(S.prix) + ' 🪙';
-      b.disabled = coins < S.prix;
-      b.onclick = () => {
-        if (!acheterSilo(S.id)){ sfx('deny'); return; }
-        sfx('buy'); toast(S.n + ' bâti dans la cour', 'good'); drawPanel();
-      };
-    }
-    c.appendChild(b); elBody.appendChild(c);
+    if (silosOwned[S.id]) return ligne(S.emo, S.n, S.d, 'bâti', false, null);
+    ligne(S.emo, S.n, S.d, fmt(S.prix) + ' 🪙', coins >= S.prix, () => {
+      if (!acheterSilo(S.id)){ sfx('deny'); return; }
+      sfx('buy'); toast(S.n + ' bâti dans la cour', 'good'); drawPanel();
+    });
   });
 }
 const fr = n => n.toFixed(1).replace('.', ',');
@@ -260,9 +295,10 @@ function drawCtrl(){
 function drawHelp(){
   elBody.insertAdjacentHTML('beforeend',
     '<div class="note"><b>La cour est vide au départ.</b> Tout se trouve à l\u2019onglet ' +
-    '<b>🚜 Parc</b> : une déchaumeuse, un semoir, une moissonneuse, un tracteur de transport ' +
-    'et une benne suffisent à boucler une première récolte. Le pulvérisateur peut attendre — ' +
-    'sans lui la culture pousse, simplement bien plus lentement.</div>');
+    '<b>🚜 Parc</b> : des tracteurs, et des outils qu\u2019on accroche derrière. Un tracteur, ' +
+    'une déchaumeuse, un semoir, une benne et une moissonneuse suffisent à boucler une ' +
+    'première récolte — le même tracteur fait tout, il change d\u2019outil au bouton \u2693. ' +
+    'Le pulvérisateur peut attendre : sans lui la culture pousse, bien plus lentement.</div>');
   elBody.insertAdjacentHTML('beforeend',
     '<div class="note">Un cycle complet : <b>déchaumer</b> le sol, <b>semer</b>, <b>fertiliser</b>, ' +
     'laisser <b>pousser</b>, puis <b>moissonner</b>. La benne vide la moissonneuse et porte le grain au silo, ' +
@@ -273,7 +309,7 @@ function drawHelp(){
     '<kbd>Espace</kbd><span>freiner</span>' +
     '<kbd>V</kbd><span>pilote automatique</span>' +
     '<kbd>E</kbd><span>changer d\'engin</span>' +
-    '<kbd>R</kbd><span>décrocher / atteler la benne</span>' +
+    '<kbd>R</kbd><span>décrocher / atteler l\'outil</span>' +
     '<kbd>1 2 3 4</kbd><span>sol · semis · engrais · moisson</span>' +
     '<kbd>X</kbd><span>accélérer le temps ×1 ×3 ×6</span>' +
     '<kbd>B</kbd><span>boutique</span>' +
@@ -438,7 +474,7 @@ function setPathState(st){ drawPathBtn(); }
     if (etait !== 'rien'){ drawPathBtn(); return; }
     // c'était une tape : sur un engin elle sélectionne, sur le champ elle vise
     const cible = vehicleAt(e.clientX, e.clientY);
-    if (cible){ tapT = 0; if (cible !== pilote()) selectVeh(cible.kind); return; }
+    if (cible){ tapT = 0; if (cible !== pilote()) selectVeh(cible.pid); return; }
     const now = performance.now();
     if (now - tapT < 340 && Math.hypot(e.clientX-tapX, e.clientY-tapY) < 30){
       tapT = 0;
@@ -474,11 +510,10 @@ function vehicleAt(cx, cy){
   _ndc.set(((cx-r.left)/r.width)*2-1, -((cy-r.top)/r.height)*2+1);
   _ray.setFromCamera(_ndc, camera);
   const objs = [];
-  for(const k of KINDS){ const v = fleet[k]; if (v) objs.push(v.h); }
+  for(const v of engins) objs.push(v.h);
   const hits = _ray.intersectObjects(objs, true);
   if (!hits.length) return null;
-  for(const k of KINDS){
-    const v = fleet[k]; if (!v) continue;
+  for(const v of engins){
     let o = hits[0].object;
     while (o){ if (o === v.h) return v; o = o.parent; }
   }
@@ -524,7 +559,8 @@ STAGES.forEach((s,i) => {
   // y amener la parcelle, et passer à la suivante. Sans pulvérisateur, la culture pousse,
   // simplement bien plus lentement.
   e.onclick = () => { const k = STAGES[i].k;
-                      if (KINDS.includes(k) && possede(k)) selectVeh(k); else switchTo(i); };
+                      const w = engins.find(v => v.metier === k);
+                      if (w) selectVeh(w.pid); else switchTo(i); };
   stepsEl.appendChild(e);
 });
 
@@ -550,64 +586,59 @@ function setSpeed(v){
 function cycleSpeed(){ setSpeed(SPEED === 1 ? 3 : SPEED === 3 ? 6 : 1); }
 setSpeed(1);
 
-// ---------- passage d'un engin à l'autre : la benne ne vient que si on va la chercher ----------
-// Le bouton fait le tour de tous les engins de la ferme, pas seulement de la benne :
-// déchaumeuse, semoir, pulvérisateur, moissonneuse, benne, puis on repart au début.
-// Choisir un engin de chantier place la parcelle à l'étape correspondante, exactement
-// comme si on avait touché l'étape dans le suivi du haut. « Pousse » n'a pas d'engin :
-// elle n'est pas dans le tour.
-const VEH_CYCLE = [
-  { id:'prep', st:0 }, { id:'sow', st:1 }, { id:'fert', st:2 },
-  { id:'harvest', st:4 }, { id:'trailer', st:-1 }
-];
-function canSwitch(){ return true; }
-const VEHICO = { prep:'🚜', sow:'🌱', fert:'💧', harvest:'🌾', trailer:'🛻' };
-const VEHNOM = { prep:'Déchaumeuse', sow:'Semoir', fert:'Pulvérisateur',
-                 harvest:'Moissonneuse', trailer:'Benne' };
-// Le nom du transport dit ce qui est attelé : décroché, c'est un tracteur, pas une benne.
-function nomVeh(k){
-  if (k !== 'trailer') return VEHNOM[k] || 'Au repos';
-  const B = benneAttDef();
-  return B ? B.n : 'Tracteur seul';
+// ---------- passer d'un engin à l'autre ----------
+// Le bouton fait le tour de tout ce qui roule à la ferme, dans l'ordre où on l'a acheté.
+// Le nom affiché est celui du métier du moment : un tracteur devient « déchaumeuse » ou
+// « benne » selon ce qu'il traîne, et redevient « tracteur seul » quand il est décroché.
+const METICO = { prep:'🚜', sow:'🌱', fert:'💧', harvest:'🌾' };
+const METNOM = { prep:'Déchaumeuse', sow:'Semoir', fert:'Pulvérisateur', harvest:'Moissonneuse' };
+function icoVeh(v){
+  if (!v) return '🚜';
+  if (v.g.userData.benne) return '🛻';
+  return METICO[v.metier] || (v.kind === 'moiss' ? '🌾' : '🚜');
 }
-const enginsPossedes = () => VEH_CYCLE.filter(e => possede(e.id));
+function nomVeh(v){
+  if (!v) return 'Au repos';
+  const o = outilDe(v);
+  if (o && o.type === 'benne') return BENNES[o.niv].n;
+  if (v.metier) return METNOM[v.metier] + (o ? ' ' + (o.niv+1) : '');
+  return v.kind === 'tracteur' ? 'Tracteur seul' : PORTEURS[v.kind].n;
+}
 function drawVeh(){
-  const cur = driven, l = enginsPossedes();
+  const v = pilote();
   elVehBtn.disabled = false;
   // Parc vide : le bouton ne propose plus de changer d'engin, il mène à la boutique.
-  if (!l.length){
+  if (!engins.length){
     elVehBtn.classList.remove('alt');
     elVehBtn.innerHTML = '<i>🛒</i><span>Acheter un engin</span>';
     elVehBtn.title = 'Le parc est vide';
     return;
   }
-  elVehBtn.classList.toggle('alt', cur === 'trailer');
-  const n = possede(cur) ? nomVeh(cur) : 'Au repos';
-  elVehBtn.innerHTML = '<i>' + (VEHICO[cur] || '🚜') + '</i><span>' + n + '</span>'
-                     + (l.length > 1 ? '<b class="sw">⇄</b>' : '');
-  elVehBtn.title = l.length > 1 ? 'Changer d\u2019engin' : n;
+  const n = nomVeh(v);
+  elVehBtn.classList.toggle('alt', !!(v && v.g.userData.benne));
+  elVehBtn.innerHTML = '<i>' + icoVeh(v) + '</i><span>' + n + '</span>'
+                     + (engins.length > 1 ? '<b class="sw">⇄</b>' : '');
+  elVehBtn.title = engins.length > 1 ? 'Changer d\u2019engin' : n;
 }
 function drawCropBtn(){
   elCropBtn.innerHTML = '<i>' + crop().emo + '</i><span>' + crop().n + '</span>';
 }
-// Passer d'un engin à l'autre ne fait que changer qui répond aux commandes : celui qu'on
-// quitte reste sur la carte, garde son tracé et continue son chantier.
 function switchVehicle(){
-  const l = enginsPossedes();
-  if (!l.length){ sfx('deny'); openPanel('parc'); return; }
-  const i = l.findIndex(e => e.id === driven);
-  selectVeh(l[(i+1) % l.length].id);
+  if (!engins.length){ sfx('deny'); openPanel('parc'); return; }
+  const i = engins.findIndex(v => v.pid === driven);
+  selectVeh(engins[(i+1) % engins.length].pid);
 }
-function selectVeh(kind){
-  if (!possede(kind)){ sfx('deny'); toast('Cet engin n\u2019est pas au parc', 'bad'); openPanel('parc'); return; }
-  const neuf = !fleet[kind];
-  fleetGet(kind);
-  driven = kind;
-  const e = VEH_CYCLE.find(x => x.id === kind);
-  if (e && e.st >= 0 && stage !== e.st) switchTo(e.st);
+// Prendre les commandes d'un engin ne déplace rien : celui qu'on quitte reste où il est,
+// garde son tracé et continue son chantier.
+function selectVeh(pid){
+  const v = enginPar(pid);
+  if (!v){ sfx('deny'); openPanel('parc'); return; }
+  driven = pid;
+  // suivre l'engin veut dire suivre son chantier : l'étape se cale sur son métier
+  const st = STAGES.findIndex(s => s.k === v.metier);
+  if (st >= 0 && stage !== st) switchTo(st);
   syncFleet();
-  if (neuf) camFollow();               // un engin qui vient de naître, on le montre une fois
-  setManual(); sfx('stage'); drawVeh(); drawPathBtn();
+  setManual(); sfx('stage'); drawVeh(); drawPathBtn(); drawHitch();
 }
 elVehBtn.onclick = switchVehicle;
 
@@ -615,29 +646,31 @@ elVehBtn.onclick = switchVehicle;
 // Le bouton ne sert qu'au transport, et il ne s'allume que s'il y a vraiment quelque chose
 // à faire : une benne attelée à poser, ou une benne posée à portée de la boule.
 const elHitch = document.getElementById('btnHitch');
+// Le bouton ne sert qu'aux tracteurs, et il ne s'allume que s'il y a vraiment quelque
+// chose à faire : un outil attelé à poser, ou un outil au sol à portée de la boule.
 function drawHitch(){
   if (!elHitch) return;
-  const t = fleet.trailer, ici = driven === 'trailer' && !!t;
-  elHitch.style.display = ici ? '' : 'none';
-  if (!ici) return;
-  const att = !!t.g.userData.benne;
-  const pret = att || benneAPortee() >= 0;
+  const v = pilote(), tract = !!v && v.kind === 'tracteur';
+  elHitch.style.display = tract ? '' : 'none';
+  if (!tract) return;
+  const att = !!v.outil, pret = att || !!outilAPortee(v);
   elHitch.disabled = !pret;
   elHitch.textContent = att ? '⚓' : '🪝';
   elHitch.classList.toggle('on', pret && !att);
-  elHitch.setAttribute('aria-label', att ? 'Décrocher la benne' : 'Atteler une benne');
-  elHitch.title = att ? 'Décrocher la benne' : 'Atteler la benne à portée';
+  const lib = att ? 'Décrocher l\u2019outil' : 'Atteler l\u2019outil à portée';
+  elHitch.setAttribute('aria-label', lib);
+  elHitch.title = lib;
 }
 function toggleHitch(){
-  const t = fleet.trailer;
-  if (driven !== 'trailer' || !t){ sfx('deny'); return; }
-  if (t.g.userData.benne){
-    const n = decrocher();
-    sfx('stage'); toast(n + ' décrochée sur place', 'good');
+  const v = pilote();
+  if (!v || v.kind !== 'tracteur'){ sfx('deny'); return; }
+  if (v.outil){
+    const o = decrocher(v);
+    if (o){ sfx('stage'); toast(OUTILS[o.type].n + ' décroché sur place', 'good'); }
   } else {
-    const n = raccrocher();
-    if (!n){ sfx('deny'); toast('Aucune benne à portée de l\u2019attelage', 'bad'); }
-    else { sfx('stage'); toast(n + ' attelée', 'good'); }
+    const o = raccrocher(v);
+    if (!o){ sfx('deny'); toast('Rien à portée de l\u2019attelage', 'bad'); }
+    else { sfx('stage'); toast(OUTILS[o.type].n + ' attelé', 'good'); }
   }
   drawHitch(); drawVeh();
 }
@@ -664,7 +697,8 @@ addEventListener('keydown', e => {
     else if (k === 'r') toggleHitch();
     else if (k === 'n') toast(SND.toggle() ? '🔊 Son activé' : '🔇 Son coupé');
     else if (k >= '1' && k <= '4'){ const c = ['prep','sow','fert','harvest'][+k-1];
-                                    if (possede(c)) selectVeh(c); }
+                                    const w = engins.find(v => v.metier === c);
+                                    if (w) selectVeh(w.pid); }
   }
   keys[k] = true;
 });

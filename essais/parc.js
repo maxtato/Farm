@@ -1,4 +1,4 @@
-// Le parc : terrain nu au départ, tout s'achète, et la sauvegarde retient ce qu'on possède.
+// Le parc : tout s'achète pièce par pièce, tout s'interchange, tout monte en gamme à part.
 const {chromium}=require('playwright');const serve=require('./srv');const fs=require('fs');
 const D=__dirname+'/sorties/';
 (async()=>{
@@ -13,57 +13,89 @@ const D=__dirname+'/sorties/';
  await p.goto('http://localhost:8879/',{waitUntil:'load'});
  await p.waitForFunction(()=>typeof window.__FARM_DEBUG==='function',null,{timeout:60000});
  await p.waitForTimeout(2500);
- const dit=(t,v)=>console.log(String(t).padEnd(36),JSON.stringify(v));
+ const dit=(t,v)=>console.log(String(t).padEnd(34),JSON.stringify(v));
+ // amène la boule du tracteur pile sur l'outil visé, puis attelle
+ const attelle = oid => p.evaluate(id=>{
+   const v=pilote(), o=outilPar(id), ball=pointAttelage(v);
+   v.pos.x+=o.x-ball.x; v.pos.z+=o.z-ball.z; v.h.position.set(v.pos.x,0,v.pos.z);
+   const r=raccrocher(v);
+   return { attele:!!r, metier:v.metier===undefined?null:pilote().metier, largeur:
+     pilote().g.userData.tool ? pilote().g.userData.tool.W : null };
+ }, oid);
 
- dit('terrain nu', await p.evaluate(()=>({
-   sous:coins, niv:__FARM_DEBUG().niv, flotte:__FARM_DEBUG().flotte.length,
-   bennes:Object.assign({},bennesOwned), attelee:benneAtt, trCap:TRCAP,
-   bouton:document.getElementById('vehBtn').textContent })));
+ dit('terrain nu', await p.evaluate(()=>({ sous:coins, engins:engins.length,
+   outils:outils.length, bouton:document.getElementById('vehBtn').textContent })));
 
- // --- la chaîne minimale : déchaumeuse, semoir, moissonneuse, transport, benne ---
- dit('chaîne minimale', await p.evaluate(()=>{
-   const pris=[]; let reste=coins;
-   [['prep',0],['sow',0],['harvest',0],['trailer',0]].forEach(([k,i])=>{
-     const r=acheterEngin(k,i); pris.push([k, r?r.net:null]); });
-   coins-=BENNES[0].prix; bennesOwned.b8=true; livrerBenne('b8');
-   return { pris, depense:reste-coins, reste:coins,
-            flotte:__FARM_DEBUG().flotte.map(f=>f.k), posees:bennesPosees.length };
+ // --- deux tracteurs et quatre outils, achetés séparément ---
+ dit('achats', await p.evaluate(()=>{
+   coins=200000;                       // le banc n'est pas là pour éprouver la trésorerie
+   const t1=acheterPorteur('tracteur',0), t2=acheterPorteur('tracteur',1);
+   const os=['sol','semis','engrais','benne'].map(t=>acheterOutil(t,0));
+   const m=acheterPorteur('moiss',0);
+   return { engins:engins.map(v=>({id:v.pid,k:v.kind,n:v.niv})),
+            outils:outils.map(o=>({id:o.oid,t:o.type,n:o.niv,pose:!o.porteur})),
+            reste:coins };
  }));
 
- // --- on attelle la benne et on vérifie la capacité ---
- dit('attelage', await p.evaluate(()=>{
-   driven='trailer'; syncFleet();
-   const r=bennesPosees[0], v=fleet.trailer, ball=pointAttelage(v);
-   v.pos.x+=r.x-ball.x; v.pos.z+=r.z-ball.z; v.h.position.set(v.pos.x,0,v.pos.z);
-   const n=raccrocher();
-   return { nom:n, trCap:TRCAP, benne:benneAtt };
+ // --- le même tracteur enchaîne les quatre outils ---
+ for (const t of ['sol','semis','engrais','benne']){
+   const r = await p.evaluate(async type=>{
+     const v=engins[0]; driven=v.pid; syncFleet();
+     if (v.outil) decrocher(v);
+     const o=outils.find(x=>x.type===type&&!x.porteur);
+     const w=pilote(), ball=pointAttelage(w);
+     w.pos.x+=o.x-ball.x; w.pos.z+=o.z-ball.z; w.h.position.set(w.pos.x,0,w.pos.z);
+     const got=raccrocher(w);
+     const n=pilote();
+     return { outil:type, attele:!!got, metier:n.metier,
+              largeur:n.g.userData.tool?n.g.userData.tool.W:null,
+              benne:!!n.g.userData.benne, cap:capDe(n) };
+   }, t);
+   dit('tracteur 1 + ' + t, r);
+ }
+
+ // --- l'échange : le tracteur 1 pose sa benne, le tracteur 2 la reprend ---
+ dit('échange de benne', await p.evaluate(()=>{
+   const a=engins[0], bq=engins[1];
+   const o=decrocher(a);                       // a lâche la benne où il est
+   driven=bq.pid; syncFleet();
+   const w=pilote(), ball=pointAttelage(w);
+   w.pos.x+=o.x-ball.x; w.pos.z+=o.z-ball.z; w.h.position.set(w.pos.x,0,w.pos.z);
+   const got=raccrocher(w);
+   return { repris:!!got, porteurA:engins[0].outil, porteurB:engins[1].outil,
+            capA:capDe(engins[0]), capB:capDe(engins[1]) };
  }));
 
- // --- reprise : acheter mieux rend la moitié de l'ancienne ---
- dit('reprise du semoir', await p.evaluate(()=>{
-   coins=40000; const avant=coins, r=acheterEngin('sow',2);
-   return { paye:r&&r.net, reprise:r&&r.reprise, niveau:nivDe.sow,
-            largeur:fleet.sow.g.userData.tool.W, debit:avant-coins };
+ // --- chaque pièce monte en gamme de son côté ---
+ dit('améliorations séparées', await p.evaluate(()=>{
+   coins=200000;
+   const t=engins[0], sol=outils.find(o=>o.type==='sol'), m=engins.find(v=>v.kind==='moiss');
+   ameliorerEngin(t.pid); ameliorerOutil(sol.oid); ameliorerBec(m.pid);
+   return { tracteur:engins[0].niv, outilSol:outils.find(o=>o.type==='sol').niv,
+            moissNiv:engins.find(v=>v.kind==='moiss').niv,
+            moissBec:engins.find(v=>v.kind==='moiss').bec,
+            coupe:engins.find(v=>v.kind==='moiss').g.userData.tool.W };
  }));
 
- // --- une benne trop lourde pour le tracteur de transport reste en vente barrée ---
- dit('22 m³ avec transport compact', await p.evaluate(()=>({
-   compatible:benneCompatible(benneDef('b22')), nivTransport:nivDe.trailer })));
- dit('après transport grande puissance', await p.evaluate(()=>{
-   acheterEngin('trailer',2);
-   return { compatible:benneCompatible(benneDef('b22')), nivTransport:nivDe.trailer };
+ // --- une benne trop lourde ne se pose pas derrière un tracteur trop léger ---
+ dit('règle de puissance', await p.evaluate(()=>{
+   const b22=acheterOutil('benne',2);            // 22 m³ : demande un tracteur de niveau 2
+   const petit=acheterPorteur('tracteur',0), fort=acheterPorteur('tracteur',2);
+   return { besoin:OUTILS.benne.force[2],
+            compactRefuse:!tirable(b22,petit), grosAccepte:tirable(b22,fort) };
  }));
 
  // --- sauvegarde et relecture ---
  const sv = await p.evaluate(()=>{ save();
    return JSON.parse(localStorage.getItem('ferme.cycle.v1')); });
- dit('sauvegarde', {niv:sv.niv, bennes:sv.bennes, benneAtt:sv.benneAtt, posees:sv.posees.length});
+ dit('sauvegarde', {engins:sv.engins.length, outils:sv.outils.length, conduit:sv.conduit});
  await p.reload({waitUntil:'load'});
  await p.waitForFunction(()=>typeof window.__FARM_DEBUG==='function',null,{timeout:60000});
  await p.waitForTimeout(2500);
  dit('après rechargement', await p.evaluate(()=>({
-   niv:__FARM_DEBUG().niv, flotte:__FARM_DEBUG().flotte.map(f=>f.k),
-   trCap:TRCAP, posees:bennesPosees.length })));
+   engins:engins.map(v=>({id:v.pid,k:v.kind,n:v.niv,o:v.outil,m:v.metier})),
+   outils:outils.map(o=>({id:o.oid,t:o.type,n:o.niv,p:o.porteur||0})),
+   obst:OBST.length })));
 
  const n = await p.evaluate(()=>{openPanel('parc');
    return document.querySelectorAll('#body .card').length;});
@@ -71,7 +103,6 @@ const D=__dirname+'/sorties/';
  await p.waitForTimeout(900);
  await p.screenshot({path:D+'parc-onglet.png'});
  await p.evaluate(()=>closePanel());
-
  console.log(err.length?('\nERREURS :\n'+err.join('\n')):'\naucune erreur de page');
  await b.close(); srv.close();
 })();

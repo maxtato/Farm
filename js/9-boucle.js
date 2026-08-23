@@ -18,12 +18,11 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   // Première partie : la parcelle n'a jamais été touchée — c'est une friche, avec ses
   // repousses sèches, pas le chaume d'une moisson qu'on n'a pas faite.
   if (!had){ for(let k=0;k<plants.length;k++) plants[k].r = 2; redrawPlants(); }
-  KINDS.forEach(fleetGet);
   startStage();                              // ni remise à nu ni semence : c'est l'affaire du cycle
-  // On conduit l'engin du chantier s'il existe, sinon le premier qu'on possède ; et si le
-  // parc est vide, le bouton du bas mène droit à la boutique.
-  if (fleet[STAGES[stage].k]) driven = STAGES[stage].k;
-  else { const l = KINDS.filter(possede); if (l.length) driven = l[0]; }
+  // On conduit l'engin du chantier s'il existe, sinon le premier du parc ; et si le parc
+  // est vide, le bouton du bas mène droit à la boutique.
+  { const w = engins.find(v => v.metier === STAGES[stage].k) || engins[0];
+    if (w) driven = w.pid; }
   syncFleet(); drawVeh(); camFollow();
   { const v = pilote(); if (v) camLook.set(v.pos.x, 1, v.pos.z); }
   applyCtrl();
@@ -66,18 +65,20 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
 
   // Toute la flotte roule, pas seulement l'engin conduit : chacun suit son tracé ou son
   // point d'arrivée, et celui du chantier reprend le pilote automatique s'il n'a rien d'autre.
-  for (const k of KINDS){
-    const v = fleet[k]; if (!v) continue;
-    driveOne(v, k === driven, k === S.k, dt);
+  for (let i=0;i<engins.length;i++){
+    const v = engins[i];
+    driveOne(v, v.pid === driven, v.metier === S.k, dt);
   }
   // Et chacun travaille avec son propre outil, là où il passe. Un engin qu'on a laissé sur
   // un tracé continue donc son chantier pendant qu'on en conduit un autre.
-  for (const k of KINDS){
-    const v = fleet[k];
-    if (v && k !== 'trailer' && v.speed > .12) work(v, dt);
+  for (let i=0;i<engins.length;i++){
+    const v = engins[i];
+    // seul un engin qui porte un outil de travail laboure, sème ou fauche : un tracteur
+    // attelé d'une benne roule sans rien poser au sol
+    if (v.metier && v.speed > .12) work(v, dt);
   }
-  if (fleet.harvest && fleet.harvest.g.userData.fill)
-    fleet.harvest.g.userData.fill.scale.y = .02 + fleet.harvest.hop/CAP*.98;
+  engins.forEach(v => { if (v.metier === 'harvest' && v.g.userData.fill)
+    v.g.userData.fill.scale.y = .02 + v.hop/CAP*.98; });
 
   // pousse continue
   let ripe = 0, sown = 0, gsum = 0;
@@ -115,13 +116,14 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
 
   // tracteur de transfert
   // ---------- moisson : la benne se conduit, elle ne vient plus toute seule ----------
-  const combine = (worker && worker.kind === 'harvest') ? worker : null;
+  const combine = (worker && worker.metier === 'harvest') ? worker : null;
   const cFull = !!combine && (combine.hop >= CAP - .5 || (combine.done && combine.hop > .5));
 
 
   // transfert : uniquement quand la benne est venue se ranger sous la goulotte
   let vidange = false;
-  if (combine && hauler && combine.hop > .5 && hauler.hop < TRCAP - .5){
+  const trCap = hauler ? capDe(hauler) : 0;
+  if (combine && hauler && combine.hop > .5 && hauler.hop < trCap - .5){
     combine.h.updateMatrixWorld(true); hauler.h.updateMatrixWorld(true);
     combine.g.userData.spout.getWorldPosition(_spout);
     hauler.g.userData.bin.getWorldPosition(_bin);
@@ -130,7 +132,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
     if (gap < 3.4 && deployee) vidange = true;
   }
   if (vidange){
-    const give = Math.min(combine.hop, 150*dt, TRCAP-hauler.hop);
+    const give = Math.min(combine.hop, 150*dt, trCap-hauler.hop);
     combine.hop -= give; hauler.hop += give;
     // débit calé sur le temps, pas sur l'image : sinon le jet sature à 60 fps
     if (give > 0 && Math.random() < Math.min(.9, dt*30))
@@ -144,7 +146,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   if (combine){
     const a = combine.g.userData.auger;
     const reste = combine.hop > .5;
-    const place = !!hauler && hauler.hop < TRCAP - .5;
+    const place = !!hauler && hauler.hop < trCap - .5;
     const dist = hauler ? combine.pos.distanceTo(hauler.pos) : 1e9;
     combine.augWant = cFull || vidange ||
                       (reste && place && dist < (combine.augWant ? 17 : 13));
@@ -176,7 +178,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
       if (hauler.hop <= .2){ hauler.cropId = crop().id; sfx('cash'); save(); toast('Benne vidée au silo', 'good'); }
     }
     const rf = hauler.g.userData.fill;                  // benne ouverte : vide, on doit voir le fond
-    if (rf){ rf.visible = hauler.hop > .5; rf.scale.y = .01 + hauler.hop/TRCAP*.99; }
+    if (rf && trCap){ rf.visible = hauler.hop > .5; rf.scale.y = .01 + hauler.hop/trCap*.99; }
   }
 
   // le joueur est prévenu une seule fois par remplissage
@@ -258,12 +260,12 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   else if (S.k === 'sow'){   gf = (cellN[2]+cellN[3])/NC;          gl = 'Semis ' + Math.round(gf*100) + ' %'; }
   else if (S.k === 'fert'){  gf = cellN[3]/NC;                     gl = 'Engrais ' + Math.round(gf*100) + ' %'; }
   else if (S.k === 'grow'){  gf = sown ? ripe/sown : 0;            gl = 'Maturité ' + Math.round(gf*100) + ' %'; }
-  else if (driven === 'trailer' && hauler){
-    // décroché, le tracteur ne porte rien : la jauge le dit au lieu d'afficher NaN
-    gf = TRCAP ? hauler.hop/TRCAP : 0;
-    gl = TRCAP ? 'Benne ' + Math.round(gf*100) + ' %' : 'Sans benne';
+  else if (pilote() && pilote().g.userData.benne){
+    const q = pilote(), c = capDe(q);
+    gf = c ? q.hop/c : 0;
+    gl = c ? 'Benne ' + Math.round(gf*100) + ' %' : 'Sans benne';
   }
-  else {                     gf = combine ? combine.hop/CAP : (hauler && TRCAP ? hauler.hop/TRCAP : 0);
+  else {                     gf = combine ? combine.hop/CAP : (hauler && trCap ? hauler.hop/trCap : 0);
                              gl = (combine ? 'Trémie ' : 'Benne ') + Math.round(gf*100) + ' %'; }
   elGauge.firstElementChild.style.width = (gf*100).toFixed(1) + '%';
   elGVal.textContent = gl;
@@ -272,7 +274,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   if (pathState === 'trace') drawPathBtn();      // le bouton compte les points qui restent
   { const v = pilote();                           // le triangle de sélection
     if (v){ MARK.visible = true;
-            MARK.position.set(v.pos.x, (v.gy||0) + (v.kind==='harvest'?4.9:3.9) + Math.sin(now*2.4)*.2, v.pos.z);
+            MARK.position.set(v.pos.x, (v.gy||0) + (v.metier==='harvest'?4.9:3.9) + Math.sin(now*2.4)*.2, v.pos.z);
             MARK.quaternion.copy(camera.quaternion); }
     else MARK.visible = false; }
   if (PING.m.visible){                            // le repère du double-appui s'efface seul
@@ -306,7 +308,7 @@ window.__FARM_DEBUG = () => ({
     for(const b of v.corps){
       const cx = v.pos.x + sn*b[0], cz = v.pos.z + cs*b[0];
       for(const o of OBST) pire = Math.max(pire, (b[1]+o.r) - Math.hypot(cx-o.x, cz-o.z));
-      for(const k of KINDS){ const w = fleet[k]; if (!w || w===v) continue;
+      for(const w of engins){ if (w===v) continue;
         const ws = Math.sin(w.heading), wc = Math.cos(w.heading);
         for(const c of w.corps)
           pire = Math.max(pire, (b[1]+c[1]) - Math.hypot(cx-(w.pos.x+ws*c[0]), cz-(w.pos.z+wc*c[0])));
@@ -314,7 +316,7 @@ window.__FARM_DEBUG = () => ({
     }
     return +pire.toFixed(2);
   })(),
-  trav:(function(){ const o={}; for(const k of KINDS){ const v=fleet[k]; if(v) o[k]=+v.trav.toFixed(2); } return o; })(),
+  trav:(function(){ const o={}; engins.forEach(v => { o[v.pid] = +v.trav.toFixed(2); }); return o; })(),
   grains:+GRAIN.value.toFixed(3),
   ruban:SWATH.pose(),
   sauts:(function(){ const v = pilote(); return v ? (v.sauts||0) : 0; })(),
@@ -323,7 +325,7 @@ window.__FARM_DEBUG = () => ({
     const sn = Math.sin(v.heading), cs = Math.cos(v.heading); let m = 1e9;
     for(const b of v.corps){ const cx = v.pos.x + sn*b[0], cz = v.pos.z + cs*b[0];
       for(const o of OBST) m = Math.min(m, Math.hypot(cx-o.x, cz-o.z) - b[1] - o.r);
-      for(const k of KINDS){ const w = fleet[k]; if (!w || w===v) continue;
+      for(const w of engins){ if (w===v) continue;
         const ws = Math.sin(w.heading), wc = Math.cos(w.heading);
         for(const c of w.corps)
           m = Math.min(m, Math.hypot(cx-(w.pos.x+ws*c[0]), cz-(w.pos.z+wc*c[0])) - b[1] - c[1]); } }
@@ -363,23 +365,24 @@ window.__FARM_DEBUG = () => ({
   incl:Math.round(PITCH*180/Math.PI),
   conduit:driven, benneLa:!!hauler, benne:hauler ? Math.round(hauler.hop) : -1,
   // la flotte présente sur la carte : clé, position, points de tracé restants, but désigné
-  flotte:KINDS.filter(k=>fleet[k]).map(k=>({k, x:+fleet[k].pos.x.toFixed(1), z:+fleet[k].pos.z.toFixed(1),
-          v:+fleet[k].speed.toFixed(1), tr:traceLeft(fleet[k]),
-          but:fleet[k].goto ? [+fleet[k].goto.x.toFixed(1), +fleet[k].goto.z.toFixed(1)] : null})),
+  flotte:engins.map(v=>({id:v.pid, k:v.kind, m:v.metier, n:v.niv,
+          x:+v.pos.x.toFixed(1), z:+v.pos.z.toFixed(1),
+          v:+v.speed.toFixed(1), tr:traceLeft(v),
+          but:v.goto ? [+v.goto.x.toFixed(1), +v.goto.z.toFixed(1)] : null})),
   bx:+(hauler ? hauler.pos.x : 0).toFixed(1), bz:+(hauler ? hauler.pos.z : 0).toFixed(1),
-  capMax:Math.round(CAP), trCapMax:Math.round(TRCAP),
+  capMax:Math.round(CAP), trCapMax:hauler ? capDe(hauler) : 0,
   vis:+(worker && worker.g.userData.auger ? worker.g.userData.auger.rotation.y : -1).toFixed(2),
   // écart goulotte -> benne : c'est lui qui déclenche le transfert, pas la distance des engins
   ecart:(function(){
-    if (!worker || worker.kind !== 'harvest' || !hauler || !hauler.g.userData.bin) return -1;
+    if (!worker || worker.metier !== 'harvest' || !hauler || !hauler.g.userData.bin) return -1;
     worker.h.updateMatrixWorld(true); hauler.h.updateMatrixWorld(true);
     const a = new THREE.Vector3(), b = new THREE.Vector3();
     worker.g.userData.spout.getWorldPosition(a); hauler.g.userData.bin.getWorldPosition(b);
     return +Math.hypot(a.x-b.x, a.z-b.z).toFixed(2);
   })(),
   capBenne:+(hauler ? hauler.heading : 0).toFixed(3),
-  niv:Object.assign({}, nivDe), benneAtt, posees:bennesPosees.map(r => ({ id:r.id, x:+r.x.toFixed(1), z:+r.z.toFixed(1),
-          hop:Math.round(r.hop) })),
+  outils:outils.map(o => ({ id:o.oid, t:o.type, n:o.niv, p:o.porteur||0,
+          x:+o.x.toFixed(1), z:+o.z.toFixed(1), hop:Math.round(o.hop) })),
   largOutil:+(worker && worker.g.userData.tool ? worker.g.userData.tool.W : 0).toFixed(1),
   grain:grains.reduce((n,d)=>n+(d.m.visible?1:0),0),
   terre:SOIL.live(), graines:SEED.live(), gouttes:spray.reduce((n,d)=>n+(d.m.visible?1:0),0),
