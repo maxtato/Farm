@@ -425,7 +425,7 @@ function majOutilPose(o){
   f.visible = o.hop > .5; f.scale.y = .01 + Math.min(1, o.hop/cap)*.99;
 }
 // Une pièce neuve arrive rangée au fond de la cour : on va la chercher avec un tracteur.
-const placeOutil = n => ({ x: GATE.x - 12 + (n % 7)*6.2, z: YARD + 24, ang: Math.PI });
+const placeOutil = n => ({ x: GATE.x - 12 + (n % 7)*6.2, z: YARD + 19, ang: Math.PI });
 function creerOutil(type, niv){
   const D = OUTILS[type]; if (!D) return null;
   const q = placeOutil(outils.filter(o => !o.porteur).length);

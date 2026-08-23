@@ -394,7 +394,9 @@ const parcelles = [];                     // contours des champs en friche, pour
 // La parcelle de départ, la cour et le hameau occupent déjà le centre. Rien de la campagne
 // ne s'y pose : ni champ, ni arbre. La ferme se retrouve dans une clairière d'herbe au
 // milieu du bocage, au lieu d'être bâtie au beau milieu d'une friche.
-const ZJ = { x0:-52, x1:52, z0:Z0-16, z1:YARD+32 };
+// La clairière de la ferme : le corps de ferme de la carte, la cour et la parcelle de
+// travail. Aucun champ de la campagne ne s'y pose.
+const ZJ = { x0:-126, x1:-40, z0:-126, z1:6 };
 const zoneJoueur = (x, z) => x > ZJ.x0 && x < ZJ.x1 && z > ZJ.z0 && z < ZJ.z1;
 // Un îlot ne se juge pas à son centre : un grand champ dont le milieu tombe au loin peut
 // très bien recouvrir la ferme. C'est son emprise entière qu'il faut regarder.
@@ -507,20 +509,30 @@ function mordSurLaFerme(pts){
     const bd = ruban(pts, 8.4, '#9db354', .04, true); if (bd) scene.add(bd);
     const md = ruban(pts, 5.6, '#c9b184', .07, true); if (md) scene.add(md);
   });
-  // ---------- les bois ----------
+  // ---------- le mobilier de la carte ----------
+  // Ni bois ni arbres engendrés : la carte a les siens, relevés un par un avec leur
+  // essence, leur orientation et leur taille. On les repose exactement là où ils étaient.
   const ESP = [chene, peuplier, sapin, pommier, buisson];
-  blocs.forEach(B => {
-    if (B.type !== 'foret' && B.type !== 'prairie') return;
-    const n = B.type === 'foret' ? Math.round(14 + B.aire*10) : 6 + ((R()*7)|0);
+  const rnd = alea(31);
+  BATIMENTS.forEach(([f, x, z, ry, sc]) => {
+    const b = BATS[f]; if (!b) return;
+    const g = poserBatiment(b, x, z, ry);
+    if (sc && sc !== 1) g.scale.setScalar(sc);
+  });
+  ARBRES.forEach(([e, n, x, z, ry, sc]) => {
+    const g = new THREE.Group();
     for(let k=0;k<n;k++){
-      const x = B.c.cx + (R()-.5)*B.c.w*.8, z = B.c.cz + (R()-.5)*B.c.d*.8;
-      if (zoneJoueur(x, z)) continue;
-      const g = new THREE.Group();
-      g.add(ESP[B.type === 'foret' ? [0,2,2,4][(R()*4)|0] : (R()*5)|0]());
-      g.position.set(x,0,z); g.rotation.y = R()*6.28; g.scale.setScalar(.8+R()*.5);
-      g.traverse(o => { if(o.isMesh){ o.castShadow = true; o.receiveShadow = true; } });
-      scene.add(g);
-      addObst(x, z, 1.1);                                   // un arbre, ça se contourne
+      const t = ESP[e]();
+      // un bosquet, c'est plusieurs pieds serrés autour du même point
+      if (n > 1){ const a = rnd()*6.283, r = rnd()*8;
+                  t.position.set(Math.cos(a)*r, 0, Math.sin(a)*r); }
+      t.rotation.y = rnd()*6.28; t.scale.setScalar(.8 + rnd()*.5);
+      g.add(t);
     }
+    g.position.set(x, 0, z); g.rotation.y = ry || 0;
+    if (sc && sc !== 1) g.scale.setScalar(sc);
+    g.traverse(o => { if(o.isMesh){ o.castShadow = true; o.receiveShadow = true; } });
+    scene.add(g);
+    addObst(x, z, n > 1 ? 6 : 1.1);            // un bosquet se contourne d'un bloc
   });
 })();

@@ -66,7 +66,12 @@ function groundH(x,z){
         + Math.sin((x+z)*1.11)*.16) * .055;
 }
 const P = 44, NS = 256, CS = P/NS;                 // cellules de 17 cm : le passage a un bord net
-const X0 = -P/2, Z0 = -P/2 - 6, YARD = Z0 + P + 9;
+// La ferme n'est plus au centre du monde : elle est posée sur la carte, au corps de ferme
+// dont le hangar sert de point de départ. Tout le reste — parcelle jouable, parc, silo —
+// se cale autour de lui.
+const HANGAR = { x:-108.41, z:-69.07 };
+const X0 = -112, Z0 = -46;                  // la parcelle de travail, juste au sud du corps de ferme
+const YARD = -72;                           // la cour, devant le hangar
 const cell = new Uint8Array(NS*NS);           // état du sol : logique seule, plus aucun rendu par texture
 function cellIndex(x,z){
   const ix = Math.floor((x-X0)/CS), jz = Math.floor((z-Z0)/CS);
@@ -151,9 +156,6 @@ function herbeY(x, z){
   pos.needsUpdate = true; geo.computeVertexNormals();
   const g = new THREE.Mesh(geo, gouache(new THREE.MeshLambertMaterial({map:t}), .4, true));
   g.rotation.x = -Math.PI/2; g.receiveShadow = true; g.renderOrder = -13; scene.add(g);
-  const y = new THREE.Mesh(new THREE.PlaneGeometry(80,16),
-                           gouache(new THREE.MeshLambertMaterial({color:'#a9b06b'}), .42, true));
-  y.rotation.x = -Math.PI/2; y.position.set(0,.01,YARD+4); y.receiveShadow = true; y.renderOrder = -12; scene.add(y);
 })();
 // Les touffes : des paquets de brins en volume, posés autour de l'aire de jeu seulement —
 // couvrir quatre cents mètres de côté à cette densité coûterait trois cent mille objets.
@@ -520,28 +522,15 @@ const SWATH = (function(){
 })();
 
 // ---------- ferme ----------
-const SILO = new THREE.Vector3(9,0,YARD+3), GATE = new THREE.Vector3(-2,0,YARD-2);
+// Le silo de la carte le plus proche du hangar reçoit la récolte ; la barrière est le
+// point de ralliement, entre la cour et le champ.
+const SILO = new THREE.Vector3(-50.5,0,-77.8), GATE = new THREE.Vector3(-100,0,-56);
 // Les obstacles du décor, relevés en même temps qu'on les pose : de simples disques, qui
 // suffisent à des engins vus de dessus. Un bâtiment long en aligne plusieurs.
 const OBST = [];
 function addObst(x,z,r){ OBST.push({ x, z, r }); }
-(function(){
-  const g = new THREE.Group(); g.position.set(-9,0,YARD+4); scene.add(g);
-  rbox(9,4.4,6, C.barn, 0,2.2,0, g, .25);
-  for(let i=-1;i<=1;i++) addObst(-9 + i*3, YARD+4, 3.1);        // la grange, en trois disques
-  const roof = new THREE.Mesh(new THREE.CylinderGeometry(4.3,4.3,6.4,3,1,false), mat(C.roof));
-  roof.rotation.set(Math.PI/2,0,Math.PI/2); roof.position.y = 5; roof.castShadow = true; g.add(roof);
-  rbox(2.4,2.8,.25, C.dark, 0,1.4,3.05, g, .08);
-  for(let i=0;i<3;i++){ cyl(.85,.85,1.3,10, C.gold, 6+i*.4,.85,2.2-i*2, g).rotation.z = Math.PI/2;
-                        addObst(-9+6+i*.4, YARD+4+2.2-i*2, 1); }   // les bottes contre la grange
-})();
-(function(){
-  const g = new THREE.Group(); g.position.copy(SILO); scene.add(g);
-  cyl(2,2,10,14, C.siloC, 0,5,0, g);
-  cyl(0,2.2,2,14, C.metal, 0,11,0, g);
-  rbox(1.3,3.4,1.3, C.metal, 2.5,1.7,0, g, .15);
-  addObst(SILO.x, SILO.z, 2.3);
-  addObst(SILO.x+2.5, SILO.z, 1.1);
-})();
+// La grange rouge et le silo de béton ont disparu : la ferme n'est plus un décor posé
+// autour d'une parcelle, c'est un vrai corps de ferme de la carte — hangar, auvent,
+// maisons, longère et silos, aux places relevées dans js/3d-mobilier.js.
 // Les arbres ne sont plus semés au hasard autour de la parcelle : c'est la campagne
 // engendrée qui les pose, dans ses bois et ses prairies. Voir js/3c-carte.js.

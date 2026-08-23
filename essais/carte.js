@@ -16,6 +16,7 @@ const LOG=D+'carte.log';
  await p.evaluate(()=>{['top','bot'].forEach(k=>document.getElementById(k).style.opacity='0');
                        if(panelOpen())closePanel();});
  dit('carte :', await p.evaluate(()=>({ parcelles:parcelles.length, obstacles:OBST.length,
+                                        batiments:BATIMENTS.length, arbres:ARBRES.length,
                                         tri:__FARM_DEBUG().tri, appels:__FARM_DEBUG().appels })));
  const vue = async (nom, z, pi, cx, cz) => {
    await p.evaluate(q=>{ camLook.set(q[2],1,q[3]); zoom=q[0]; PITCH=q[1]*Math.PI/180;
@@ -23,8 +24,8 @@ const LOG=D+'carte.log';
    await p.waitForTimeout(5000);
    await p.screenshot({path:D+nom}); dit('->',nom);
  };
- await vue('carte-vue.png', .14, 62, 0, 0);          // toute la campagne
- await vue('carte-ferme.png', .55, 46, 0, 10);       // la ferme du joueur au milieu du bocage
- await vue('carte-pres.png', 1.1, 40, -80, -60);     // une parcelle de friche de près
+ await vue('carte-vue.png', .14, 62, 0, 0);              // toute la campagne
+ await vue('carte-ferme.png', .5, 44, -95, -60);         // le corps de ferme et son hangar
+ await vue('carte-pres.png', 1.0, 40, -108, -69);        // le hangar de départ, de près
  await b.close(); srv.close();
 })();

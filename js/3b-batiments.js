@@ -46,6 +46,68 @@ function huisserie(w,h,x,y,z,p,garage){
   }
 }
 
+// ---------- le hangar traversant et l'auvent, repris de la carte ----------
+// Le hangar est le point de départ du joueur : c'est de là qu'il sort ses engins.
+function bardage(w,h,d,col,x,y,z,p,n){      // mur avec nervures verticales
+  rbox(w,h,d, col, x,y,z, p, .05);
+  for(let i=0;i<n;i++)
+    rbox(.1,h*.94,.06, BAT.murOmbre, x-w/2+ (i+.5)*w/n, y, z+d/2+.02, p, .02);
+}
+
+// 1 · hangar traversant
+function hangar(){
+  const g = new THREE.Group();
+  const W = 12, D = 16, H = 5.2, OP = 6.4, OH = 4.6;
+  rbox(W+1.2,.22,D+1.2, BAT.beton, 0,.11,0, g, .05).receiveShadow = true;
+  bardage(.35,H,D, BAT.toitTole,  W/2,H/2,0, g, 14);      // longs pans
+  bardage(.35,H,D, BAT.toitTole, -W/2,H/2,0, g, 14);
+  [1,-1].forEach(s => {                                 // pignons percés d'une grande ouverture
+    const sw = (W-OP)/2;
+    rbox(sw,H,.35, BAT.toitTole, -(OP+sw)/2,H/2,s*D/2, g, .05);
+    rbox(sw,H,.35, BAT.toitTole,  (OP+sw)/2,H/2,s*D/2, g, .05);
+    rbox(OP+.3,H-OH,.4, BAT.toitTole, 0,OH+(H-OH)/2,s*D/2, g, .05);
+    rbox(OP+.5,.28,.5, BAT.ferronnerie, 0,OH,s*D/2, g, .06);    // linteau
+    rbox(.3,OH,.5, BAT.ferronnerie, -OP/2,OH/2,s*D/2, g, .06);
+    rbox(.3,OH,.5, BAT.ferronnerie,  OP/2,OH/2,s*D/2, g, .06);
+  });
+  prism(W+.7,2.6,D, BAT.toitTole, 0,H,0, g);
+  panToit(W+.7,2.6,D, '#48525c', 0,H,0, g, .45);
+  for(let i=0;i<6;i++){                                 // pannes visibles sous le toit
+    rbox(W-.4,.16,.16, BAT.ferronnerie, 0,H-.15,-D/2+1.4+i*(D-2.8)/5, g, .04);
+  }
+  rbox(.3,.3,D+1, BAT.ferronnerie, 0,H+2.62,0, g, .06);          // faîtage, dans l'axe du bâtiment
+  // On entre d'un pignon et on ressort de l'autre : seules les deux longues parois
+  // arrêtent un engin, sinon le hangar serait un bloc et n'aurait aucun intérêt.
+  g.userData.obst = [];
+  [-5.4,0,5.4].forEach(dz => { g.userData.obst.push([ W/2, dz, 1.5], [-W/2, dz, 1.5]); });
+  return g;
+}
+
+// 2 · auvent : un toit, quatre pieds
+function auvent(){
+  const g = new THREE.Group();
+  const W = 9, D = 12, H = 4.6;
+  rbox(W+1,.2,D+1, BAT.beton, 0,.1,0, g, .05);
+  [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([sx,sz]) => {
+    rbox(.42,H,.42, BAT.ferronnerie, sx*(W/2-.3),H/2,sz*(D/2-.3), g, .07);
+    // du poteau (y = H-1,2) jusqu'à la poutre (y = H) : les deux extrémités touchent
+    const b1 = rbox(.2,.2,1.7, BAT.ferronnerie, sx*(W/2-.3), H-.6, sz*(D/2-.9), g, .05);
+    b1.rotation.x = sz*Math.PI/4;
+    const b2 = rbox(1.7,.2,.2, BAT.ferronnerie, sx*(W/2-.9), H-.6, sz*(D/2-.3), g, .05);
+    b2.rotation.z = sx*2.356;
+  });
+  rbox(W+.2,.24,.24, BAT.ferronnerie, 0,H,-D/2+.3, g, .05);
+  rbox(W+.2,.24,.24, BAT.ferronnerie, 0,H, D/2-.3, g, .05);
+  rbox(.24,.24,D+.2, BAT.ferronnerie,  W/2-.3,H,0, g, .05);
+  rbox(.24,.24,D+.2, BAT.ferronnerie, -W/2+.3,H,0, g, .05);
+  prism(W+.9,1.9,D+.9, BAT.toitTole, 0,H+.12,0, g);
+  panToit(W+.9,1.9,D+.9, '#48525c', 0,H+.12,0, g, .4);
+  g.userData.obst = [[1,1],[1,-1],[-1,1],[-1,-1]].map(([sx,sz]) =>
+    [sx*(W/2-.3), sz*(D/2-.3), .7]);                    // seulement les quatre pieds
+  return g;
+}
+
+
 // ---------- 1 · maison de ferme ----------
 function maisonFerme(){
   const g = new THREE.Group();
@@ -226,8 +288,9 @@ function poserBatiment(f, x, z, ang){
   scene.add(g);
   const c = Math.cos(ang||0), s = Math.sin(ang||0);
   // on garde la trace des disques posés : un bâtiment qu'on remplace doit pouvoir les rendre
-  g.userData.disques = (g.userData.obst || []).map(([off,r]) => {
-    const q = { x:x + c*off, z:z - s*off, r }; OBST.push(q); return q;
+  g.userData.disques = (g.userData.obst || []).map(o => {
+    const dx = o[0], dz = o.length > 2 ? o[1] : 0, r = o[o.length-1];
+    const q = { x:x + c*dx + s*dz, z:z - s*dx + c*dz, r }; OBST.push(q); return q;
   });
   return g;
 }
@@ -237,12 +300,8 @@ function retirerBatiment(g){
   scene.remove(g); libere(g);
 }
 
-// ---------- le hameau : trois bâtiments posés au bord de la parcelle ----------
-// Ils occupent la partie ouest de la cour, entre le champ et la grange : la ferme et la
-// petite maison en première ligne, portes tournées vers la parcelle, la longère derrière.
-poserBatiment(maisonFerme,  -33, YARD + 1,  Math.PI);
-poserBatiment(maisonPetite, -22, YARD,      Math.PI);
-poserBatiment(longere,      -28, YARD + 10, Math.PI);
+// Plus de hameau posé d'office au bord de la parcelle : les bâtiments de la ferme sont
+// ceux de la carte, relevés un par un dans js/3d-mobilier.js.
 
 // ---------- les deux silos, à acheter ----------
 // Ils ne sont pas là au départ : on les monte quand on peut se les payer. Chacun ajoute un
@@ -253,9 +312,9 @@ poserBatiment(longere,      -28, YARD + 10, Math.PI);
 // ajoute un point de déchargement et fait monter le prix payé, puisqu'on peut garder la
 // récolte au lieu de la brader à la moisson.
 const SILOS = [
-  { n:'Silo', emo:'🏚️', prix:6800, f:siloPetit, x:18, z:YARD - 1, ang:0, prime:.08,
+  { n:'Silo', emo:'🏚️', prix:6800, f:siloPetit, x:GATE.x + 34, z:YARD + 2, ang:0, prime:.08,
     d:'deux cellules sur pieds — +8 % sur le prix payé' },
-  { n:'Grand silo', emo:'🏢', prix:16500, f:siloGrand, x:31, z:YARD + 1, ang:0, prime:.18,
+  { n:'Grand silo', emo:'🏢', prix:16500, f:siloGrand, x:GATE.x + 48, z:YARD + 4, ang:0, prime:.18,
     d:'cellule métallique de 9 m — +18 % sur le prix payé' }
 ];
 let siloBati = null, siloDepot = null;
@@ -278,3 +337,7 @@ function montreSilo(niv){
   DEPOTS.push(siloDepot);
   return g;
 }
+
+// Les modèles de la carte, appelables par leur nom tel qu'il est relevé dans le mobilier.
+const BATS = { maisonFerme, maisonPetite, longere, hangar, auvent,
+               siloTole:siloGrand, siloCellules:siloPetit };
