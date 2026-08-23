@@ -1,5 +1,8 @@
-const CACHE = "ferme-v1";
-const SHELL = ["/", "/index.html", "/vendor/three.min.js", "/icon.svg", "/manifest.json"];
+const CACHE = "ferme-v2";
+const SHELL = ["/", "/index.html", "/vendor/three.min.js", "/icon.svg", "/manifest.json",
+  "/js/1-base.js", "/js/2-engins.js", "/js/3-terrain.js", "/js/4-cultures.js",
+  "/js/5-effets.js", "/js/6-cycle.js", "/js/7-interface.js", "/js/8-conduite.js",
+  "/js/9-boucle.js"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
