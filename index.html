@@ -1484,6 +1484,78 @@ chunks.forEach(c => {
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(m);
   });
 });
+
+// ---------- les mottes : le relief de la terre, en volumes ----------
+// L'état du sol ne se joue plus seulement sur la couleur du ruban. La parcelle porte de
+// vraies mottes, qui prennent la lumière et portent leur ombre, et qui changent de taille,
+// de teinte et d'alignement selon ce qu'on vient de faire à la terre : tassées et grises
+// sur la friche, grosses et fraîches derrière la déchaumeuse — rangées le long des sillons —
+// cassées menu une fois le lit de semence rappuyé, et assombries quand on mouille.
+// Quatre tuiles de côté seulement : le sol est bas en triangles, mieux vaut peu d'appels.
+const MN = 4, MH = P/MN, MSP = .58;                     // trois mottes au mètre carré
+const mottes = [], mtiles = [];
+for(let j=0;j<MN;j++) for(let i=0;i<MN;i++)
+  mtiles.push({ cx:X0+(i+.5)*MH, cz:Z0+(j+.5)*MH, list:[] });
+for(let x=X0+MSP/2; x<X0+P; x+=MSP)
+  for(let z=Z0+MSP/2; z<Z0+P; z+=MSP){
+    const px = x+(Math.random()-.5)*MSP*.85, pz = z+(Math.random()-.5)*MSP*.85;
+    if (parcelInset(px,pz) < .35) continue;
+    const ci = Math.min(MN-1,Math.floor((pz-Z0)/MH))*MN + Math.min(MN-1,Math.floor((px-X0)/MH));
+    const ti = cellIndex(px,pz);
+    if (ti < 0) continue;                      // hors de la grille : pas de motte
+    mottes.push({ x:px, z:pz, y:parcelY(px,pz), ti, ci,
+                  rx:Math.random()*3.1, ry:Math.random()*3.1, rz:Math.random()*3.1,
+                  u:Math.random(), ton:Math.random() < .5 ? 0 : 1, e:-1,
+                  i:mtiles[ci].list.length });
+    mtiles[ci].list.push(mottes.length-1);
+  }
+// par état : taille mini et maxi, et les deux tons qui se répondent
+const MOTTE = [
+  { s:[.26,.46], c:['#7a6a45','#94855c'] },   // 0 · friche, terre grise et tassée
+  { s:[.32,.60], c:['#7d6039','#8a6a3f'] },   // 1 · labouré, la motte est retournée
+  { s:[.15,.29], c:['#7c5f3d','#8a6c47'] },   // 2 · semé, lit rappuyé, motte cassée menu
+  { s:[.15,.29], c:['#5c452b','#684f34'] }    // 3 · fertilisé, la même en mouillée
+];
+const SILLON = .46;                                     // un sillon tous les 46 cm
+(function(){
+  const geo = new THREE.IcosahedronGeometry(.5, 0);
+  mtiles.forEach(t => {
+    const m = new THREE.InstancedMesh(geo,
+      gouache(new THREE.MeshPhongMaterial({ flatShading:true, shininess:0,
+                specular:new THREE.Color(0,0,0) }), .3, true),
+      Math.max(1, t.list.length));
+    m.position.set(t.cx, 0, t.cz);
+    m.castShadow = true; m.receiveShadow = true;
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.renderOrder = -6;
+    scene.add(m); t.mesh = m;
+  });
+})();
+const _mc = new THREE.Color();
+function writeMotte(k){
+  const m = mottes[k], t = mtiles[m.ci], e = cell[m.ti], R = MOTTE[e];
+  // sur le labour, la motte grossit sur la crête du sillon et s'efface dans le creux :
+  // c'est ce qui donne au champ son sens de lecture
+  const k1 = e === 1 ? .74 + .36*Math.sin(m.x/SILLON*6.2832) : 1;
+  const sc = (R.s[0] + m.u*(R.s[1]-R.s[0])) * k1;
+  dummy.position.set(m.x-t.cx, m.y + sc*.22, m.z-t.cz);
+  dummy.rotation.set(m.rx, m.ry, m.rz);
+  dummy.scale.set(sc, sc*.55, sc*1.06);
+  dummy.updateMatrix();
+  t.mesh.setMatrixAt(m.i, dummy.matrix);
+  t.mesh.setColorAt(m.i, _mc.set(R.c[m.ton]));
+  m.e = e; t.sale = true;
+}
+function majMottes(){
+  for(let k=0;k<mottes.length;k++) if (mottes[k].e !== cell[mottes[k].ti]) writeMotte(k);
+  mtiles.forEach(t => {
+    if (!t.sale) return;
+    t.mesh.instanceMatrix.needsUpdate = true;
+    if (t.mesh.instanceColor) t.mesh.instanceColor.needsUpdate = true;
+    t.sale = false;
+  });
+}
+
 const dummy = new THREE.Object3D();
 function writePlant(k){
   const p = plants[k], c = chunks[p.ci];
@@ -2554,7 +2626,8 @@ function primeField(st){
   const state = [0,1,2,3,3][st], g0 = [0,0,.05,.34,1][st], layer = [-1,0,1,2,2][st];
   fillCells(state);
   if (layer >= 0) paintParcel(layer);
-  for(let k=0;k<plants.length;k++){ plants[k].g = g0; plants[k].r = 0; }
+  // la friche garde ses repousses sèches : c'est ce qui la distingue d'une terre travaillée
+  for(let k=0;k<plants.length;k++){ plants[k].g = g0; plants[k].r = state === 0 ? 1 : 0; }
   redrawPlants();
 }
 
@@ -3423,6 +3496,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   if (had && stage > 0) primeField(stage);   // on reprend la parcelle telle que l'étape la suppose
   // Toute la flotte est là dès le lancement, rangée sur la cour à côté du hangar. On ne la
   // découvre plus au fur et à mesure : les cinq engins attendent, on prend celui qu'on veut.
+  if (!had){ for(let k=0;k<plants.length;k++) plants[k].r = 1; redrawPlants(); }
   KINDS.forEach(fleetGet);
   startStage();                              // ni remise à nu ni semence : c'est l'affaire du cycle
   if (fleet[STAGES[stage].k]) driven = STAGES[stage].k;
@@ -3501,6 +3575,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   const mur = sown ? gsum/sown : 0;
   const grainCible = !sown ? 0 : 1 - Math.max(0, Math.min(1, (mur - .15)/.23));
   GRAIN.value += (grainCible - GRAIN.value) * Math.min(1, dt*1.6);
+  majMottes();                              // le sol suit l'état des cellules, image par image
   chunks.forEach(c => {
     if (c.dirty){ c.young.instanceMatrix.needsUpdate = true;
                   c.ripe.instanceMatrix.needsUpdate = true;
