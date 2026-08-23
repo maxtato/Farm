@@ -60,7 +60,7 @@ function traceAdd(v, p){
 function traceClear(v){
   if (!v) return;
   v.path = []; v.head = 0; v.accroche = false; v.prog = undefined; v.progT = 0;
-  v.rate = 0; v.detour = 0; v.sauts = 0;
+  v.rate = 0; v.detour = 0; v.sauts = 0; v.teteT = 0;
   if (v.trace){ v.trace.geo.setDrawRange(0,0); v.trace.mesh.visible = false; }
 }
 function traceLeft(v){ return v && v.path ? Math.max(0, v.path.length - v.head) : 0; }
@@ -87,14 +87,19 @@ function followPath(v, dt){
     if (der && d < 6 && dx*sn0 + dz*cs0 < 0){ v.head++; avance = true; continue; }
     break;
   }
-  // Sauter des points du tracé ne s'autorise que dans un cas : on vient d'être écarté par
-  // un obstacle qu'on allait toucher, et on reprend la ligne plus loin plutôt que de
-  // repartir chercher le point qu'il nous a fait laisser derrière. `detour` ne s'ouvre que
-  // là — voir dodge() — et il se referme en une seconde et des poussières.
-  // Partout ailleurs, et notamment en plein champ vide, on suit le dessin point par point,
-  // tel qu'il a été tracé. C'est tout l'objet du garde-fou.
+  // Sauter des points du tracé ne s'autorise que devant un obstacle, jamais en champ libre.
+  // Deux situations, et pas une de plus :
+  //   — on vient d'être écarté par un obstacle qu'on allait toucher : `detour`, ouvert par
+  //     dodge() sous condition stricte, se referme en une seconde et des poussières ;
+  //   — on est calé contre quelque chose et la tête du tracé n'avance plus. Il fallait ce
+  //     second cas : le premier ne dure pas assez pour contourner un bâtiment entier, et
+  //     l'engin se mettait à raboter le mur en oscillant, sans jamais passer.
+  // Le point visé restant derrière l'obstacle, c'est bien lui qui plaquait l'engin dessus ;
+  // le lâcher est la seule façon d'en sortir. En plein champ, rien de tout cela ne s'ouvre.
   v.detour = Math.max(0, (v.detour || 0) - dt);
-  if (v.head < v.path.length - 1 && v.detour > 0){
+  v.teteT = avance ? 0 : (v.teteT || 0) + dt;
+  const cale = v.teteT > 2.2 && ((v.choc || 0) > 0 || (v.frotte || 0) > 0);
+  if (v.head < v.path.length - 1 && (v.detour > 0 || cale)){
     const t0 = v.head;
     const d0 = Math.hypot(v.path[t0].x-v.pos.x, v.path[t0].z-v.pos.z);
     let j = t0, best = d0;
@@ -114,7 +119,7 @@ function followPath(v, dt){
     return;
   }
   if (v.head > 80){ v.path.splice(0, v.head); v.head = 0; avance = true; }
-  if (avance){ traceDraw(v); v.prog = undefined; v.progT = 0; }   // nouveau point, nouveau compte
+  if (avance){ traceDraw(v); v.prog = undefined; v.progT = 0; v.teteT = 0; }
   const dTete = Math.hypot(v.path[v.head].x-v.pos.x, v.path[v.head].z-v.pos.z);
   // accroché : on est arrivé sur la ligne. À partir de là, plus de raccourci sans obstacle.
   if (dTete < 3) v.accroche = true;
