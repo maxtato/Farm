@@ -391,12 +391,13 @@ function alea(seed){ return function(){ seed |= 0; seed = seed + 0x6D2B79F5 | 0;
 // la même. Les routes suivent le contour de chaque îlot, jamais le milieu d'une parcelle.
 const CARTE = { n:7, taille:540, gigue:.32, seed:7 };
 const parcelles = [];                     // contours des champs en friche, pour la suite
+const routes = [];                        // axes des chemins et des routes, pour le calage
 // La parcelle de départ, la cour et le hameau occupent déjà le centre. Rien de la campagne
 // ne s'y pose : ni champ, ni arbre. La ferme se retrouve dans une clairière d'herbe au
 // milieu du bocage, au lieu d'être bâtie au beau milieu d'une friche.
 // La clairière de la ferme : le corps de ferme de la carte, la cour et la parcelle de
 // travail. Aucun champ de la campagne ne s'y pose.
-const ZJ = { x0:-126, x1:-40, z0:-126, z1:6 };
+const ZJ = { x0:-126, x1:-28, z0:-126, z1:36 };
 const zoneJoueur = (x, z) => x > ZJ.x0 && x < ZJ.x1 && z > ZJ.z0 && z < ZJ.z1;
 // Un îlot ne se juge pas à son centre : un grand champ dont le milieu tombe au loin peut
 // très bien recouvrir la ferme. C'est son emprise entière qu'il faut regarder.
@@ -501,6 +502,7 @@ function mordSurLaFerme(pts){
     if (coupe){
       const bv = ruban(coupe.chemin, 8.4, '#9db354', .045, false); if (bv) scene.add(bv);
       const md = ruban(coupe.chemin, 5.6, '#c9b184', .078, false); if (md) scene.add(md);
+      routes.push({ pts:coupe.chemin, ferme:false });
     }
   });
   // ---------- routes : le contour de chaque îlot ----------
@@ -508,6 +510,7 @@ function mordSurLaFerme(pts){
     const pts = lisser(densifier(B.pts, 3), 2, true);
     const bd = ruban(pts, 8.4, '#9db354', .04, true); if (bd) scene.add(bd);
     const md = ruban(pts, 5.6, '#c9b184', .07, true); if (md) scene.add(md);
+    routes.push({ pts, ferme:true });
   });
   // ---------- le mobilier de la carte ----------
   // Ni bois ni arbres engendrés : la carte a les siens, relevés un par un avec leur

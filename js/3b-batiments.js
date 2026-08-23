@@ -312,9 +312,9 @@ function retirerBatiment(g){
 // ajoute un point de déchargement et fait monter le prix payé, puisqu'on peut garder la
 // récolte au lieu de la brader à la moisson.
 const SILOS = [
-  { n:'Silo', emo:'🏚️', prix:6800, f:siloPetit, x:GATE.x + 34, z:YARD + 2, ang:0, prime:.08,
+  { n:'Silo', emo:'🏚️', prix:6800, f:siloPetit, x:COUR.x1 + 12, z:COUR.z0 + 5, ang:0, prime:.08,
     d:'deux cellules sur pieds — +8 % sur le prix payé' },
-  { n:'Grand silo', emo:'🏢', prix:16500, f:siloGrand, x:GATE.x + 48, z:YARD + 4, ang:0, prime:.18,
+  { n:'Grand silo', emo:'🏢', prix:16500, f:siloGrand, x:COUR.x1 + 26, z:COUR.z0 + 7, ang:0, prime:.18,
     d:'cellule métallique de 9 m — +18 % sur le prix payé' }
 ];
 let siloBati = null, siloDepot = null;

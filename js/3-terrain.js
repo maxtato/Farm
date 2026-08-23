@@ -69,9 +69,14 @@ const P = 44, NS = 256, CS = P/NS;                 // cellules de 17 cm : le pas
 // La ferme n'est plus au centre du monde : elle est posée sur la carte, au corps de ferme
 // dont le hangar sert de point de départ. Tout le reste — parcelle jouable, parc, silo —
 // se cale autour de lui.
+// Le corps de ferme de la carte occupe la clairière au nord ; une route le longe. La
+// parcelle de travail et la cour se posent donc de l'autre côté de cette route, sur la
+// grande étendue d'herbe libre au sud, calées à huit mètres de tout chemin, de tout champ
+// de la carte et de tout arbre — l'emplacement a été cherché à la mesure (essais/calage.js).
 const HANGAR = { x:-108.41, z:-69.07 };
-const X0 = -112, Z0 = -46;                  // la parcelle de travail, juste au sud du corps de ferme
-const YARD = -72;                           // la cour, devant le hangar
+const X0 = -102, Z0 = -16;                  // la parcelle de travail
+const COUR = { x0:-103, x1:-57, z0:-38, z1:-20 };   // la cour, entre la route et la parcelle
+const YARD = COUR.z0;
 const cell = new Uint8Array(NS*NS);           // état du sol : logique seule, plus aucun rendu par texture
 function cellIndex(x,z){
   const ix = Math.floor((x-X0)/CS), jz = Math.floor((z-Z0)/CS);
@@ -132,7 +137,7 @@ const dRect = (x,z,x0,x1,z0,z1) =>
   Math.hypot(Math.max(x0-x, 0, x-x1), Math.max(z0-z, 0, z-z1));
 function herbeY(x, z){
   const d = Math.min(dRect(x,z, X0-3, X0+P+3, Z0-3, Z0+P+3),
-                     dRect(x,z, -43, 43, YARD-6, YARD+14));
+                     dRect(x,z, COUR.x0-3, COUR.x1+3, COUR.z0-3, COUR.z1+3));
   const k = Math.min(1, d/11);
   // La campagne est plate, et il le faut : ses champs et ses routes sont des surfaces
   // posées à quatre ou sept centimètres du sol, quand l'ondulation du pré en fait
@@ -164,13 +169,13 @@ function herbeY(x, z){
   const geo = new THREE.ConeGeometry(.028,.30,3); geo.translate(0,.15,0);
   const cols = ['#7cc94a','#8fd457','#a3c05c'];         // deux verts clairs et un ton sec
   const lots = cols.map(() => []);
-  for(let x=-R; x<R; x+=PAS) for(let z=Z0+P/2-R; z<Z0+P/2+R; z+=PAS){
+  for(let x=X0+P/2-R; x<X0+P/2+R; x+=PAS) for(let z=Z0+P/2-R; z<Z0+P/2+R; z+=PAS){
     const px = x + (Math.random()-.5)*PAS*.9, pz = z + (Math.random()-.5)*PAS*.9;
     // Seulement le long des bords. Une touffe de trente centimètres ne se voit qu'à contre-jour
     // du sol nu ou de la cour ; en pleine prairie, à quarante mètres de haut, elle disparaît
     // dans la texture — et couvrir tout le pourtour coûterait quarante mille objets pour rien.
     const d = Math.min(dRect(px,pz, X0, X0+P, Z0, Z0+P),
-                       dRect(px,pz, -41, 41, YARD-4.5, YARD+12.5));
+                       dRect(px,pz, COUR.x0+2, COUR.x1-2, COUR.z0+2, COUR.z1-2));
     if (d < 1.1 || d > 13) continue;
     // par paquets : une touffe, c'est cinq ou six brins serrés, pas un brin isolé
     const n = 3 + (Math.random()*3|0), k = (Math.random()*cols.length)|0;
@@ -522,9 +527,10 @@ const SWATH = (function(){
 })();
 
 // ---------- ferme ----------
-// Le silo de la carte le plus proche du hangar reçoit la récolte ; la barrière est le
-// point de ralliement, entre la cour et le champ.
-const SILO = new THREE.Vector3(-50.5,0,-77.8), GATE = new THREE.Vector3(-100,0,-56);
+// Le silo à cellules de la carte, celui du corps de ferme, reçoit la récolte ; la barrière
+// est le point de ralliement, au milieu de la cour, entre le parc et le champ.
+const SILO = new THREE.Vector3(-50.5,0,-77.8);
+const GATE = new THREE.Vector3((COUR.x0+COUR.x1)/2 + 10, 0, COUR.z1 - 4);
 // Les obstacles du décor, relevés en même temps qu'on les pose : de simples disques, qui
 // suffisent à des engins vus de dessus. Un bâtiment long en aligne plusieurs.
 const OBST = [];

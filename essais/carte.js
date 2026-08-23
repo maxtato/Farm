@@ -25,7 +25,7 @@ const LOG=D+'carte.log';
    await p.screenshot({path:D+nom}); dit('->',nom);
  };
  await vue('carte-vue.png', .14, 62, 0, 0);              // toute la campagne
- await vue('carte-ferme.png', .5, 44, -95, -60);         // le corps de ferme et son hangar
- await vue('carte-pres.png', 1.0, 40, -108, -69);        // le hangar de départ, de près
+ await vue('carte-ferme.png', .42, 46, -80, -30);        // la ferme : cour, parcelle, hangar
+ await vue('carte-pres.png', .95, 40, -85, -30);         // la cour et le hangar, de près
  await b.close(); srv.close();
 })();

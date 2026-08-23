@@ -31,7 +31,7 @@ function applyPitch(){
   const h = camDist*Math.sin(PITCH), r = camDist*Math.cos(PITCH);
   camOff.set(Math.sin(YAW)*r, h, Math.cos(YAW)*r);
 }
-const camLook = new THREE.Vector3(0,1,0);   // point visé
+const camLook = new THREE.Vector3(0,1,0);   // point visé — recalé sur la cour au démarrage
 // La carte se manipule au doigt : deux doigts la déplacent, l'écartement la zoome. Elle
 // cesse alors de suivre l'engin — c'est voulu, on va regarder ailleurs — et une pastille
 // permet de revenir dessus.
@@ -41,7 +41,7 @@ let YAW = 0;
 function camFollow(){ const v = pilote(); if (v) camLook.set(v.pos.x, 1, v.pos.z); }
 function camPan(dx, dz){
   camLook.x = Math.max(X0-60, Math.min(X0+P+60, camLook.x + dx));
-  camLook.z = Math.max(Z0-60, Math.min(Z0+P+70, camLook.z + dz));
+  camLook.z = Math.max(Z0-90, Math.min(Z0+P+70, camLook.z + dz));
 }
 function setYaw(a){ YAW = a; applyPitch(); }
 const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });

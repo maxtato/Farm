@@ -372,7 +372,7 @@ function monter(anc){
   return v;
 }
 // Les engins neufs se rangent en épi au fond de la cour, derrière les bâtiments.
-const placeParc = n => ({ x: GATE.x - 16 + (n % 8)*6.4, z: YARD + 10.5 + Math.floor(n/8)*7.5 });
+const placeParc = n => ({ x: COUR.x0 + 3 + (n % 8)*6.2, z: COUR.z0 + 5 + Math.floor(n/8)*7 });
 function creerEngin(kind, niv){
   const v = vehicle(kind === 'tracteur' ? { kind, niv, outil:null } : { kind, niv, bec:0 });
   v.pid = idSeq++; v.kind = kind; v.niv = niv; v.bec = 0; v.outil = null;
@@ -425,7 +425,7 @@ function majOutilPose(o){
   f.visible = o.hop > .5; f.scale.y = .01 + Math.min(1, o.hop/cap)*.99;
 }
 // Une pièce neuve arrive rangée au fond de la cour : on va la chercher avec un tracteur.
-const placeOutil = n => ({ x: GATE.x - 12 + (n % 7)*6.2, z: YARD + 19, ang: Math.PI });
+const placeOutil = n => ({ x: COUR.x0 + 5 + (n % 7)*6.2, z: COUR.z1 - 3, ang: Math.PI });
 function creerOutil(type, niv){
   const D = OUTILS[type]; if (!D) return null;
   const q = placeOutil(outils.filter(o => !o.porteur).length);

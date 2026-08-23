@@ -24,7 +24,10 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   { const w = engins.find(v => v.metier === STAGES[stage].k) || engins[0];
     if (w) driven = w.pid; }
   syncFleet(); drawVeh(); camFollow();
-  { const v = pilote(); if (v) camLook.set(v.pos.x, 1, v.pos.z); }
+  // Rien dans le parc au premier lancement : on vise la cour, devant le hangar de départ.
+  { const v = pilote();
+    if (v) camLook.set(v.pos.x, 1, v.pos.z);
+    else camLook.set((COUR.x0+COUR.x1)/2, 1, COUR.z1 - 8); }
   applyCtrl();
   if (!contract) newContract(); else drawContract();
   if (!had) setTimeout(() => openPanel('help'), 400);   // première partie : on montre les commandes
@@ -236,7 +239,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
     if (v){
       const k = Math.min(1, raw*4.5);              // rattrapage souple, jamais un saut
       camLook.x += (Math.max(X0-60, Math.min(X0+P+60, v.pos.x)) - camLook.x)*k;
-      camLook.z += (Math.max(Z0-60, Math.min(Z0+P+70, v.pos.z)) - camLook.z)*k;
+      camLook.z += (Math.max(Z0-90, Math.min(Z0+P+70, v.pos.z)) - camLook.z)*k;
     }
   }
   camera.position.copy(camLook).add(camOff);
