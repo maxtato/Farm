@@ -18,9 +18,12 @@ const D=__dirname+'/sorties/', LOG=D+'labour.log';
  const dep = await p.evaluate(()=>{
    if (panelOpen()) closePanel();
    SND.set(false); coins = 400000;
-   const v = acheterPorteur('tracteur',2), o = acheterOutil('sol',2), ball = pointAttelage(v);
-   v.pos.x += o.x-ball.x; v.pos.z += o.z-ball.z; v.h.position.set(v.pos.x,0,v.pos.z);
-   raccrocher(v);
+   const v0 = acheterPorteur('tracteur',2), o = acheterOutil('sol',2), ball = pointAttelage(v0);
+   v0.pos.x += o.x-ball.x; v0.pos.z += o.z-ball.z; v0.h.position.set(v0.pos.x,0,v0.pos.z);
+   raccrocher(v0);
+   // `raccrocher` reconstruit l'engin : l'objet d'avant n'est plus celui du parc. Le poser
+   // lui, c'était déplacer un fantôme pendant que le vrai tracteur restait dans la cour.
+   const v = engins[0];
    // On part sur le premier rang, pas au milieu du champ : posé au centre, l'engin se
    // trouve d'emblée à portée des premiers points de passage, les coche sans les avoir
    // parcourus, et laisse tout un pan de terre intact. C'est ce qui m'avait fait prendre
@@ -33,9 +36,16 @@ const D=__dirname+'/sorties/', LOG=D+'labour.log';
    v.laneI = 0; v.done = false; v.lanes = L;
    ['top','bot'].forEach(k=>document.getElementById(k).style.opacity='0');
    camLook.set(X0+P/2,1,Z0+P/2); zoom=.62; PITCH=70*Math.PI/180; applyPitch(); applyCamera();
-   return { rangs:lanesFor(6.8).length/2, NIN, P:+P.toFixed(1) };
+   return { rangs:L.length/2, NIN, P:+P.toFixed(1),
+            posEngin:[+v.pos.x.toFixed(1), +v.pos.z.toFixed(1)],
+            premierRang:[+L[0].x.toFixed(1), +L[0].z.toFixed(1)] };
  });
  dit('départ :', dep);
+ // Trois essais de suite ont mesuré un banc mal posé plutôt que le jeu. On vérifie donc
+ // le point de départ avant de lancer dix minutes de chantier.
+ if (Math.hypot(dep.posEngin[0]-dep.premierRang[0], dep.posEngin[1]-dep.premierRang[1]) > 1){
+   dit('ABANDON : l\'engin n\'est pas sur le premier rang'); await b.close(); srv.close(); return;
+ }
  const part = () => p.evaluate(()=>{
    let n=0; for(let i=0;i<cell.length;i++) if (MASQ[i]>0 && cell[i]===1) n++;
    const w = engins[0];
