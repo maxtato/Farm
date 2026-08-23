@@ -29,7 +29,8 @@ const OUT=__dirname+'/sorties/', PORT=8871;
      // L'essai « obstacle » vise un vrai bâtiment : on achète le petit silo, posé au bord
      // de la cour, et on part quarante mètres au sud de lui, nez au nord. Les autres
      // partent en plein champ, tournés vers le sud.
-     if (q.silo){ acheterSilo(); const S = SILOS[0]; w.pos.set(S.x, 0, S.z + 40); w.heading = 0; }
+     // vingt mètres devant le silo, nez dessus : le tracé, centré sur l'engin, le traverse
+     if (q.silo){ acheterSilo(); const S = SILOS[0]; w.pos.set(S.x, 0, S.z + 20); w.heading = Math.PI; }
      else { w.pos.set(X0+P*.5, 0, Z0+P*.72); w.heading = Math.PI; }
      w.h.position.set(w.pos.x,0,w.pos.z); w.h.rotation.y = w.heading;
      camLook.set(w.pos.x,1,w.pos.z);
@@ -68,6 +69,12 @@ const OUT=__dirname+'/sorties/', PORT=8871;
      await p.waitForTimeout(110);
    }
    const obst=await p.evaluate(()=>window.__FARM_LISTE_OBST ? window.__FARM_LISTE_OBST() : []);
+   // Un « 0 sauté » ne vaut que si quelque chose barrait vraiment la route : sans ce
+   // contrôle, un tracé qui s'arrête avant l'obstacle rend le même chiffre qu'un
+   // contournement réussi, et l'essai passe sans avoir rien éprouvé.
+   let barre = 1e9;
+   for(const [ox,oz,orad] of obst) for(let k=0;k<ch.length/2;k++)
+     barre = Math.min(barre, Math.hypot(ch[k*2]-ox, ch[k*2+1]-oz) - orad);
    releve.push({nom, ch, traj, depart, fini, n:ch.length/2, obst});
    const N=ch.length/2, mini=new Array(N).fill(1e9);
    for(let k=0;k<N;k++) for(const t of traj){
@@ -79,7 +86,9 @@ const OUT=__dirname+'/sorties/', PORT=8871;
      '| écart moy', (suite.reduce((a,c)=>a+c,0)/Math.max(1,suite.length)).toFixed(2)+'m',
      '| pire', Math.max(...suite).toFixed(1)+'m',
      '| durée', (traj.length*0.11).toFixed(0)+'s',
-     '| fini', fini, '| sautés', traj[traj.length-1][5]||0);
+     '| fini', fini, '| sautés', traj[traj.length-1][5]||0,
+     '| obstacle sur le tracé', barre < 0 ? 'oui, à ' + (-barre).toFixed(1) + 'm dedans'
+                                         : 'NON (' + barre.toFixed(1) + 'm au large)');
    await p.close();
  }
  await essai('courbe',   Array.from({length:30},(_,i)=>{
