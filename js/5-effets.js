@@ -87,13 +87,12 @@ function followPath(v, dt){
     if (der && d < 6 && dx*sn0 + dz*cs0 < 0){ v.head++; avance = true; continue; }
     break;
   }
-  // Sauter des points du tracé, on ne s'y autorise que dans deux cas, et pas un de plus :
-  //   — à l'accrochage, parce que le joueur commence rarement son trait pile sur l'engin et
-  //     que le premier point tombe souvent derrière lui, hors de portée ;
-  //   — après un contournement, pour reprendre la ligne plus loin plutôt que de repartir
-  //     chercher le point qu'un obstacle nous a fait laisser derrière.
-  // Le reste du temps on suit le dessin point par point, tel qu'il a été tracé. C'était le
-  // défaut : la reprise tournait en permanence et rognait les courbes en plein champ vide.
+  // Sauter des points du tracé ne s'autorise que dans un cas : on vient d'être écarté par
+  // un obstacle qu'on allait toucher, et on reprend la ligne plus loin plutôt que de
+  // repartir chercher le point qu'il nous a fait laisser derrière. `detour` ne s'ouvre que
+  // là — voir dodge() — et il se referme en une seconde et des poussières.
+  // Partout ailleurs, et notamment en plein champ vide, on suit le dessin point par point,
+  // tel qu'il a été tracé. C'est tout l'objet du garde-fou.
   v.detour = Math.max(0, (v.detour || 0) - dt);
   if (v.head < v.path.length - 1 && v.detour > 0){
     const t0 = v.head;

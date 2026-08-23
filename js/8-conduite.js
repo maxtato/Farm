@@ -142,7 +142,6 @@ function dodge(v, want, portee){
   // On lève le pied à l'approche. Un engin qui arrive à dix mètres par seconde sur un mur
   // n'a pas le temps de se déporter, quoi qu'on lui commande ; à quatre, il passe à côté.
   v.serre = Math.max(.62, Math.min(1, (bloc.dist - bloc.need + 5)/6));
-  v.detour = 2.5;                    // un obstacle nous écarte : on s'autorise à reprendre plus loin
   const demi = bloc.dist > bloc.need ? Math.asin(Math.min(1, bloc.need/bloc.dist)) : Math.PI/2;
   const rel  = Math.atan2(bloc.side, Math.max(.1, bloc.along));   // relèvement de l'obstacle
   // De quel côté ? Contourner par le plus proche bord ne suffit pas : dans une cour, l'esquive
@@ -166,6 +165,14 @@ function dodge(v, want, portee){
   //    la trajectoire ; on ne se déporte franchement qu'une fois l'obstacle proche. C'est
   //    ce qui fait qu'on le frôle au lieu de l'éviter dix mètres avant.
   const corr = Math.max(-1.5, Math.min(1.5, rel + v.cote*demi));
+  // Le droit de reprendre le tracé plus loin ne s'ouvre pas parce qu'on a APERÇU quelque
+  // chose : il s'ouvre parce qu'on a dû quitter la ligne pour de bon. Il y fallait donc
+  // deux conditions, et pas une. L'obstacle doit être sur le point d'être touché — pas un
+  // arbre entrevu à huit mètres — et la consigne doit vraiment s'écarter de celle qu'on
+  // voulait. Un obstacle qu'on frôle sans dévier ne donne aucun droit à couper le dessin.
+  // C'était le défaut : le simple fait de longer une haie ouvrait le raccourci en
+  // permanence, et l'engin rognait les courbes en plein champ vide.
+  if (bloc.dist < bloc.need + 2.5 && Math.abs(corr) > .14) v.detour = 1.2;
   return want + corr;
 }
 
