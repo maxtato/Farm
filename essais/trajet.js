@@ -12,18 +12,26 @@ const OUT=__dirname+'/sorties/', PORT=8871;
    opt = opt || {};
    const p=await b.newPage({viewport:{width:430,height:820},hasTouch:true});
    p.on('pageerror',x=>e.push(nom+': '+x.message)); p.setDefaultTimeout(120000);
-   await p.addInitScript(s=>localStorage.setItem('ferme.cycle.v1',JSON.stringify(s)),
-     {v:1,coins:9000,stock:0,totalT:0,harvests:1,lv:{tremie:0,semence:0,negoce:0},
-      owned:{ble:true},cropI:0,stage:opt.stage===undefined?0:opt.stage,day:2,dayT:0.40,
-      contract:null,son:false,ctrl:'manche',conduit:opt.engin||'prep',
-      vue:{z:opt.z||1.0,p:0.8727,v:2}});
    await p.goto('http://localhost:'+PORT+'/',{waitUntil:'load'});
    await p.waitForFunction(()=>typeof window.__FARM_DEBUG==='function',null,{timeout:120000});
    await p.waitForTimeout(2500);
-   await p.evaluate(()=>{const b=document.getElementById('sheetX'); if(b) b.click();});
-   await p.waitForTimeout(500);
-   let k=0; while(k++<7 && (await p.evaluate(()=>window.__FARM_DEBUG().conduit))!==(opt.engin||'prep')){
-     await p.evaluate(()=>document.getElementById('vehBtn').click()); await p.waitForTimeout(800); }
+   // La cour démarre vide : on s'équipe d'un tracteur et d'une déchaumeuse, on les attelle,
+   // et on cadre la vue. C'est cet attelage-là qui suivra le tracé.
+   await p.evaluate(q=>{
+     if (panelOpen()) closePanel();
+     SND.set(false);
+     coins = 200000;
+     acheterPorteur('tracteur',0); acheterOutil('sol',0);
+     const v = engins[0], o = outils[0], ball = pointAttelage(v);
+     v.pos.x += o.x-ball.x; v.pos.z += o.z-ball.z; v.h.position.set(v.pos.x,0,v.pos.z);
+     raccrocher(v);
+     const w = pilote();
+     w.pos.set(0,0,Z0+P*.72); w.heading = Math.PI;      // dans le champ, tourné vers le sud
+     w.h.position.set(w.pos.x,0,w.pos.z); w.h.rotation.y = w.heading;
+     camLook.set(w.pos.x,1,w.pos.z);
+     zoom = q.z; PITCH = 0.8727; applyPitch(); applyCamera();
+   }, {z:opt.z||1.0});
+   await p.waitForTimeout(1500);
    if(opt.champ!==false){ if(await p.evaluate(()=>window.__FARM_DEBUG().manuel))
        await p.evaluate(()=>document.getElementById('btnAuto').click());
      await p.waitForTimeout(opt.champ||28000); }
