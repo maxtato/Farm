@@ -15,10 +15,15 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   if (had && stage > 0) primeField(stage);   // on reprend la parcelle telle que l'étape la suppose
   // Toute la flotte est là dès le lancement, rangée sur la cour à côté du hangar. On ne la
   // découvre plus au fur et à mesure : les cinq engins attendent, on prend celui qu'on veut.
-  if (!had){ for(let k=0;k<plants.length;k++) plants[k].r = 1; redrawPlants(); }
+  // Première partie : la parcelle n'a jamais été touchée — c'est une friche, avec ses
+  // repousses sèches, pas le chaume d'une moisson qu'on n'a pas faite.
+  if (!had){ for(let k=0;k<plants.length;k++) plants[k].r = 2; redrawPlants(); }
   KINDS.forEach(fleetGet);
   startStage();                              // ni remise à nu ni semence : c'est l'affaire du cycle
+  // On conduit l'engin du chantier s'il existe, sinon le premier qu'on possède ; et si le
+  // parc est vide, le bouton du bas mène droit à la boutique.
   if (fleet[STAGES[stage].k]) driven = STAGES[stage].k;
+  else { const l = KINDS.filter(possede); if (l.length) driven = l[0]; }
   syncFleet(); drawVeh(); camFollow();
   { const v = pilote(); if (v) camLook.set(v.pos.x, 1, v.pos.z); }
   applyCtrl();
@@ -149,7 +154,14 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
 
   // livraison : on amène la benne au silo et elle se vide
   if (hauler){
-    if (hauler.hop > .2 && hauler.pos.distanceTo(SILO) < 6){
+    // On se vide au silo le plus proche : le silo d'origine, ou l'un de ceux qu'on a
+    // fait bâtir. Inutile de traverser toute la cour si on en a un sous la main.
+    let depot = null, dmin = 6;
+    for(let i=0;i<DEPOTS.length;i++){
+      const d = hauler.pos.distanceTo(DEPOTS[i]);
+      if (d < dmin){ dmin = d; depot = DEPOTS[i]; }
+    }
+    if (hauler.hop > .2 && depot){
       const give = Math.min(hauler.hop, 160*dt);
       const c = CROPS.find(x => x.id === hauler.cropId) || CROPS[0];
       const pay = give*c.price*PRICEK;
@@ -157,8 +169,8 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
       hauler.paid += pay;
       contractDeliver(c.id, give);
       if (hauler.paid > 700){                  // une tranche encaissée : le gain part vers le compteur
-        floatCoin(SILO.x, SILO.z-2, '+' + fmt(hauler.paid));
-        for(let i=0;i<4;i++) flyCoin(SILO.x, SILO.z-2, i*70);
+        floatCoin(depot.x, depot.z-2, '+' + fmt(hauler.paid));
+        for(let i=0;i<4;i++) flyCoin(depot.x, depot.z-2, i*70);
         hauler.paid = 0; sfx('coin');
       }
       if (hauler.hop <= .2){ hauler.cropId = crop().id; sfx('cash'); save(); toast('Benne vidée au silo', 'good'); }
@@ -170,7 +182,7 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   // le joueur est prévenu une seule fois par remplissage
   if (cFull && !combine.warned){ combine.warned = true; toast('Trémie pleine — prends la benne', 'bad'); sfx('deny'); }
   if (combine && !cFull) combine.warned = false;
-  drawVeh();
+  drawVeh(); drawHitch();
 
   if (combine && !combine.done && !manual){
     let left = 0;
@@ -246,8 +258,12 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   else if (S.k === 'sow'){   gf = (cellN[2]+cellN[3])/NC;          gl = 'Semis ' + Math.round(gf*100) + ' %'; }
   else if (S.k === 'fert'){  gf = cellN[3]/NC;                     gl = 'Engrais ' + Math.round(gf*100) + ' %'; }
   else if (S.k === 'grow'){  gf = sown ? ripe/sown : 0;            gl = 'Maturité ' + Math.round(gf*100) + ' %'; }
-  else if (driven === 'trailer' && hauler){ gf = hauler.hop/TRCAP; gl = 'Benne ' + Math.round(gf*100) + ' %'; }
-  else {                     gf = combine ? combine.hop/CAP : (hauler ? hauler.hop/TRCAP : 0);
+  else if (driven === 'trailer' && hauler){
+    // décroché, le tracteur ne porte rien : la jauge le dit au lieu d'afficher NaN
+    gf = TRCAP ? hauler.hop/TRCAP : 0;
+    gl = TRCAP ? 'Benne ' + Math.round(gf*100) + ' %' : 'Sans benne';
+  }
+  else {                     gf = combine ? combine.hop/CAP : (hauler && TRCAP ? hauler.hop/TRCAP : 0);
                              gl = (combine ? 'Trémie ' : 'Benne ') + Math.round(gf*100) + ' %'; }
   elGauge.firstElementChild.style.width = (gf*100).toFixed(1) + '%';
   elGVal.textContent = gl;
@@ -318,7 +334,7 @@ window.__FARM_DEBUG = () => ({
     for(let k=Math.max(0,v.head-3); k<Math.min(v.path.length, v.head+8); k++)
       m = Math.min(m, Math.hypot(v.path[k].x-v.pos.x, v.path[k].z-v.pos.z));
     return +m.toFixed(2); })(),
-  cellules:(function(){ const o=[0,0,0,0]; for(let i=0;i<cell.length;i++) o[cell[i]]++;
+  cellules:(function(){ const o=[0,0,0,0,0]; for(let i=0;i<cell.length;i++) o[cell[i]]++;
     return o.map(v=>+(100*v/cell.length).toFixed(1)); })(),
   murs:(function(){ let m=0; for(const p of plants) if (p.g > .55) m++; return m; })(),
   suivi:(function(){ const v = pilote(); if (!v) return null;
@@ -355,13 +371,16 @@ window.__FARM_DEBUG = () => ({
   vis:+(worker && worker.g.userData.auger ? worker.g.userData.auger.rotation.y : -1).toFixed(2),
   // écart goulotte -> benne : c'est lui qui déclenche le transfert, pas la distance des engins
   ecart:(function(){
-    if (!worker || worker.kind !== 'harvest' || !hauler) return -1;
+    if (!worker || worker.kind !== 'harvest' || !hauler || !hauler.g.userData.bin) return -1;
     worker.h.updateMatrixWorld(true); hauler.h.updateMatrixWorld(true);
     const a = new THREE.Vector3(), b = new THREE.Vector3();
     worker.g.userData.spout.getWorldPosition(a); hauler.g.userData.bin.getWorldPosition(b);
     return +Math.hypot(a.x-b.x, a.z-b.z).toFixed(2);
   })(),
   capBenne:+(hauler ? hauler.heading : 0).toFixed(3),
+  niv:Object.assign({}, nivDe), benneAtt, posees:bennesPosees.map(r => ({ id:r.id, x:+r.x.toFixed(1), z:+r.z.toFixed(1),
+          hop:Math.round(r.hop) })),
+  largOutil:+(worker && worker.g.userData.tool ? worker.g.userData.tool.W : 0).toFixed(1),
   grain:grains.reduce((n,d)=>n+(d.m.visible?1:0),0),
   terre:SOIL.live(), graines:SEED.live(), gouttes:spray.reduce((n,d)=>n+(d.m.visible?1:0),0),
   paille:plants.reduce((n,p)=>n+(p.r?1:0),0),

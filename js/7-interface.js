@@ -2,7 +2,7 @@
 // ---------- panneau : boutique, cultures, aide (et pause) ----------
 const ovl = document.getElementById('ovl'), elTitle = document.getElementById('sheetTitle'),
       elTabs = document.getElementById('tabs'), elBody = document.getElementById('body');
-const TABS = [['shop','🛒 Boutique'], ['crop','🌱 Cultures'],
+const TABS = [['shop','🛒 Boutique'], ['parc','🚜 Parc'], ['crop','🌱 Cultures'],
               ['ctrl','🎮 Pilotage'], ['help','❔ Aide']];
 let panelTab = 'shop', paused = false;
 const panelOpen = () => ovl.classList.contains('on');
@@ -45,11 +45,13 @@ function drawPanel(){
     b.onclick = () => { panelTab = id; drawPanel(); };
     elTabs.appendChild(b);
   });
-  elTitle.textContent = panelTab === 'shop' ? 'Boutique' : panelTab === 'crop' ? 'Cultures'
+  elTitle.textContent = panelTab === 'shop' ? 'Boutique' : panelTab === 'parc' ? 'Parc matériel'
+                      : panelTab === 'crop' ? 'Cultures'
                       : panelTab === 'ctrl' ? 'Pilotage' : 'Aide';
   elBody.innerHTML = '';
   elBody.scrollTop = 0;
   if (panelTab === 'shop') drawShop();
+  else if (panelTab === 'parc') drawParc();
   else if (panelTab === 'crop') drawCrops();
   else if (panelTab === 'ctrl') drawCtrl();
   else drawHelp();
@@ -88,6 +90,86 @@ function drawShop(){
     if (confirm('Effacer la sauvegarde et repartir de zéro ?')) wipe();
   };
 }
+// ---------- le parc : trois tracteurs, trois bennes, et ce qui va avec quoi ----------
+// La puissance ne s'achète pas au détail : on change de tracteur. Le gabarit décide de la
+// largeur de l'outil porté et du poids de benne admissible — un compact ne tire pas 22 m³.
+function drawParc(){
+  elBody.insertAdjacentHTML('beforeend', statsHTML());
+  elBody.insertAdjacentHTML('beforeend',
+    '<div class="note">La ferme démarre sur un terrain nu : tout s\u2019achète ici, et chaque ' +
+    'poste a son niveau propre. Acheter mieux reprend l\u2019ancienne machine pour la moitié ' +
+    'de son prix, alors commencer petit ne coûte rien.</div>');
+  MACHINES.forEach(M => {
+    elBody.insertAdjacentHTML('beforeend',
+      '<div class="note"><b>' + M.emo + ' ' + M.n + '</b>' +
+      (possede(M.k) ? '' : ' — pas encore au parc') + '</div>');
+    M.prix.forEach((prix, i) => {
+      const ici = nivDe[M.k] === i, depasse = nivDe[M.k] > i;
+      const reprise = repriseDe(M.k, i), net = prix - reprise;
+      const c = card(M.emo, M.nom[i], M.det(i) +
+        (reprise ? ' — reprise de l\u2019ancienne : ' + fmt(reprise) + ' 🪙' : ''));
+      const b = document.createElement('button');
+      if (ici){ b.className = 'buy max'; b.disabled = true; b.textContent = 'en service'; }
+      else if (depasse){ b.className = 'buy max'; b.disabled = true; b.textContent = 'remplacée'; }
+      else {
+        b.className = 'buy'; b.textContent = fmt(net) + ' 🪙';
+        b.disabled = coins < net;
+        b.onclick = () => {
+          const r = acheterEngin(M.k, i);
+          if (!r){ sfx('deny'); return; }
+          sfx('buy'); drawVeh(); drawHitch();
+          toast(M.n + ' — ' + M.nom[i].toLowerCase() + ' au parc', 'good');
+          drawPanel();
+        };
+      }
+      c.appendChild(b); elBody.appendChild(c);
+    });
+  });
+  elBody.insertAdjacentHTML('beforeend',
+    '<div class="note"><b>🛻 Bennes</b> — livrées au fond de la cour. On va les chercher avec ' +
+    'le tracteur de transport et on les attelle avec le bouton \u2693 du pupitre.</div>');
+  BENNES.forEach(B => {
+    const a = bennesOwned[B.id], att = benneAtt === B.id;
+    const cap = Math.round(B.cap*(1 + .28*lv.tremie));
+    const c = card(B.emo, B.n, B.d + ' — ' + fmt(cap) + ' de charge');
+    const b = document.createElement('button');
+    if (a){
+      b.className = 'buy max'; b.disabled = true;
+      b.textContent = att ? 'attelée' : 'au parc';
+    } else if (!benneCompatible(B)){
+      b.className = 'buy max'; b.disabled = true;
+      b.textContent = possede('trailer') ? 'tracteur trop léger' : 'sans tracteur';
+    } else {
+      b.className = 'buy'; b.textContent = fmt(B.prix) + ' 🪙';
+      b.disabled = coins < B.prix;
+      b.onclick = () => {
+        if (coins < B.prix || bennesOwned[B.id]){ sfx('deny'); return; }
+        coins -= B.prix; bennesOwned[B.id] = true; livrerBenne(B.id); sfx('buy');
+        toast(B.n + ' livrée au fond de la cour', 'good'); save(); drawPanel();
+      };
+    }
+    c.appendChild(b); elBody.appendChild(c);
+  });
+  elBody.insertAdjacentHTML('beforeend',
+    '<div class="note"><b>🏢 Silos</b> — la benne se vide au plus proche, et garder la récolte ' +
+    'au lieu de la brader à la moisson fait monter le prix payé.</div>');
+  SILOS.forEach(S => {
+    const a = silosOwned[S.id];
+    const c = card(S.emo, S.n, S.d);
+    const b = document.createElement('button');
+    if (a){ b.className = 'buy max'; b.disabled = true; b.textContent = 'bâti'; }
+    else {
+      b.className = 'buy'; b.textContent = fmt(S.prix) + ' 🪙';
+      b.disabled = coins < S.prix;
+      b.onclick = () => {
+        if (!acheterSilo(S.id)){ sfx('deny'); return; }
+        sfx('buy'); toast(S.n + ' bâti dans la cour', 'good'); drawPanel();
+      };
+    }
+    c.appendChild(b); elBody.appendChild(c);
+  });
+}
+const fr = n => n.toFixed(1).replace('.', ',');
 function drawCrops(){
   const free = canChangeCrop();
   elBody.insertAdjacentHTML('beforeend', '<div class="note">' + (free
@@ -177,6 +259,11 @@ function drawCtrl(){
 }
 function drawHelp(){
   elBody.insertAdjacentHTML('beforeend',
+    '<div class="note"><b>La cour est vide au départ.</b> Tout se trouve à l\u2019onglet ' +
+    '<b>🚜 Parc</b> : une déchaumeuse, un semoir, une moissonneuse, un tracteur de transport ' +
+    'et une benne suffisent à boucler une première récolte. Le pulvérisateur peut attendre — ' +
+    'sans lui la culture pousse, simplement bien plus lentement.</div>');
+  elBody.insertAdjacentHTML('beforeend',
     '<div class="note">Un cycle complet : <b>déchaumer</b> le sol, <b>semer</b>, <b>fertiliser</b>, ' +
     'laisser <b>pousser</b>, puis <b>moissonner</b>. La benne vide la moissonneuse et porte le grain au silo, ' +
     'qui le paie. La météo et la nuit passent toutes seules ; la pluie arrose mais ralentit les engins.</div>');
@@ -186,6 +273,7 @@ function drawHelp(){
     '<kbd>Espace</kbd><span>freiner</span>' +
     '<kbd>V</kbd><span>pilote automatique</span>' +
     '<kbd>E</kbd><span>changer d\'engin</span>' +
+    '<kbd>R</kbd><span>décrocher / atteler la benne</span>' +
     '<kbd>1 2 3 4</kbd><span>sol · semis · engrais · moisson</span>' +
     '<kbd>X</kbd><span>accélérer le temps ×1 ×3 ×6</span>' +
     '<kbd>B</kbd><span>boutique</span>' +
@@ -432,7 +520,11 @@ STAGES.forEach((s,i) => {
   e.innerHTML = '<i>' + s.ic + '</i><span>' + s.n + '</span>';
   e.title = s.n + ' — ' + s.d;
   // le chemin des étapes sert aussi à choisir l'engin : on prend celui du chantier visé
-  e.onclick = () => { const k = STAGES[i].k; if (KINDS.includes(k)) selectVeh(k); else switchTo(i); };
+  // Une étape dont on n'a pas la machine ne doit pas être un cul-de-sac : on peut toujours
+  // y amener la parcelle, et passer à la suivante. Sans pulvérisateur, la culture pousse,
+  // simplement bien plus lentement.
+  e.onclick = () => { const k = STAGES[i].k;
+                      if (KINDS.includes(k) && possede(k)) selectVeh(k); else switchTo(i); };
   stepsEl.appendChild(e);
 });
 
@@ -472,23 +564,42 @@ function canSwitch(){ return true; }
 const VEHICO = { prep:'🚜', sow:'🌱', fert:'💧', harvest:'🌾', trailer:'🛻' };
 const VEHNOM = { prep:'Déchaumeuse', sow:'Semoir', fert:'Pulvérisateur',
                  harvest:'Moissonneuse', trailer:'Benne' };
+// Le nom du transport dit ce qui est attelé : décroché, c'est un tracteur, pas une benne.
+function nomVeh(k){
+  if (k !== 'trailer') return VEHNOM[k] || 'Au repos';
+  const B = benneAttDef();
+  return B ? B.n : 'Tracteur seul';
+}
+const enginsPossedes = () => VEH_CYCLE.filter(e => possede(e.id));
 function drawVeh(){
-  const cur = driven;
-  const libre = true;
+  const cur = driven, l = enginsPossedes();
   elVehBtn.disabled = false;
-  elVehBtn.classList.toggle('alt', driven === 'trailer');
-  const n = VEHNOM[cur] || 'Au repos';
+  // Parc vide : le bouton ne propose plus de changer d'engin, il mène à la boutique.
+  if (!l.length){
+    elVehBtn.classList.remove('alt');
+    elVehBtn.innerHTML = '<i>🛒</i><span>Acheter un engin</span>';
+    elVehBtn.title = 'Le parc est vide';
+    return;
+  }
+  elVehBtn.classList.toggle('alt', cur === 'trailer');
+  const n = possede(cur) ? nomVeh(cur) : 'Au repos';
   elVehBtn.innerHTML = '<i>' + (VEHICO[cur] || '🚜') + '</i><span>' + n + '</span>'
-                     + (libre ? '<b class="sw">⇄</b>' : '');
-  elVehBtn.title = libre ? 'Changer d\u2019engin' : n;
+                     + (l.length > 1 ? '<b class="sw">⇄</b>' : '');
+  elVehBtn.title = l.length > 1 ? 'Changer d\u2019engin' : n;
 }
 function drawCropBtn(){
   elCropBtn.innerHTML = '<i>' + crop().emo + '</i><span>' + crop().n + '</span>';
 }
 // Passer d'un engin à l'autre ne fait que changer qui répond aux commandes : celui qu'on
 // quitte reste sur la carte, garde son tracé et continue son chantier.
-function switchVehicle(){ selectVeh(VEH_CYCLE[(VEH_CYCLE.findIndex(e => e.id === driven) + 1) % VEH_CYCLE.length].id); }
+function switchVehicle(){
+  const l = enginsPossedes();
+  if (!l.length){ sfx('deny'); openPanel('parc'); return; }
+  const i = l.findIndex(e => e.id === driven);
+  selectVeh(l[(i+1) % l.length].id);
+}
 function selectVeh(kind){
+  if (!possede(kind)){ sfx('deny'); toast('Cet engin n\u2019est pas au parc', 'bad'); openPanel('parc'); return; }
   const neuf = !fleet[kind];
   fleetGet(kind);
   driven = kind;
@@ -499,6 +610,38 @@ function selectVeh(kind){
   setManual(); sfx('stage'); drawVeh(); drawPathBtn();
 }
 elVehBtn.onclick = switchVehicle;
+
+// ---------- décrocher / raccrocher : le tracteur laisse sa benne et va en prendre une autre ----------
+// Le bouton ne sert qu'au transport, et il ne s'allume que s'il y a vraiment quelque chose
+// à faire : une benne attelée à poser, ou une benne posée à portée de la boule.
+const elHitch = document.getElementById('btnHitch');
+function drawHitch(){
+  if (!elHitch) return;
+  const t = fleet.trailer, ici = driven === 'trailer' && !!t;
+  elHitch.style.display = ici ? '' : 'none';
+  if (!ici) return;
+  const att = !!t.g.userData.benne;
+  const pret = att || benneAPortee() >= 0;
+  elHitch.disabled = !pret;
+  elHitch.textContent = att ? '⚓' : '🪝';
+  elHitch.classList.toggle('on', pret && !att);
+  elHitch.setAttribute('aria-label', att ? 'Décrocher la benne' : 'Atteler une benne');
+  elHitch.title = att ? 'Décrocher la benne' : 'Atteler la benne à portée';
+}
+function toggleHitch(){
+  const t = fleet.trailer;
+  if (driven !== 'trailer' || !t){ sfx('deny'); return; }
+  if (t.g.userData.benne){
+    const n = decrocher();
+    sfx('stage'); toast(n + ' décrochée sur place', 'good');
+  } else {
+    const n = raccrocher();
+    if (!n){ sfx('deny'); toast('Aucune benne à portée de l\u2019attelage', 'bad'); }
+    else { sfx('stage'); toast(n + ' attelée', 'good'); }
+  }
+  drawHitch(); drawVeh();
+}
+if (elHitch) elHitch.onclick = toggleHitch;
 
 // ---------- clavier : le jeu se joue aussi sans écran tactile ----------
 const keys = Object.create(null);
@@ -518,8 +661,10 @@ addEventListener('keydown', e => {
     else if (k === 'h') openPanel('help');
     else if (k === 'x') cycleSpeed();
     else if (k === 'e') switchVehicle();
+    else if (k === 'r') toggleHitch();
     else if (k === 'n') toast(SND.toggle() ? '🔊 Son activé' : '🔇 Son coupé');
-    else if (k >= '1' && k <= '4') selectVeh(['prep','sow','fert','harvest'][+k-1]);
+    else if (k >= '1' && k <= '4'){ const c = ['prep','sow','fert','harvest'][+k-1];
+                                    if (possede(c)) selectVeh(c); }
   }
   keys[k] = true;
 });
