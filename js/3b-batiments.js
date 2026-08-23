@@ -225,8 +225,16 @@ function poserBatiment(f, x, z, ang){
   g.traverse(o => { if (o.isMesh){ o.castShadow = true; o.receiveShadow = true; } });
   scene.add(g);
   const c = Math.cos(ang||0), s = Math.sin(ang||0);
-  (g.userData.obst || []).forEach(([off,r]) => addObst(x + c*off, z - s*off, r));
+  // on garde la trace des disques posés : un bâtiment qu'on remplace doit pouvoir les rendre
+  g.userData.disques = (g.userData.obst || []).map(([off,r]) => {
+    const q = { x:x + c*off, z:z - s*off, r }; OBST.push(q); return q;
+  });
   return g;
+}
+function retirerBatiment(g){
+  if (!g) return;
+  (g.userData.disques || []).forEach(q => { const i = OBST.indexOf(q); if (i >= 0) OBST.splice(i,1); });
+  scene.remove(g); libere(g);
 }
 
 // ---------- le hameau : trois bâtiments posés au bord de la parcelle ----------
@@ -240,25 +248,33 @@ poserBatiment(longere,      -28, YARD + 10, Math.PI);
 // Ils ne sont pas là au départ : on les monte quand on peut se les payer. Chacun ajoute un
 // point de déchargement — la benne se vide au plus proche — et fait monter le prix payé,
 // puisqu'on peut garder la récolte au lieu de la brader à la moisson.
+// Un seul silo, qui grandit. On achète le petit — deux cellules carrées sur pieds — et
+// c'est en cliquant dessus qu'on le remplace par la grande cellule métallique. Chacun
+// ajoute un point de déchargement et fait monter le prix payé, puisqu'on peut garder la
+// récolte au lieu de la brader à la moisson.
 const SILOS = [
-  { id:'petit', n:'Petit silo', emo:'🏚️', prix:6800, f:siloPetit,
-    x:18, z:YARD - 1, ang:0, prime:.08,
+  { n:'Silo', emo:'🏚️', prix:6800, f:siloPetit, x:18, z:YARD - 1, ang:0, prime:.08,
     d:'deux cellules sur pieds — +8 % sur le prix payé' },
-  { id:'grand', n:'Grand silo', emo:'🏢', prix:16500, f:siloGrand,
-    x:31, z:YARD + 1, ang:0, prime:.18,
+  { n:'Grand silo', emo:'🏢', prix:16500, f:siloGrand, x:31, z:YARD + 1, ang:0, prime:.18,
     d:'cellule métallique de 9 m — +18 % sur le prix payé' }
 ];
-const siloDef = id => SILOS.find(s => s.id === id) || null;
-const silosBatis = {};                        // identifiant -> groupe posé
-// Les points où la benne peut se vider : le silo d'origine, plus ceux qu'on a fait bâtir.
+let siloBati = null, siloDepot = null;
+// Les points où la benne peut se vider : le silo d'origine, plus celui qu'on a fait bâtir.
 const DEPOTS = [SILO];             // le silo d'origine en fait partie d'office
-function montreSilo(id){
-  const S = siloDef(id);
-  if (!S || silosBatis[id]) return null;
+function retirerSilo(){
+  if (!siloBati) return;
+  retirerBatiment(siloBati); siloBati = null;
+  const i = DEPOTS.indexOf(siloDepot); if (i >= 0) DEPOTS.splice(i,1);
+  siloDepot = null;
+}
+function montreSilo(niv){
+  retirerSilo();
+  const S = SILOS[niv]; if (!S) return null;
   const g = poserBatiment(S.f, S.x, S.z, S.ang);
-  silosBatis[id] = g;
+  siloBati = g;
   const [dx, dz] = g.userData.depot || [0,0];
   const c = Math.cos(S.ang), s = Math.sin(S.ang);
-  DEPOTS.push(new THREE.Vector3(S.x + c*dx + s*dz, 0, S.z - s*dx + c*dz));
+  siloDepot = new THREE.Vector3(S.x + c*dx + s*dz, 0, S.z - s*dx + c*dz);
+  DEPOTS.push(siloDepot);
   return g;
 }

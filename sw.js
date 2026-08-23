@@ -1,4 +1,4 @@
-const CACHE = "ferme-v5";
+const CACHE = "ferme-v8";
 const SHELL = ["/", "/index.html", "/vendor/three.min.js", "/icon.svg", "/manifest.json",
   "/js/1-base.js", "/js/2-engins.js", "/js/3-terrain.js", "/js/3b-batiments.js", "/js/4-cultures.js",
   "/js/5-effets.js", "/js/6-cycle.js", "/js/7-interface.js", "/js/8-conduite.js",

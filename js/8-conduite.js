@@ -28,9 +28,9 @@ function unstick(v, dt){
       const d = Math.sqrt(d2) || 1e-3;
       pousse(off, dx, dz, (min-d)/d, min-d);
     }
-    for(let i=0;i<KINDS.length;i++){
-      const w = fleet[KINDS[i]];
-      if (!w || w === v) continue;
+    for(let i=0;i<engins.length;i++){
+      const w = engins[i];
+      if (w === v) continue;
       const WB = w.corps || CORPS.prep, wsn = Math.sin(w.heading), wcs = Math.cos(w.heading);
       for(let c=0;c<WB.length;c++){
         const wx = w.pos.x + wsn*WB[c][0], wz = w.pos.z + wcs*WB[c][0];
@@ -74,11 +74,13 @@ function degage(v, ang, look){
     d = along;
   };
   for(let i=0;i<OBST.length;i++){ const o = OBST[i]; test(o.x, o.z, o.r); }
-  for(let i=0;i<KINDS.length;i++){
-    const w = fleet[KINDS[i]];
-    if (!w || w === v) continue;
-    if ((v.kind === 'harvest' && w.kind === 'trailer') ||
-        (v.kind === 'trailer' && w.kind === 'harvest')) continue;
+  for(let i=0;i<engins.length;i++){
+    const w = engins[i];
+    if (w === v) continue;
+    // la moissonneuse et la benne doivent pouvoir se serrer l'une contre l'autre pour le
+    // transfert : elles ne s'évitent pas entre elles
+    if ((v.metier === 'harvest' && w.g.userData.benne) ||
+        (v.g.userData.benne && w.metier === 'harvest')) continue;
     const WB = w.corps || CORPS.prep, ws = Math.sin(w.heading), wc = Math.cos(w.heading);
     for(let c=0;c<WB.length;c++) test(w.pos.x + ws*WB[c][0], w.pos.z + wc*WB[c][0], WB[c][1]*.92);
   }
@@ -110,13 +112,15 @@ function dodge(v, want, portee){
     proche = dist; bloc = { along, side, need, dist };
   };
   for(let i=0;i<OBST.length;i++){ const o = OBST[i]; test(o.x, o.z, o.r); }
-  for(let i=0;i<KINDS.length;i++){
-    const w = fleet[KINDS[i]];
-    if (!w || w === v) continue;
+  for(let i=0;i<engins.length;i++){
+    const w = engins[i];
+    if (w === v) continue;
     // la moissonneuse et la benne doivent pouvoir se rapprocher pour la vidange : entre
     // elles deux, on garde le choc mais pas l'évitement, sinon la goulotte ne trouve jamais
-    if ((v.kind === 'harvest' && w.kind === 'trailer') ||
-        (v.kind === 'trailer' && w.kind === 'harvest')) continue;
+    // la moissonneuse et la benne doivent pouvoir se serrer l'une contre l'autre pour le
+    // transfert : elles ne s'évitent pas entre elles
+    if ((v.metier === 'harvest' && w.g.userData.benne) ||
+        (v.g.userData.benne && w.metier === 'harvest')) continue;
     const WB = w.corps || CORPS.prep, wsn = Math.sin(w.heading), wcs = Math.cos(w.heading);
     for(let c=0;c<WB.length;c++)
       test(w.pos.x + wsn*WB[c][0], w.pos.z + wcs*WB[c][0], WB[c][1]*.92);
@@ -173,7 +177,7 @@ function dodge(v, want, portee){
 // vidée, puis reprend son parcours là où elle l'avait laissé — il n'est pas effacé.
 // Le manche reste prioritaire, pour qu'on puisse toujours aller la chercher soi-même.
 // La benne, elle, n'est jamais bloquée : pleine, il faut justement pouvoir l'amener au silo.
-function pleine(v){ return v.kind === 'harvest' && v.hop >= CAP - .5; }
+function pleine(v){ return v.metier === 'harvest' && v.hop >= CAP - .5; }
 function driveOne(v, conduit, chantier, dt){
   if (pleine(v)){
     if (conduit && manual && jmag > .12){ driveManual(v, dt); return; }
@@ -199,13 +203,13 @@ function driveOne(v, conduit, chantier, dt){
 }
 function autoWork(v, dt){
   if (v.done){
-    const waiting = v.kind === 'harvest' && v.hop > 1;
+    const waiting = v.metier === 'harvest' && v.hop > 1;
     const dist = driveTo(v, waiting ? v.pos : GATE, dt, waiting);
     if (!waiting && dist < RMIN+1) nextStage();
     return;
   }
   const t = v.lanes[v.laneI];
-  const full = v.kind === 'harvest' && v.hop >= CAP - .5;
+  const full = v.metier === 'harvest' && v.hop >= CAP - .5;
   v.wpT = (v.wpT||0) + dt;
   if (driveTo(v, t, dt, full) < RMIN || v.wpT > 30){      // RMIN : inutile de viser plus près
     v.laneI++; v.wpT = 0;
@@ -221,7 +225,7 @@ function work(v, dt){
   // leur tour : semer sur du chaume ou sur des épis, mouiller avant d'avoir semé, tout cela
   // ne laisse aucune trace. C'est pour ça que le ruban et les effets ne se posent que si
   // l'outil a réellement changé quelque chose.
-  if (v.kind === 'prep'){
+  if (v.metier === 'prep'){
     const n = applyTool(v, i => setCell(i,1));
     if (n){
       vierge = false;                    // la parcelle a été travaillée : ce n'est plus une friche
@@ -248,7 +252,7 @@ function work(v, dt){
       }
     }
   }
-  else if (v.kind === 'sow'){
+  else if (v.metier === 'sow'){
     const n = applyTool(v, i => cell[i]===1 && setCell(i,2));   // rien à semer hors terre labourée
     if (!n) return;
     laySwath(v, 1);
@@ -267,7 +271,7 @@ function work(v, dt){
       }
     }
   }
-  else if (v.kind === 'fert'){
+  else if (v.metier === 'fert'){
     const n = applyTool(v, i => cell[i]===2 && setCell(i,3));   // rien à mouiller hors semis
     if (!n) return;
     laySwath(v, 2);
@@ -281,7 +285,7 @@ function work(v, dt){
       }
     }
   }
-  else if (v.kind === 'harvest'){
+  else if (v.metier === 'harvest'){
     if (v.hop < CAP){
       let cut = 0;
       const q = toolPose(v);

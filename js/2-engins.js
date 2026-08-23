@@ -384,33 +384,26 @@ const BENNES = [
 ];
 const benneDef = id => BENNES.find(b => b.id === id) || null;
 
-// ---------- le catalogue : rien n'est donné, tout s'achète ----------
-// Un poste par métier, trois machines par poste. Les niveaux ne sont pas liés entre eux :
-// on peut mener une grande moissonneuse avec un petit semoir, c'est au joueur de décider
-// où passe l'argent. Reprendre une machine pour en acheter une meilleure rend la moitié
-// de son prix, sinon acheter petit d'abord serait toujours une erreur.
+// ---------- le catalogue des porteurs ----------
+// Un tracteur ne fait rien seul : c'est une force, à laquelle on accroche ce qu'on veut.
+// La moissonneuse et le pulvérisateur automoteur, eux, se suffisent — mais leur outil
+// monte en gamme séparément de la machine, comme un outil traîné.
 const nb = n => n.toFixed(1).replace('.', ',');
-const MACHINES = [
-  { k:'prep', n:'Déchaumeuse', emo:'🚜', prix:[3200,8500,19000],
-    nom:['Compacte','Standard','Large'],
-    det:i => 'tracteur ' + TRACTEURS[i].n.toLowerCase() + ' · disques sur ' + nb(LARG.prep[i]) + ' m' },
-  { k:'sow', n:'Semoir', emo:'🌱', prix:[2800,7500,17000],
-    nom:['Compact','Standard','Large'],
-    det:i => 'tracteur ' + TRACTEURS[i].n.toLowerCase() + ' · ' + nb(LARG.sow[i]) + ' m de rangs' },
-  { k:'fert', n:'Pulvérisateur', emo:'💧', prix:[3600,9500,21000],
-    nom:['Cuve traînée','Cuve traînée renforcée','Automoteur'],
-    det:i => (i < 2 ? 'derrière un tracteur ' + TRACTEURS[i].n.toLowerCase() : 'machine autonome')
-             + ' · rampes de ' + nb(RAMPE[i]) + ' m' },
-  { k:'harvest', n:'Moissonneuse', emo:'🌾', prix:[6500,15000,34000],
-    nom:['Compacte','Compacte renforcée','Grande machine'],
-    det:i => (i < 2 ? 'moissonneuse compacte' : 'grande moissonneuse') +
-             ' · coupe de ' + nb(BEC[i]) + ' m' },
-  { k:'trailer', n:'Tracteur de transport', emo:'🛻', prix:[2400,6000,13500],
-    nom:['Compact','Standard','Grande puissance'],
-    det:i => 'tracteur ' + TRACTEURS[i].n.toLowerCase() + ' · tire jusqu\u2019à ' +
-             BENNES[i].vol + ' m³' }
-];
-const machDef = k => MACHINES.find(m => m.k === k) || null;
+const PORTEURS = {
+  tracteur: { n:'Tracteur', emo:'🚜', prix:[2400,6500,14500],
+              nom:['Compact','Standard','Grande puissance'],
+              det:i => TRACTEURS[i].d },
+  moiss:    { n:'Moissonneuse', emo:'🌾', prix:[6500,15000,34000],
+              nom:['Compacte','Compacte renforcée','Grande machine'],
+              det:i => i < 2 ? 'moissonneuse compacte' : 'grande moissonneuse',
+              outil:{ n:'Barre de coupe', prix:[0,4200,11000],
+                      det:i => 'coupe de ' + nb(BEC[i]) + ' m' } },
+  pulve:    { n:'Pulvérisateur automoteur', emo:'💧', prix:[18000],
+              nom:['Automoteur'],
+              det:() => 'machine autonome, quatre roues motrices',
+              outil:{ n:'Rampes', prix:[0,5200,13500],
+                      det:i => 'rampes de ' + nb(RAMPE[i]) + ' m' } }
+};
 
 // Repliée, la vis doit longer le corps vers l'arrière — à 2,25 rad elle dépassait
 // encore sur le côté, et du mauvais côté qui plus est.
@@ -559,101 +552,115 @@ function becCoupe(g, mnt, W){
   return { reel:r, mk };
 }
 
+// ---------- ce qui s'attelle : quatre familles d'outils, trois calibres chacune ----------
+// Un outil n'appartient à aucun tracteur. Il se pose derrière n'importe lequel, pourvu
+// qu'il ait la force de le tirer — c'est tout ce que `force` dit : le niveau de tracteur
+// minimum. Le reste — largeur de travail, encombrement, prix — se lit ici.
+const OUTILS = {
+  sol:     { n:'Déchaumeuse', emo:'⚒️', metier:'prep', prix:[3200,8500,19000],
+             larg:[3.4,4.6,6.8], force:[0,1,2], near:-.5,  far:.15,
+             det:i => nb(LARG.prep[i]) + ' m de disques' },
+  semis:   { n:'Semoir', emo:'🌱', metier:'sow', prix:[2800,7500,17000],
+             larg:[2.4,3.6,5.4], force:[0,0,1], near:-.45, far:.3,
+             det:i => nb(LARG.sow[i]) + ' m de rangs' },
+  engrais: { n:'Cuve à rampes', emo:'💧', metier:'fert', prix:[3600,9500,21000],
+             larg:[9,12.9,18],   force:[0,1,2], near:-.55, far:.55,
+             det:i => 'rampes de ' + nb(RAMPE[i]) + ' m' },
+  benne:   { n:'Benne', emo:'🛻', metier:null, prix:[1600,5200,12000],
+             larg:[0,0,0], force:[0,1,2],
+             det:i => BENNES[i].vol + ' m³ — ' + BENNES[i].d }
+};
+const TYPES_OUTIL = ['sol','semis','engrais','benne'];
+const TAILLES = ['petit modèle', 'modèle moyen', 'grand modèle'];
+// Un outil monté derrière un tracteur, ramené à ce dont le reste du jeu a besoin.
+function poseOutil(hitch, type, niv){
+  niv = Math.max(0, Math.min(2, niv|0));
+  const D = OUTILS[type];
+  if (type === 'sol'){
+    const o = outilSol(hitch, D.larg[niv]);
+    return { mk:o.mk, spin:o.spin, Lt:o.Lt, Wc:D.larg[niv], W:D.larg[niv] };
+  }
+  if (type === 'semis'){
+    const o = outilSemis(hitch, D.larg[niv]);
+    return { mk:o.mk, spin:o.spin, tourne:o.tourne, Lt:o.Lt, Wc:D.larg[niv], W:D.larg[niv] };
+  }
+  if (type === 'engrais'){
+    const cv = cuveTrainee(hitch), r = rampes(hitch, cv, D.larg[niv]);
+    return { mk:r.mk, fold:r.fold, roues:cv.roues, Lt:cv.Lt, Wc:cv.W, W:D.larg[niv] };
+  }
+  const B = BENNES[niv], b = B.f(hitch);
+  return { fill:b.fill, roues:b.roues, Lt:b.Lt, Wc:b.W, benne:B.id, cap:B.cap };
+}
+
 // ---------- engins ----------
-// `opt.niv` = niveau de tracteur (0..2), `opt.benne` = identifiant de remorque attelée
-// ou null quand le tracteur roule seul, décroché.
-function build(kind, opt){
-  opt = opt || {};
-  const niv = Math.max(0, Math.min(2, opt.niv|0)), TR = TRACTEURS[niv];
+// `spec` décrit une machine assemblée : un porteur, et pour un tracteur l'outil du moment.
+//   { kind:'tracteur', niv, outil:{type,niv}|null }
+//   { kind:'moiss',    niv, bec }        moissonneuse : la machine et la coupe montent à part
+//   { kind:'pulve',    bec }             pulvérisateur automoteur : seules les rampes montent
+function build(spec){
+  spec = spec || {};
   JELLY = true;
   const g = new THREE.Group();
   let d;
-  if (kind === 'prep' || kind === 'sow' || kind === 'trailer'){
-    const t = TR.f(g);
-    const hitch = new THREE.Group(); hitch.position.set(0,0,t.ball); g.add(hitch);
-    const corps = [[ (t.ball + TR.nez)/2, TR.demi ]];
-    if (kind === 'prep'){
-      const W = LARG.prep[niv], o = outilSol(hitch, W);
-      corps.push.apply(corps, discsTractes(t.ball, o.Lt, W));
-      d = { wheels:t.wheels, steer:t.avant.map(w => ({ w, k:1 })), spinners:o.spin, hitch,
-            tool:{ obj:o.mk, W, near:-.5, far:.15 }, corps, niv };
-    } else if (kind === 'sow'){
-      const W = LARG.sow[niv], o = outilSemis(hitch, W);
-      corps.push.apply(corps, discsTractes(t.ball, o.Lt, W));
-      d = { wheels:t.wheels, steer:t.avant.map(w => ({ w, k:1 })), spinners:o.spin,
-            tourne:o.tourne, hitch, tool:{ obj:o.mk, W, near:-.45, far:.3 }, corps, niv };
-    } else {
-      const B = opt.benne ? benneDef(opt.benne) : null;
-      let fill = null, wheels = t.wheels;
-      if (B){
-        const r = B.f(hitch);
-        fill = r.fill; wheels = wheels.concat(r.roues);
-        corps.push.apply(corps, discsTractes(t.ball, r.Lt, r.W));
-      }
-      d = { wheels, steer:t.avant.map(w => ({ w, k:1 })), spinners:[], hitch,
-            fill, bin:fill, tool:null, benne:B ? B.id : null, corps, niv };
-    }
-  }
-  else if (kind === 'fert'){
-    // Trois niveaux là aussi : cuve traînée derrière le tracteur du parc pour les deux
-    // premiers, automoteur pour le dernier. La rampe s'élargit d'un cran à chaque fois.
-    const span = RAMPE[niv];
-    let mnt, wheels, steer, corps, mk;
-    if (niv < 2){
-      const t = TR.f(g);
-      const hitch = new THREE.Group(); hitch.position.set(0,0,t.ball); g.add(hitch);
-      const cv = cuveTrainee(hitch);
-      const r = rampes(hitch, cv, span);
-      mk = r.mk; mnt = r;
-      wheels = t.wheels.concat(cv.roues);
-      steer = t.avant.map(w => ({ w, k:1 }));
-      corps = [[ (t.ball + TR.nez)/2, TR.demi ]].concat(discsTractes(t.ball, cv.Lt, cv.W));
-      d = { wheels, steer, spinners:[], hitch,
-            tool:{ obj:mk, W:span, near:-.55, far:.55 }, corps, niv, fold:r.fold };
-    } else {
-      const a = pulveAutomoteur(g);
-      const r = rampes(g, a, span);
-      mk = r.mk;
-      d = { wheels:a.wheels, steer:a.vire.map(w => ({ w, k:-1 })), spinners:[],
-            tool:{ obj:mk, W:span, near:-.55, far:.55 },
-            corps:[[.5,1.9],[-3.1,2.5]], niv, fold:r.fold };
-    }
-    d.fold(1);                                     // rampes dépliées, comme avant
-  }
-  else {
-    // Moissonneuse compacte pour les deux premiers niveaux, grande pour le dernier ; et
-    // une barre de coupe qui passe de 4,8 à 9,2 m. Trémie, vis de déchargement et
-    // goulotte restent en place : c'est par elles que la benne se remplit.
+  if (spec.kind === 'moiss'){
+    const niv = Math.max(0, Math.min(2, spec.niv|0)), bec = Math.max(0, Math.min(2, spec.bec|0));
     const M = (niv < 2 ? moissCompacte : moissGrande)(g);
-    const b = becCoupe(g, M, BEC[niv]);
-    const W = BEC[niv];
+    const W = BEC[bec], b = becCoupe(g, M, W);
     const corps = M.corps.slice();
     // La coupe est large mais mince : un disque à sa demi-largeur déborderait de quatre
     // mètres devant la machine et la ferait s'écarter des obstacles de bien trop loin.
-    // On le plafonne, comme on l'a toujours fait pour les rampes du pulvérisateur.
     corps[0] = [ M.head[2] + .7, Math.max(2.0, Math.min(3.0, W*.45)) ];
     d = { wheels:M.wheels, steer:M.vire.map(w => ({ w, k:-1 })),
           spinners:[{ spin:b.reel, rate:1.1 }],
           fill:M.fill, auger:M.vis.piv, spout:M.vis.spout,
-          tool:{ obj:b.mk, W, near:-.35, far:.4 }, corps, niv };
+          tool:{ obj:b.mk, W, near:-.35, far:.4 }, corps, niv, bec, metier:'harvest' };
+  }
+  else if (spec.kind === 'pulve'){
+    const bec = Math.max(0, Math.min(2, spec.bec|0));
+    const a = pulveAutomoteur(g), r = rampes(g, a, RAMPE[bec]);
+    d = { wheels:a.wheels, steer:a.vire.map(w => ({ w, k:-1 })), spinners:[],
+          tool:{ obj:r.mk, W:RAMPE[bec], near:-.55, far:.55 },
+          corps:[[.5,1.9],[-3.1,2.5]], niv:2, bec, metier:'fert', fold:r.fold };
+    d.fold(1);
+  }
+  else {
+    const niv = Math.max(0, Math.min(2, spec.niv|0)), TR = TRACTEURS[niv];
+    const t = TR.f(g);
+    const hitch = new THREE.Group(); hitch.position.set(0,0,t.ball); g.add(hitch);
+    const corps = [[ (t.ball + TR.nez)/2, TR.demi ]];
+    d = { wheels:t.wheels, steer:t.avant.map(w => ({ w, k:1 })), spinners:[], hitch,
+          tool:null, corps, niv, metier:null, outil:null };
+    if (spec.outil){
+      const type = spec.outil.type, D = OUTILS[type];
+      const o = poseOutil(hitch, type, spec.outil.niv);
+      d.wheels = d.wheels.concat(o.roues || []);
+      d.spinners = o.spin || [];
+      if (o.tourne) d.tourne = o.tourne;
+      if (o.fold){ d.fold = o.fold; d.fold(1); }
+      if (o.fill){ d.fill = o.fill; d.bin = o.fill; d.benne = o.benne; }
+      if (o.W) d.tool = { obj:o.mk, W:o.W, near:D.near, far:D.far };
+      corps.push.apply(corps, discsTractes(t.ball, o.Lt, o.Wc));
+      d.metier = D.metier; d.outil = type; d.outilNiv = spec.outil.niv;
+    }
   }
   JELLY = false;
   g.userData = d;
   return g;
 }
-// Une benne posée au sol : la même caisse, sans tracteur, avec sa béquille. Son origine
-// est le point d'attelage — il suffit d'y amener la boule pour la reprendre.
-function buildBenneSeule(id){
-  const B = benneDef(id); if (!B) return null;
+// Un outil posé au sol : la même pièce, sans tracteur, avec sa béquille. Son origine est
+// le point d'attelage — il suffit d'y amener la boule pour le reprendre.
+function buildOutilSeul(type, niv){
+  if (!OUTILS[type]) return null;
   JELLY = true;
   const g = new THREE.Group();
-  const r = B.f(g);
+  const o = poseOutil(g, type, niv);
   rbox(.16,.86,.16, C.dark, 0,.43,-.45, g, .04);
   rbox(.44,.12,.34, C.dark, 0,.06,-.45, g, .03);
   JELLY = false;
-  g.userData = { benne:id, fill:r.fill, Lt:B.Lt, W:B.W };
+  g.userData = { type, niv, fill:o.fill || null, Lt:o.Lt, Wc:o.Wc };
   return g;
 }
+
 // Un engin remplacé rend ses géométries : seules les boîtes arrondies sont partagées.
 function libere(o){
   o.traverse(n => {

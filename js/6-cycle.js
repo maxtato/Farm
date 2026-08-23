@@ -11,9 +11,9 @@ const CORPS = {
   harvest: [[3.0,2.7], [0,2.3], [-2.4,2.0]], // coupe devant, corps, arrière
   trailer: [[2.4,1.8], [-2.6,2.2]]           // tracteur puis caisse
 };
-function vehicle(kind, opt){
+function vehicle(spec){
   brakeLights = []; headlamps = []; beacons = [];
-  const g = build(kind, opt);
+  const g = build(spec);
   g.traverse(o => { if(o.isMesh) o.castShadow = true; });
   const h = new THREE.Group(); h.add(g); scene.add(h);
   g.userData.brakes = brakeLights; g.userData.lamps = headlamps; g.userData.beacons = beacons;
@@ -25,8 +25,8 @@ function vehicle(kind, opt){
   const trav = org ? h.worldToLocal(org.getWorldPosition(new THREE.Vector3())).z : 0;
   // Le gabarit suit la machine : un tracteur de grande puissance attelé d'une 22 m³ n'a
   // pas les disques d'un compact tirant une 8 m³. `build` les calcule, sinon la table.
-  const B = g.userData.corps || CORPS[kind] || CORPS.prep;
-  return { kind, g, h, trav, pos:GATE.clone(), heading:Math.PI, speed:0, steerA:0, turnRate:0,
+  const B = g.userData.corps || CORPS.prep;
+  return { kind:spec.kind, g, h, trav, pos:GATE.clone(), heading:Math.PI, speed:0, steerA:0, turnRate:0,
            bob:Math.random()*3, trk:0, laneI:0, lanes:null, done:false, hop:0,
            sus:0, susV:0, pit:0, pitV:0, rol:0, rolV:0, lastS:0, wph:Math.random()*6,
            sq:0, sqV:0, line:0, strk:0,
@@ -293,187 +293,255 @@ const STAGES = [
   { k:'grow',    n:'Pousse',   ic:'🌿', d:'La culture mûrit' },
   { k:'harvest', n:'Moisson',  ic:'🌾', d:'Moissonneuse — la benne vient au transfert' }
 ];
-// De quoi équiper une ferme au minimum — déchaumeuse, semoir, moissonneuse, tracteur de
-// transport et petite benne font 16 500 — et un peu de marge pour choisir où mettre le
+// De quoi équiper une ferme au minimum — un tracteur, une déchaumeuse, un semoir, une
+// benne et une moissonneuse font 16 500 — et un peu de marge pour choisir où mettre le
 // reste. Tout ce qui suit se gagne au silo.
 const COINS0 = 18000;
 let stage = 0, coins = COINS0, stock = 0;
-// Toute la flotte vit sur la carte. On passe d'un engin à l'autre sans que le précédent
-// disparaisse : il garde son tracé, continue de rouler et continue de travailler. `worker`
-// et `hauler` ne sont plus que des vues sur la flotte, rafraîchies à chaque image.
-const KINDS = ['prep','sow','fert','harvest','trailer'];
-const fleet = { prep:null, sow:null, fert:null, harvest:null, trailer:null };
-let driven = 'prep';            // clé de l'engin qui répond aux commandes
-let worker = null, hauler = null;
-// ---------- parc : niveau de tracteur, bennes possédées, benne attelée ----------
-// Les trois tracteurs ne sont pas interchangeables : la puissance décide de la largeur de
-// l'outil porté et du poids de remorque admissible. Une benne se décroche sur place et se
-// reprend plus tard — c'est le même tracteur qui va en chercher une autre.
 // Vierge tant qu'aucun outil n'a mordu la parcelle : c'est ce qui décide entre friche et
 // chaume au repos. Le premier passage de déchaumeuse l'éteint pour de bon.
 let vierge = true;
-// Rien n'est donné : la partie commence sur un terrain nu, sans un engin sur la cour.
-// -1 = poste vide. Chaque métier a son niveau propre, acheté séparément.
-const nivDe = { prep:-1, sow:-1, fert:-1, harvest:-1, trailer:-1 };
-const possede = k => nivDe[k] >= 0;
-const silosOwned = { petit:false, grand:false };
+let siloNiv = -1;                 // -1 = pas de silo à soi, 0 = petit, 1 = grand
 // Prime de stockage : garder la récolte au lieu de la vendre le jour même se paie.
-const primeSilos = () => SILOS.reduce((k,S) => k + (silosOwned[S.id] ? S.prime : 0), 0);
-function acheterSilo(id){
-  const S = siloDef(id);
-  if (!S || silosOwned[id] || coins < S.prix) return false;
-  coins -= S.prix; silosOwned[id] = true;
-  montreSilo(id); applyUpgrades(); save();
+const primeSilos = () => siloNiv >= 0 ? SILOS[siloNiv].prime : 0;
+function acheterSilo(){
+  if (siloNiv >= 0 || coins < SILOS[0].prix) return false;
+  coins -= SILOS[0].prix; siloNiv = 0;
+  montreSilo(0); applyUpgrades(); save();
   return true;
 }
-const bennesOwned = { b8:false, b14:false, b22:false };
-let benneAtt = null;                 // benne accrochée, ou null quand le tracteur roule seul
-const bennesPosees = [];             // { id, obj, x, z, ang, hop, obst[] }
-const benneAttDef = () => (benneAtt ? benneDef(benneAtt) : null);
-// C'est le tracteur de transport qui décide de ce qu'on peut atteler : sans tracteur,
-// aucune benne ne s'accroche, et un compact ne prend pas une 22 m³.
-const benneCompatible = b => b.force <= nivDe.trailer;
-function optFor(kind){
-  return { niv:Math.max(0, nivDe[kind]), benne: kind === 'trailer' ? benneAtt : null };
+// Le grand silo ne s'achète pas : il remplace le petit, contre la différence, l'ancien
+// étant repris à moitié prix comme n'importe quelle pièce du parc.
+function ameliorerSilo(){
+  if (siloNiv !== 0) return null;
+  const net = coutAmelioration([SILOS[0].prix, SILOS[1].prix], 0, 1);
+  if (coins < net) return null;
+  coins -= net; siloNiv = 1;
+  montreSilo(1); applyUpgrades(); save();
+  return net;
 }
-function fleetGet(kind){
-  if (!KINDS.includes(kind) || !possede(kind)) return null;
-  if (!fleet[kind]){
-    const v = vehicle(kind, optFor(kind)), n = KINDS.indexOf(kind);
-    // Rangés côte à côte au fond de la cour, derrière les bâtiments. Alignés devant, comme
-    // ils l'étaient, les cinq engins formaient un mur de vingt-trois mètres exactement en
-    // travers du chemin entre le champ et la cour : impossible d'aller au silo sans se
-    // frotter à sa propre flotte.
-    v.pos.set(GATE.x + (n-2)*6.4, 0, YARD + 10.5);
-    v.heading = Math.PI; v.h.position.set(v.pos.x, 0, v.pos.z);
-    if (kind === 'trailer'){ v.hop = 0; v.paid = 0; v.cropId = crop().id; }
-    const tw = v.g.userData.tool ? v.g.userData.tool.W : 4;
-    v.lanes = lanesFor(tw); v.laneI = 0; v.done = false;
-    v.path = []; v.head = 0; v.goto = null;
-    fleet[kind] = v;
+
+// ---------- le parc : des pièces, pas des postes ----------
+// Rien n'est solidaire de rien. On achète autant de tracteurs qu'on veut, autant d'outils
+// qu'on veut, et chaque pièce monte en gamme de son côté. N'importe quel outil se pose
+// derrière n'importe quel tracteur assez fort pour le tirer : c'est la seule règle.
+// `engins` = ce qui roule et se pilote — chaque véhicule porte sa propre fiche.
+// `outils` = ce qui s'attelle, qu'il soit accroché ou posé au sol.
+let idSeq = 1;
+const engins = [];
+const outils = [];
+let driven = 0;                 // identifiant de l'engin qui répond aux commandes
+let worker = null, hauler = null;
+const enginPar = id => engins.find(e => e.pid === id) || null;
+const outilPar = id => outils.find(o => o.oid === id) || null;
+const pilote = () => enginPar(driven);
+const outilDe = v => (v && v.outil) ? outilPar(v.outil) : null;
+// Un outil ne se pose que derrière un tracteur assez fort pour le tirer.
+const tirable = (o, v) => !!v && v.kind === 'tracteur' && OUTILS[o.type].force[o.niv] <= v.niv;
+// Ce que l'engin emporte : capacité de la benne accrochée, zéro s'il n'en a pas.
+function capDe(v){
+  const o = outilDe(v);
+  return (o && o.type === 'benne') ? Math.round(BENNES[o.niv].cap*(1 + .28*lv.tremie)) : 0;
+}
+function specDe(v){
+  if (v.kind === 'tracteur'){
+    const o = outilDe(v);
+    return { kind:'tracteur', niv:v.niv, outil: o ? { type:o.type, niv:o.niv } : null };
   }
-  return fleet[kind];
+  return { kind:v.kind, niv:v.niv, bec:v.bec };
 }
-function syncFleet(){ worker = fleet[STAGES[stage].k] || null; hauler = fleet.trailer; }
-// Changer de tracteur ou de benne refait la machine, mais la partie continue : place, cap,
-// chargement, tracé en cours et rangs sont repris tels quels sur le nouvel engin.
-function rebuildVeh(kind){
-  const o = fleet[kind]; if (!o) return null;
-  scene.remove(o.h); libere(o.h);
-  const v = vehicle(kind, optFor(kind));
-  ['pos','heading','speed','hop','paid','cropId','path','head','goto','laneI','done',
-   'detour','cote','trace','warned','augWant'].forEach(k => { if (o[k] !== undefined) v[k] = o[k]; });
+// Refaire une machine ne doit rien coûter à la partie : place, cap, chargement, tracé en
+// cours et rangs passent sur la neuve, et sa fiche la suit.
+const FICHE = ['pid','kind','niv','bec','outil'];
+const GARDE = ['pos','heading','speed','hop','paid','cropId','path','head','goto','laneI',
+               'done','detour','cote','trace','warned','augWant'];
+function poser(v){                       // finitions communes à toute machine montée
+  v.metier = v.g.userData.metier || null;
   v.h.position.set(v.pos.x, 0, v.pos.z); v.h.rotation.y = v.heading;
   v.lanes = lanesFor(v.g.userData.tool ? v.g.userData.tool.W : 4);
-  fleet[kind] = v; syncFleet();
+  return v;
+}
+function monter(anc){
+  scene.remove(anc.h); libere(anc.h);
+  const v = vehicle(specDe(anc));
+  FICHE.forEach(k => v[k] = anc[k]);
+  GARDE.forEach(k => { if (anc[k] !== undefined) v[k] = anc[k]; });
+  const i = engins.indexOf(anc); if (i >= 0) engins[i] = v;
+  poser(v); syncFleet();
   if (typeof drawVeh === 'function') drawVeh();
   return v;
 }
-// Le niveau vaut pour toute la flotte : le pulvérisateur et la moissonneuse changent de
-// machine eux aussi, pas seulement les engins d'attelage.
-function rebuildTracteurs(){ KINDS.forEach(k => { if (fleet[k]) rebuildVeh(k); }); }
-// Ce que coûte vraiment une machine : son prix, moins la moitié de celle qu'elle remplace.
-function repriseDe(k, i){
-  const M = machDef(k);
-  return (M && nivDe[k] >= 0 && nivDe[k] < i) ? Math.round(M.prix[nivDe[k]]*.5) : 0;
+// Les engins neufs se rangent en épi au fond de la cour, derrière les bâtiments.
+const placeParc = n => ({ x: GATE.x - 16 + (n % 8)*6.4, z: YARD + 10.5 + Math.floor(n/8)*7.5 });
+function creerEngin(kind, niv){
+  const v = vehicle(kind === 'tracteur' ? { kind, niv, outil:null } : { kind, niv, bec:0 });
+  v.pid = idSeq++; v.kind = kind; v.niv = niv; v.bec = 0; v.outil = null;
+  const q = placeParc(engins.length);
+  v.pos.set(q.x, 0, q.z); v.heading = Math.PI;
+  v.laneI = 0; v.done = false; v.path = []; v.head = 0; v.goto = null;
+  v.hop = 0; v.paid = 0; v.cropId = crop().id;
+  engins.push(v); poser(v);
+  if (!driven) driven = v.pid;
+  syncFleet();
+  return v;
 }
-function acheterEngin(k, i){
-  const M = machDef(k);
-  if (!M || i < 0 || i >= M.prix.length || nivDe[k] >= i) return null;
-  const reprise = repriseDe(k,i), net = M.prix[i] - reprise;
-  if (coins < net) return null;
-  coins -= net;
-  const neuf = !possede(k);
-  nivDe[k] = i;
-  if (neuf) fleetGet(k); else rebuildVeh(k);
-  applyUpgrades(); save();
-  return { net, reprise, neuf };
+// `worker` : l'engin dont le métier est celui du chantier — celui qu'on conduit en
+// priorité, sinon le premier qui sait le faire. `hauler` : celui qui porte une benne.
+function syncFleet(){
+  const k = STAGES[stage].k, p = pilote();
+  worker = (p && p.metier === k) ? p : (engins.find(v => v.metier === k) || null);
+  hauler = (p && p.g.userData.benne) ? p : (engins.find(v => v.g.userData.benne) || null);
 }
-// Une benne posée est un obstacle comme un autre : on l'inscrit avec les mêmes disques que
-// ceux qu'elle avait en roulant, sinon les autres engins lui passeraient au travers.
-function obstBenne(rec){
-  const B = benneDef(rec.id);
-  rec.obst = discsTractes(0, B.Lt, B.W).map(([off,r]) => {
-    const o = { x:rec.x + Math.sin(rec.ang)*off, z:rec.z + Math.cos(rec.ang)*off, r };
-    OBST.push(o); return o;
+const possede = k => k === 'trailer' ? engins.some(v => v.g.userData.benne)
+                                     : engins.some(v => v.metier === k);
+
+// ---------- outils posés au sol : ils encombrent la cour comme le reste ----------
+function obstOutil(o){
+  o.obst = discsTractes(0, o.Lt, o.Wc).map(([off,r]) => {
+    const q = { x:o.x + Math.sin(o.ang)*off, z:o.z + Math.cos(o.ang)*off, r };
+    OBST.push(q); return q;
   });
 }
-function retirerObst(rec){
-  (rec.obst||[]).forEach(o => { const i = OBST.indexOf(o); if (i >= 0) OBST.splice(i,1); });
-  rec.obst = [];
+function retirerObst(o){
+  (o.obst||[]).forEach(q => { const i = OBST.indexOf(q); if (i >= 0) OBST.splice(i,1); });
+  o.obst = [];
 }
-function poserBenne(rec){
-  const g = buildBenneSeule(rec.id);
-  g.position.set(rec.x, 0, rec.z); g.rotation.y = rec.ang;
-  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  scene.add(g); rec.obj = g;
-  majBenneePosee(rec);
-  obstBenne(rec);
-  bennesPosees.push(rec);
+function poserOutil(o){
+  const g = buildOutilSeul(o.type, o.niv);
+  g.position.set(o.x, 0, o.z); g.rotation.y = o.ang;
+  g.traverse(n => { if (n.isMesh) n.castShadow = true; });
+  scene.add(g);
+  o.obj = g; o.Lt = g.userData.Lt; o.Wc = g.userData.Wc;
+  majOutilPose(o); obstOutil(o);
 }
-function majBenneePosee(rec){
-  const f = rec.obj && rec.obj.userData.fill, cap = benneDef(rec.id).cap;
+function relever(o){                     // on le reprend : plus rien au sol
+  if (!o.obj) return;
+  retirerObst(o); scene.remove(o.obj); libere(o.obj); o.obj = null;
+}
+function majOutilPose(o){
+  const f = o.obj && o.obj.userData.fill;
   if (!f) return;
-  f.visible = rec.hop > .5; f.scale.y = .01 + Math.min(1, rec.hop/cap)*.99;
+  const cap = BENNES[o.niv].cap;
+  f.visible = o.hop > .5; f.scale.y = .01 + Math.min(1, o.hop/cap)*.99;
+}
+// Une pièce neuve arrive rangée au fond de la cour : on va la chercher avec un tracteur.
+const placeOutil = n => ({ x: GATE.x - 12 + (n % 7)*6.2, z: YARD + 24, ang: Math.PI });
+function creerOutil(type, niv){
+  const D = OUTILS[type]; if (!D) return null;
+  const q = placeOutil(outils.filter(o => !o.porteur).length);
+  const o = { oid:idSeq++, type, niv, hop:0, porteur:null,
+              x:q.x, z:q.z, ang:q.ang, obj:null, obst:[], Lt:4.7, Wc:2 };
+  outils.push(o); poserOutil(o);
+  return o;
 }
 // Le point d'attelage dans le monde : c'est la boule, pas le centre du tracteur.
 const _bp = new THREE.Vector3();
 function pointAttelage(v){
+  if (!v || !v.g.userData.hitch) return null;
   v.h.updateMatrixWorld(true);
   v.g.userData.hitch.getWorldPosition(_bp);
   return _bp;
 }
-function decrocher(){
-  const v = fleet.trailer;
-  if (!v || !v.g.userData.benne) return 'rien';
+function decrocher(v){
+  v = v || pilote();
+  if (!v || !v.outil) return null;
+  const o = outilPar(v.outil); if (!o) return null;
   const p = pointAttelage(v);
-  const rec = { id:v.g.userData.benne, hop:v.hop,
-                x:p.x, z:p.z, ang:v.heading + v.g.userData.hitch.rotation.y };
-  benneAtt = null;
-  const n = rebuildVeh('trailer'); n.hop = 0;
-  poserBenne(rec);
-  applyUpgrades();                    // plus de benne, plus de charge : la jauge doit le dire
-  save();
-  return benneDef(rec.id).n;
+  o.x = p.x; o.z = p.z; o.ang = v.heading + v.g.userData.hitch.rotation.y;
+  o.hop = o.type === 'benne' ? v.hop : 0;
+  o.porteur = null; v.outil = null;
+  const n = monter(v); n.hop = 0;
+  poserOutil(o);
+  applyUpgrades(); save();
+  return o;
 }
-function benneAPortee(){
-  const v = fleet.trailer; if (!v || v.g.userData.benne) return -1;
-  const p = pointAttelage(v);
-  let best = -1, bd = 5;
-  bennesPosees.forEach((r,i) => {
-    const d = Math.hypot(r.x-p.x, r.z-p.z);
-    if (d < bd && benneCompatible(benneDef(r.id))){ bd = d; best = i; }
+function outilAPortee(v){
+  v = v || pilote();
+  if (!v || v.kind !== 'tracteur' || v.outil) return null;
+  const p = pointAttelage(v); if (!p) return null;
+  let best = null, bd = 5;
+  outils.forEach(o => {
+    if (o.porteur || !tirable(o, v)) return;
+    const d = Math.hypot(o.x-p.x, o.z-p.z);
+    if (d < bd){ bd = d; best = o; }
   });
   return best;
 }
-function raccrocher(){
-  const v = fleet.trailer; if (!v) return null;
-  if (v.g.userData.benne) return null;
-  const i = benneAPortee(); if (i < 0) return null;
-  const rec = bennesPosees.splice(i,1)[0];
-  retirerObst(rec);
-  scene.remove(rec.obj); libere(rec.obj);
-  benneAtt = rec.id;
-  const n = rebuildVeh('trailer'); n.hop = rec.hop;
-  // la benne reprend l'angle où elle était posée : sans ça elle pivote d'un coup dans l'axe
-  let rel = rec.ang - n.heading;
+function raccrocher(v){
+  v = v || pilote();
+  const o = outilAPortee(v); if (!o) return null;
+  relever(o);
+  o.porteur = v.pid; v.outil = o.oid;
+  const n = monter(v);
+  if (o.type === 'benne') n.hop = o.hop;
+  // l'outil reprend l'angle où il était posé : sans ça il pivote d'un coup dans l'axe
+  let rel = o.ang - n.heading;
   while(rel >  Math.PI) rel -= 6.28318;
   while(rel < -Math.PI) rel += 6.28318;
   n.g.userData.hitch.rotation.y = Math.max(-.95, Math.min(.95, rel));
   applyUpgrades(); save();
-  return benneDef(rec.id).n;
+  return o;
 }
-// Une benne neuve arrive rangée au fond de la cour : on va la chercher avec le tracteur.
-function placeLibre(k){
-  return { x: GATE.x - 8.5 + k*6.5, z: YARD + 16.5, ang: Math.PI };
+
+// ---------- la caisse ----------
+// Acheter une machine neuve, ou faire monter en gamme une pièce déjà au parc. Améliorer
+// coûte la différence, l'ancienne étant reprise à moitié prix : commencer petit ne se
+// paie donc jamais deux fois.
+const prixPorteur = (kind, niv) => PORTEURS[kind].prix[Math.min(niv, PORTEURS[kind].prix.length-1)];
+const coutAmelioration = (prix, de, vers) => prix[vers] - Math.round(prix[de]*.5);
+function acheterPorteur(kind, niv){
+  const P = PORTEURS[kind]; if (!P) return null;
+  niv = Math.max(0, Math.min(P.prix.length-1, niv|0));
+  const prix = P.prix[niv];
+  if (coins < prix) return null;
+  coins -= prix;
+  const v = creerEngin(kind, niv);
+  applyUpgrades(); save();
+  return v;
 }
-function livrerBenne(id){
-  const pris = bennesPosees.map(r => r.pl).filter(n => n !== undefined);
-  let k = 0; while(pris.includes(k)) k++;
-  const q = placeLibre(k);
-  poserBenne({ id, hop:0, x:q.x, z:q.z, ang:q.ang, pl:k });
+function acheterOutil(type, niv){
+  const D = OUTILS[type]; if (!D) return null;
+  niv = Math.max(0, Math.min(2, niv|0));
+  if (coins < D.prix[niv]) return null;
+  coins -= D.prix[niv];
+  const o = creerOutil(type, niv);
+  applyUpgrades(); save();
+  return o;
 }
-function pilote(){ return fleet[driven] || null; }
+function ameliorerEngin(pid){
+  const v = enginPar(pid); if (!v) return null;
+  const P = PORTEURS[v.kind];
+  if (v.niv >= P.prix.length-1) return null;
+  const net = coutAmelioration(P.prix, v.niv, v.niv+1);
+  if (coins < net) return null;
+  coins -= net; v.niv++;
+  monter(v); applyUpgrades(); save();
+  return net;
+}
+// La coupe de la moissonneuse et les rampes de l'automoteur montent séparément du porteur.
+function ameliorerBec(pid){
+  const v = enginPar(pid); if (!v) return null;
+  const P = PORTEURS[v.kind]; if (!P.outil || v.bec >= 2) return null;
+  const net = coutAmelioration(P.outil.prix, v.bec, v.bec+1);
+  if (coins < net) return null;
+  coins -= net; v.bec++;
+  monter(v); applyUpgrades(); save();
+  return net;
+}
+function ameliorerOutil(oid){
+  const o = outilPar(oid); if (!o || o.niv >= 2) return null;
+  const D = OUTILS[o.type];
+  const net = coutAmelioration(D.prix, o.niv, o.niv+1);
+  if (coins < net) return null;
+  const v = o.porteur ? enginPar(o.porteur) : null;
+  // trop lourd pour le tracteur qui le tire : on ne l'améliore pas en douce sous lui
+  if (v && D.force[o.niv+1] > v.niv) return 'lourd';
+  coins -= net; o.niv++;
+  if (v) monter(v);
+  else { const g = o.obj; relever(o); poserOutil(o); }
+  applyUpgrades(); save();
+  return net;
+}
 const CAP0 = 900, TRCAP0 = 1800;   // une trémie qui tient un vrai bout de parcelle
 let CAP = CAP0, TRCAP = TRCAP0;
 const elNow = null;
@@ -493,8 +561,7 @@ function startStage(){
     e.classList.toggle('done', i < stage);
   });
   refreshNow();
-  if (s.k !== 'grow') fleetGet(s.k);   // l'engin du chantier existe, mais rien n'est détruit
-  syncFleet();
+  syncFleet();                        // le chantier prend l'engin qui sait le faire
   if (worker){ worker.lanes = lanesFor(toolW(worker)); worker.laneI = 0; worker.done = false; }
 }
 function toolW(v){ return v && v.g.userData.tool ? v.g.userData.tool.W : 4; }
@@ -513,15 +580,16 @@ function paySeed(){
 }
 function nextStage(){
   const fini = STAGES[stage];
-  const suivait = driven === fini.k;   // on conduisait celui qui vient de finir : on suit le chantier
+  const p = pilote();
+  const suivait = !!p && p.metier === fini.k;   // on suivait le chantier : on continue de le suivre
   stage = (stage+1) % STAGES.length;
   if (stage === 0){ harvests++; SWATH.reset(); }   // cycle bouclé : la parcelle repart à nu
   if (STAGES[stage].k === 'sow') paySeed();        // la semence se règle en entrant au semis
   startStage(); sfx('stage'); save();
-  if (fleet[fini.k]) fleet[fini.k].done = true;
+  engins.forEach(v => { if (v.metier === fini.k) v.done = true; });
   if (suivait){
-    const k = STAGES[stage].k;
-    if (KINDS.includes(k)){ driven = k; syncFleet(); drawVeh(); }
+    const n = engins.find(v => v.metier === STAGES[stage].k);
+    if (n){ driven = n.pid; syncFleet(); drawVeh(); }
   }
   toast(fini.ic + ' ' + fini.n + ' — terminé !', 'good');
   confetti(stage === 0 ? 34 : 14);
@@ -531,7 +599,7 @@ function switchTo(i){
   if (i === stage) return;
   stage = i; startStage();
   const k = STAGES[i].k;
-  if (KINDS.includes(k) && !possede(k))
+  if (k !== 'grow' && !possede(k))
     toast(STAGES[i].ic + ' ' + STAGES[i].n + ' — aucune machine pour ce chantier', 'bad');
 }
 
@@ -641,9 +709,9 @@ function applyUpgrades(){
   RMIN   = RMIN0;                                  // le braquage non plus
   ACC    = 10;                                     // la reprise non plus
   CAP    = Math.round(CAP0  *(1 + .28*lv.tremie));
-  // La benne attelée décide de ce qu'on emporte. Décroché, le tracteur ne charge rien.
-  const B = typeof benneAttDef === 'function' ? benneAttDef() : null;
-  TRCAP  = B ? Math.round(B.cap*(1 + .28*lv.tremie)) : 0;
+  // La benne attelée décide de ce qu'on emporte, et elle n'est plus la même d'un tracteur
+  // à l'autre : `capDe` la lit sur l'engin. TRCAP ne sert plus que de repli.
+  TRCAP  = typeof hauler !== 'undefined' && hauler ? capDe(hauler) : 0;
   GROWK  = 1 + .22*lv.semence;
   PRICEK = (1 + .16*lv.negoce) * (1 + primeSilos());
 }
@@ -758,9 +826,14 @@ function save(){
   try {
     localStorage.setItem(SKEY, JSON.stringify({
       v:1, coins, stock, totalT, harvests, lv, owned, cropI, stage, day, dayT,
-      niv:nivDe, bennes:bennesOwned, benneAtt, vierge, silos:silosOwned,
-      posees: bennesPosees.map(r => ({ id:r.id, hop:Math.round(r.hop),
-                x:+r.x.toFixed(2), z:+r.z.toFixed(2), ang:+r.ang.toFixed(3), pl:r.pl })),
+      vierge, silo:siloNiv, idSeq,
+      // le parc, pièce par pièce : où chacune se trouve, et ce qu'elle porte
+      engins: engins.map(v => ({ id:v.pid, k:v.kind, n:v.niv, b:v.bec, o:v.outil,
+                x:+v.pos.x.toFixed(2), z:+v.pos.z.toFixed(2), a:+v.heading.toFixed(3),
+                hop:Math.round(v.hop) })),
+      outils: outils.map(o => ({ id:o.oid, t:o.type, n:o.niv, p:o.porteur,
+                hop:Math.round(o.hop), x:+o.x.toFixed(2), z:+o.z.toFixed(2),
+                a:+o.ang.toFixed(3) })),
       contract, son:SND.isOn(), ctrl:ctrlMode, conduit:driven,
       vue:{ z:+zoom.toFixed(3), p:+PITCH.toFixed(4), v:2 }
     }));
@@ -773,29 +846,48 @@ function restore(){
   coins = +d.coins || 0; stock = +d.stock || 0;
   totalT = +d.totalT || 0; harvests = +d.harvests || 0;
   UPGRADES.forEach(u => { lv[u.id] = Math.max(0, Math.min(u.max, +d.lv?.[u.id] || 0)); });
-  SILOS.forEach(S => { if (d.silos && d.silos[S.id]){ silosOwned[S.id] = true; montreSilo(S.id); } });
+  // ancienne sauvegarde : deux silos indépendants — on garde le plus grand des deux
+  siloNiv = d.silo !== undefined ? Math.max(-1, Math.min(1, +d.silo))
+          : (d.silos ? (d.silos.grand ? 1 : d.silos.petit ? 0 : -1) : -1);
+  if (siloNiv >= 0) montreSilo(siloNiv);
   vierge = d.vierge === undefined ? (+d.harvests || 0) === 0 && (+d.stage || 0) === 0 : !!d.vierge;
   // Une sauvegarde d'avant l'achat des engins avait toute la flotte, à un niveau unique :
   // on la lui rend telle quelle plutôt que de la déshabiller sans prévenir.
-  if (d.niv) KINDS.forEach(k => { nivDe[k] = Math.max(-1, Math.min(2, d.niv[k] === undefined ? -1 : +d.niv[k])); });
-  else { const n = Math.max(0, Math.min(2, +d.nivTr || 0)); KINDS.forEach(k => nivDe[k] = n); }
-  BENNES.forEach(b => { if (d.bennes && d.bennes[b.id]) bennesOwned[b.id] = true; });
-  if (!d.niv && !d.bennes) bennesOwned.b8 = true;          // ancienne partie : elle avait la petite benne
-  // Une benne trop lourde pour le tracteur enregistré ne peut pas rester attelée : on la
-  // laisse au parc plutôt que de la traîner avec un engin qui n'en a pas la force.
-  benneAtt = (d.benneAtt && bennesOwned[d.benneAtt] && benneCompatible(benneDef(d.benneAtt)))
-             ? d.benneAtt : null;
-  bennesPosees.length = 0;
-  (Array.isArray(d.posees) ? d.posees : []).forEach(r => {
-    if (!benneDef(r.id) || !bennesOwned[r.id]) return;
-    poserBenne({ id:r.id, hop:+r.hop || 0, x:+r.x || 0, z:+r.z || 0, ang:+r.ang || 0, pl:r.pl });
+  // ---------- le parc ----------
+  // Les outils d'abord : un engin ne peut pas se monter avec un outil qui n'existe pas
+  // encore. Chacun retrouve sa place, attelé ou posé là où on l'avait laissé.
+  engins.slice().forEach(v => { scene.remove(v.h); libere(v.h); });
+  engins.length = 0;
+  outils.slice().forEach(o => relever(o));
+  outils.length = 0;
+  idSeq = Math.max(1, +d.idSeq || 1);
+  (Array.isArray(d.outils) ? d.outils : []).forEach(r => {
+    if (!OUTILS[r.t]) return;
+    const o = { oid:+r.id || idSeq++, type:r.t, niv:Math.max(0,Math.min(2,+r.n||0)),
+                hop:+r.hop || 0, porteur:r.p || null,
+                x:+r.x || 0, z:+r.z || 0, ang:+r.a || 0, obj:null, obst:[], Lt:4.7, Wc:2 };
+    outils.push(o);
+    if (!o.porteur) poserOutil(o);
   });
-  // une benne possédée mais nulle part — ni attelée, ni posée — reviendrait à la perdre
-  BENNES.forEach(B => {
-    if (bennesOwned[B.id] && benneAtt !== B.id && !bennesPosees.some(r => r.id === B.id))
-      livrerBenne(B.id);
+  (Array.isArray(d.engins) ? d.engins : []).forEach(r => {
+    if (!PORTEURS[r.k]) return;
+    const v = vehicle(r.k === 'tracteur'
+      ? { kind:'tracteur', niv:+r.n || 0,
+          outil: r.o && outilPar(r.o) ? { type:outilPar(r.o).type, niv:outilPar(r.o).niv } : null }
+      : { kind:r.k, niv:+r.n || 0, bec:+r.b || 0 });
+    v.pid = +r.id || idSeq++; v.kind = r.k; v.niv = +r.n || 0; v.bec = +r.b || 0;
+    v.outil = (r.o && outilPar(r.o)) ? r.o : null;
+    v.pos.set(+r.x || 0, 0, +r.z || 0); v.heading = +r.a || 0;
+    v.laneI = 0; v.done = false; v.path = []; v.head = 0; v.goto = null;
+    v.hop = +r.hop || 0; v.paid = 0; v.cropId = crop().id;
+    engins.push(v); poser(v);
+    idSeq = Math.max(idSeq, v.pid + 1);
   });
-  CROPS.forEach(c => { if (d.owned && d.owned[c.id]) owned[c.id] = true; });
+  // un outil qui se croyait attelé à un engin disparu retombe au sol plutôt que de s'effacer
+  outils.forEach(o => {
+    if (o.porteur && !engins.some(v => v.outil === o.oid)){ o.porteur = null; poserOutil(o); }
+    idSeq = Math.max(idSeq, o.oid + 1);
+  });
   cropI = Math.max(0, Math.min(CROPS.length-1, +d.cropI || 0));
   if (!owned[CROPS[cropI].id]) cropI = 0;
   stage = Math.max(0, Math.min(STAGES.length-1, +d.stage || 0));
@@ -803,7 +895,8 @@ function restore(){
   contract = d.contract && d.contract.qty ? d.contract : null;
   if (d.son === false) SND.set(false);
   if (CTRL.some(c => c.id === d.ctrl)) ctrlMode = d.ctrl;
-  if (KINDS.includes(d.conduit)) driven = d.conduit;
+  driven = enginPar(+d.conduit) ? +d.conduit : (engins.length ? engins[0].pid : 0);
+  syncFleet();
   // Le cadrage d'usine a changé : une vue enregistrée avant ce réglage est périmée, on la
   // laisse tomber une fois pour reprendre 50° et ×1,25. Ce que le joueur règle ensuite est
   // conservé comme avant.
