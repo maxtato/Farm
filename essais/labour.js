@@ -21,9 +21,16 @@ const D=__dirname+'/sorties/', LOG=D+'labour.log';
    const v = acheterPorteur('tracteur',2), o = acheterOutil('sol',2), ball = pointAttelage(v);
    v.pos.x += o.x-ball.x; v.pos.z += o.z-ball.z; v.h.position.set(v.pos.x,0,v.pos.z);
    raccrocher(v);
-   // on part du bord du champ : le trajet depuis la cour n'est pas l'objet de l'essai
-   v.pos.set(X0+P/2, 0, Z0+P*.5); v.h.position.set(v.pos.x,0,v.pos.z);
+   // On part sur le premier rang, pas au milieu du champ : posé au centre, l'engin se
+   // trouve d'emblée à portée des premiers points de passage, les coche sans les avoir
+   // parcourus, et laisse tout un pan de terre intact. C'est ce qui m'avait fait prendre
+   // un essai mal placé pour un défaut du jeu.
    setAuto();
+   const L = lanesFor(6.8);
+   v.pos.set(L[0].x, 0, L[0].z);
+   v.heading = Math.atan2(L[1].x - L[0].x, L[1].z - L[0].z);
+   v.h.position.set(v.pos.x,0,v.pos.z); v.h.rotation.y = v.heading;
+   v.laneI = 0; v.done = false; v.lanes = L;
    ['top','bot'].forEach(k=>document.getElementById(k).style.opacity='0');
    camLook.set(X0+P/2,1,Z0+P/2); zoom=.62; PITCH=70*Math.PI/180; applyPitch(); applyCamera();
    return { rangs:lanesFor(6.8).length/2, NIN, P:+P.toFixed(1) };
