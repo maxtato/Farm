@@ -286,19 +286,41 @@ function laySwath(v, layer){
   }
   v.swX = x; v.swZ = z; v.swL = layer;
 }
-function applyTool(v, fn){
-  const p = toolPose(v); if (!p) return 0;
+// L'empreinte de l'outil à un endroit donné : le rectangle largeur × profondeur, dans son
+// repère, reporté sur la grille de cellules.
+function tamponOutil(x, z, p, fn){
   const cs = Math.cos(-p.a), sn = Math.sin(-p.a);
   const R = p.W/2 + Math.max(Math.abs(p.near), Math.abs(p.far)) + .5;
-  const i0 = Math.max(0, Math.floor((p.x-R-X0)/CS)), i1 = Math.min(NS-1, Math.ceil((p.x+R-X0)/CS));
-  const j0 = Math.max(0, Math.floor((p.z-R-Z0)/CS)), j1 = Math.min(NS-1, Math.ceil((p.z+R-Z0)/CS));
+  const i0 = Math.max(0, Math.floor((x-R-X0)/CS)), i1 = Math.min(NS-1, Math.ceil((x+R-X0)/CS));
+  const j0 = Math.max(0, Math.floor((z-R-Z0)/CS)), j1 = Math.min(NS-1, Math.ceil((z+R-Z0)/CS));
   let n = 0;
   for(let j=j0;j<=j1;j++) for(let i=i0;i<=i1;i++){
     const cx = X0+(i+.5)*CS, cz = Z0+(j+.5)*CS;
-    const dx = cx-p.x, dz = cz-p.z;
+    const dx = cx-x, dz = cz-z;
     const lx = dx*cs+dz*sn, lz = -dx*sn+dz*cs;
     if (Math.abs(lx) < p.W/2 && lz > p.near && lz < p.far) n += fn(j*NS+i) ? 1 : 0;
   }
+  return n;
+}
+// Le sol se marquait à la seule position de l'instant. Or une déchaumeuse ne mord que sur
+// soixante-cinq centimètres de profondeur : dès que l'outil avance de plus que cela entre
+// deux images — en vitesse ×6, ou sur une machine lente — il laisse derrière lui des bandes
+// intactes, que le ruban dessine pourtant pleines. L'image et le compte se contredisaient,
+// et le chantier se déclarait fini sur un champ à moitié travaillé.
+// On repasse donc tout le segment parcouru depuis le dernier marquage.
+const PAS_TAMPON = .3;
+function applyTool(v, fn){
+  const p = toolPose(v); if (!p) return 0;
+  const px = v.apX, pz = v.apZ;
+  // un saut trop grand n'est pas un passage : l'engin a été reposé, ou il revient de la cour
+  const d = px === undefined ? 0 : Math.hypot(p.x-px, p.z-pz);
+  const n = (d > .01 && d < 14)
+    ? (function(){ let t = 0, k = Math.ceil(d/PAS_TAMPON);
+        for(let s=1;s<=k;s++){ const f = s/k;
+          t += tamponOutil(px + (p.x-px)*f, pz + (p.z-pz)*f, p, fn); }
+        return t; })()
+    : tamponOutil(p.x, p.z, p, fn);
+  v.apX = p.x; v.apZ = p.z;
   return n;
 }
 
