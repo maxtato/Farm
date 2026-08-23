@@ -129,7 +129,14 @@ function herbeY(x, z){
   const d = Math.min(dRect(x,z, X0-3, X0+P+3, Z0-3, Z0+P+3),
                      dRect(x,z, -43, 43, YARD-6, YARD+14));
   const k = Math.min(1, d/11);
-  return (Math.sin(x*.13+z*.09)*.5 + Math.sin(x*.31-z*.24)*.28) * .14 * k;
+  // La campagne est plate, et il le faut : ses champs et ses routes sont des surfaces
+  // posées à quatre ou sept centimètres du sol, quand l'ondulation du pré en fait
+  // quatorze. Elle les traversait donc par plaques vertes, au milieu des parcelles comme
+  // en travers des chemins. Le relief ne reprend qu'au-delà de la ceinture, là où plus
+  // rien n'est posé — voir js/3c-carte.js.
+  const dm = Math.max(Math.abs(x), Math.abs(z));
+  const kc = Math.min(1, Math.max(0, (dm - 282)/26));
+  return (Math.sin(x*.13+z*.09)*.5 + Math.sin(x*.31-z*.24)*.28) * .14 * k * kc;
 }
 (function ground(){
   // Le pré porte maintenant toute la campagne, pas seulement l'aire de jeu : la carte fait
