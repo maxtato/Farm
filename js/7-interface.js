@@ -105,116 +105,91 @@ function ligne(icone, titre, sous, boutonTexte, actif, action){
   return c;
 }
 const titreParc = t => elBody.insertAdjacentHTML('beforeend', '<div class="note"><b>' + t + '</b></div>');
+// La boutique est une liste, pas un catalogue : un article par machine, toujours le plus
+// petit modèle. On en achète autant qu'on veut. Monter en gamme se fait plus bas, en
+// cliquant sur la pièce qu'on possède déjà — jamais en la rachetant.
 function drawParc(){
   elBody.insertAdjacentHTML('beforeend', statsHTML());
+  titreParc('🛒 À acheter');
   elBody.insertAdjacentHTML('beforeend',
-    '<div class="note">Rien n\u2019est solidaire de rien : on achète autant de tracteurs et ' +
-    'd\u2019outils qu\u2019on veut, et chaque pièce monte en gamme séparément. N\u2019importe ' +
-    'quel outil se pose derrière n\u2019importe quel tracteur assez fort pour le tirer, et le ' +
-    'bouton \u2693 du pupitre les décroche sur place.</div>');
-
-  // ---- ce qu'on possède ----
-  if (engins.length || outils.length){
-    titreParc('🏠 Au parc');
-    engins.forEach(v => {
-      const P = PORTEURS[v.kind], max = P.prix.length - 1;
-      const o = outilDe(v);
-      const sous = P.nom[v.niv] + ' · ' + (o ? OUTILS[o.type].n.toLowerCase() + ' ' + (o.niv+1)
-                                             : v.kind === 'tracteur' ? 'rien d\u2019attelé'
-                                             : P.outil.det(v.bec));
-      if (v.niv >= max) ligne(icoVeh(v), nomVeh(v), sous, 'au maximum', false, null);
-      else {
-        const net = coutAmelioration(P.prix, v.niv, v.niv+1);
-        ligne(icoVeh(v), nomVeh(v), sous + ' — passer en ' + P.nom[v.niv+1].toLowerCase(),
-              fmt(net) + ' 🪙', coins >= net, () => {
-                if (ameliorerEngin(v.pid) === null){ sfx('deny'); return; }
-                sfx('buy'); toast(P.nom[v.niv].toLowerCase() + ' — machine remotorisée', 'good');
-                drawVeh(); drawPanel();
-              });
-      }
-      // la coupe et les rampes des automoteurs montent à part
-      if (P.outil && v.bec < 2){
-        const net = coutAmelioration(P.outil.prix, v.bec, v.bec+1);
-        ligne('📏', P.outil.n, P.outil.det(v.bec) + ' — passer à ' + P.outil.det(v.bec+1),
-              fmt(net) + ' 🪙', coins >= net, () => {
-                if (ameliorerBec(v.pid) === null){ sfx('deny'); return; }
-                sfx('buy'); toast(P.outil.n + ' élargie', 'good'); drawVeh(); drawPanel();
-              });
-      }
+    '<div class="note">Un tracteur ne fait rien seul : c\u2019est ce qu\u2019on accroche ' +
+    'derrière qui décide de son métier, et le bouton \u2693 du pupitre le décroche sur place ' +
+    'pour aller en prendre un autre.</div>');
+  const achat = (emo, nom, det, prix, faire) =>
+    ligne(emo, nom, det, fmt(prix) + ' 🪙', coins >= prix, () => {
+      if (!faire()){ sfx('deny'); return; }
+      sfx('buy'); toast(nom + ' livré au parc', 'good'); drawVeh(); drawHitch(); drawPanel();
     });
-    outils.forEach(o => {
-      const D = OUTILS[o.type];
-      const porteur = o.porteur ? enginPar(o.porteur) : null;
-      const ou = porteur ? 'attelé' : 'posé dans la cour';
-      if (o.niv >= 2) ligne(D.emo, D.n + ' ' + (o.niv+1), D.det(o.niv) + ' · ' + ou,
-                            'au maximum', false, null);
-      else {
-        const net = coutAmelioration(D.prix, o.niv, o.niv+1);
-        const trop = porteur && D.force[o.niv+1] > porteur.niv;
-        ligne(D.emo, D.n + ' ' + (o.niv+1),
-              D.det(o.niv) + ' · ' + ou + (trop ? ' — le tracteur qui le tire est trop léger'
-                                                : ' — passer à ' + D.det(o.niv+1)),
-              trop ? 'tracteur trop léger' : fmt(net) + ' 🪙',
-              !trop && coins >= net,
-              trop ? null : () => {
-                const r = ameliorerOutil(o.oid);
-                if (r === null || r === 'lourd'){ sfx('deny'); return; }
-                sfx('buy'); toast(D.n + ' élargi', 'good'); drawVeh(); drawPanel();
-              });
-      }
-    });
-  }
-
-  // ---- ce qu'on peut acheter ----
-  // Un seul article par famille, au premier calibre. On en prend autant qu'on veut, et
-  // c'est en cliquant dessus au parc qu'une pièce monte en gamme — pas en rachetant.
-  titreParc('🚜 Tracteurs');
-  elBody.insertAdjacentHTML('beforeend',
-    '<div class="note">Un tracteur sert à tout : c\u2019est l\u2019outil accroché derrière qui ' +
-    'décide de son métier. Il en faut au moins un.</div>');
-  (function(){
-    const P = PORTEURS.tracteur, prix = P.prix[0];
-    ligne(P.emo, P.n, P.det(0), fmt(prix) + ' 🪙', coins >= prix, () => {
-      const v = acheterPorteur('tracteur', 0);
-      if (!v){ sfx('deny'); return; }
-      sfx('buy'); toast('Tracteur livré au parc', 'good'); drawVeh(); drawPanel();
-    });
-  })();
-  titreParc('🔧 Remorques et outils');
-  elBody.insertAdjacentHTML('beforeend',
-    '<div class="note">Tout cela s\u2019accroche derrière n\u2019importe quel tracteur, et se ' +
-    'décroche sur place au bouton \u2693 pour aller en prendre un autre.</div>');
+  achat(PORTEURS.tracteur.emo, 'Tracteur compact', PORTEURS.tracteur.det(0),
+        PORTEURS.tracteur.prix[0], () => acheterPorteur('tracteur', 0));
   TYPES_OUTIL.forEach(type => {
-    const D = OUTILS[type], prix = D.prix[0];
-    ligne(D.emo, D.n, D.det(0), fmt(prix) + ' 🪙', coins >= prix, () => {
-      if (!acheterOutil(type, 0)){ sfx('deny'); return; }
-      sfx('buy'); toast(D.n + ' livré au fond de la cour', 'good');
-      drawHitch(); drawPanel();
-    });
+    const D = OUTILS[type];
+    achat(D.emo, D.n + ' — ' + TAILLES[0], 'remorque à atteler · ' + D.det(0),
+          D.prix[0], () => acheterOutil(type, 0));
   });
-  titreParc('⚙️ Engins automoteurs');
-  elBody.insertAdjacentHTML('beforeend',
-    '<div class="note">Ceux-là roulent seuls, sans tracteur. Leur outil — barre de coupe, ' +
-    'rampes — monte en gamme séparément de la machine.</div>');
-  ['moiss','pulve'].forEach(kind => {
-    const P = PORTEURS[kind], prix = P.prix[0];
-    ligne(P.emo, P.n, P.det(0), fmt(prix) + ' 🪙', coins >= prix, () => {
-      const v = acheterPorteur(kind, 0);
-      if (!v){ sfx('deny'); return; }
-      sfx('buy'); toast(P.n + ' livré au parc', 'good'); drawVeh(); drawPanel();
-    });
+  achat(PORTEURS.moiss.emo, 'Moissonneuse compacte',
+        PORTEURS.moiss.det(0) + ' · ' + PORTEURS.moiss.outil.det(0),
+        PORTEURS.moiss.prix[0], () => acheterPorteur('moiss', 0));
+  achat(PORTEURS.pulve.emo, 'Pulvérisateur automoteur',
+        PORTEURS.pulve.det(0) + ' · ' + PORTEURS.pulve.outil.det(0),
+        PORTEURS.pulve.prix[0], () => acheterPorteur('pulve', 0));
+  if (siloNiv < 0)
+    achat(SILOS[0].emo, 'Silo', SILOS[0].d, SILOS[0].prix, () => acheterSilo());
+
+  // ---- ce qu'on possède : une ligne par pièce, et son passage à la taille au-dessus ----
+  if (!engins.length && !outils.length && siloNiv < 0) return;
+  titreParc('🏠 Au parc — cliquer pour faire évoluer');
+  engins.forEach(v => {
+    const P = PORTEURS[v.kind], max = P.prix.length - 1;
+    const o = outilDe(v);
+    const sous = P.nom[v.niv] + ' · ' + (o ? OUTILS[o.type].n.toLowerCase() + ', ' + TAILLES[o.niv]
+                                           : v.kind === 'tracteur' ? 'rien d\u2019attelé'
+                                           : P.outil.det(v.bec));
+    if (v.niv >= max) ligne(icoVeh(v), nomVeh(v), sous, 'au maximum', false, null);
+    else {
+      const net = coutAmelioration(P.prix, v.niv, v.niv+1);
+      ligne(icoVeh(v), nomVeh(v), sous + ' — passer en ' + P.nom[v.niv+1].toLowerCase(),
+            fmt(net) + ' 🪙', coins >= net, () => {
+              if (ameliorerEngin(v.pid) === null){ sfx('deny'); return; }
+              sfx('buy'); toast('Machine remotorisée', 'good'); drawVeh(); drawPanel();
+            });
+    }
+    if (P.outil && v.bec < 2){
+      const net = coutAmelioration(P.outil.prix, v.bec, v.bec+1);
+      ligne('📏', P.outil.n, P.outil.det(v.bec) + ' — passer à ' + P.outil.det(v.bec+1),
+            fmt(net) + ' 🪙', coins >= net, () => {
+              if (ameliorerBec(v.pid) === null){ sfx('deny'); return; }
+              sfx('buy'); toast(P.outil.n + ' élargie', 'good'); drawVeh(); drawPanel();
+            });
+    }
   });
-  titreParc('🏢 Silos');
-  elBody.insertAdjacentHTML('beforeend',
-    '<div class="note">La benne se vide au plus proche, et garder la récolte au lieu de la ' +
-    'brader à la moisson fait monter le prix payé.</div>');
-  SILOS.forEach(S => {
-    if (silosOwned[S.id]) return ligne(S.emo, S.n, S.d, 'bâti', false, null);
-    ligne(S.emo, S.n, S.d, fmt(S.prix) + ' 🪙', coins >= S.prix, () => {
-      if (!acheterSilo(S.id)){ sfx('deny'); return; }
-      sfx('buy'); toast(S.n + ' bâti dans la cour', 'good'); drawPanel();
-    });
+  outils.forEach(o => {
+    const D = OUTILS[o.type];
+    const porteur = o.porteur ? enginPar(o.porteur) : null;
+    const ou = porteur ? 'attelé' : 'posé dans la cour';
+    if (o.niv >= 2) return ligne(D.emo, D.n + ' — ' + TAILLES[o.niv], D.det(o.niv) + ' · ' + ou,
+                                 'au maximum', false, null);
+    const net = coutAmelioration(D.prix, o.niv, o.niv+1);
+    const trop = porteur && D.force[o.niv+1] > porteur.niv;
+    ligne(D.emo, D.n + ' — ' + TAILLES[o.niv],
+          D.det(o.niv) + ' · ' + ou + (trop ? ' — le tracteur qui le tire est trop léger'
+                                            : ' — passer au ' + TAILLES[o.niv+1] + ', ' + D.det(o.niv+1)),
+          trop ? 'tracteur trop léger' : fmt(net) + ' 🪙', !trop && coins >= net,
+          trop ? null : () => {
+            const r = ameliorerOutil(o.oid);
+            if (r === null || r === 'lourd'){ sfx('deny'); return; }
+            sfx('buy'); toast(D.n + ' élargi', 'good'); drawVeh(); drawPanel();
+          });
   });
+  if (siloNiv === 0){
+    const net = coutAmelioration([SILOS[0].prix, SILOS[1].prix], 0, 1);
+    ligne(SILOS[0].emo, SILOS[0].n, SILOS[0].d + ' — passer au grand silo',
+          fmt(net) + ' 🪙', coins >= net, () => {
+            if (ameliorerSilo() === null){ sfx('deny'); return; }
+            sfx('buy'); toast('Grand silo bâti dans la cour', 'good'); drawPanel();
+          });
+  } else if (siloNiv === 1)
+    ligne(SILOS[1].emo, SILOS[1].n, SILOS[1].d, 'au maximum', false, null);
 }
 const fr = n => n.toFixed(1).replace('.', ',');
 function drawCrops(){

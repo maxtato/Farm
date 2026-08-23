@@ -571,6 +571,7 @@ const OUTILS = {
              det:i => BENNES[i].vol + ' m³ — ' + BENNES[i].d }
 };
 const TYPES_OUTIL = ['sol','semis','engrais','benne'];
+const TAILLES = ['petit modèle', 'modèle moyen', 'grand modèle'];
 // Un outil monté derrière un tracteur, ramené à ce dont le reste du jeu a besoin.
 function poseOutil(hitch, type, niv){
   niv = Math.max(0, Math.min(2, niv|0));

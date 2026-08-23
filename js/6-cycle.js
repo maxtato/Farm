@@ -301,15 +301,24 @@ let stage = 0, coins = COINS0, stock = 0;
 // Vierge tant qu'aucun outil n'a mordu la parcelle : c'est ce qui décide entre friche et
 // chaume au repos. Le premier passage de déchaumeuse l'éteint pour de bon.
 let vierge = true;
-const silosOwned = { petit:false, grand:false };
+let siloNiv = -1;                 // -1 = pas de silo à soi, 0 = petit, 1 = grand
 // Prime de stockage : garder la récolte au lieu de la vendre le jour même se paie.
-const primeSilos = () => SILOS.reduce((k,S) => k + (silosOwned[S.id] ? S.prime : 0), 0);
-function acheterSilo(id){
-  const S = siloDef(id);
-  if (!S || silosOwned[id] || coins < S.prix) return false;
-  coins -= S.prix; silosOwned[id] = true;
-  montreSilo(id); applyUpgrades(); save();
+const primeSilos = () => siloNiv >= 0 ? SILOS[siloNiv].prime : 0;
+function acheterSilo(){
+  if (siloNiv >= 0 || coins < SILOS[0].prix) return false;
+  coins -= SILOS[0].prix; siloNiv = 0;
+  montreSilo(0); applyUpgrades(); save();
   return true;
+}
+// Le grand silo ne s'achète pas : il remplace le petit, contre la différence, l'ancien
+// étant repris à moitié prix comme n'importe quelle pièce du parc.
+function ameliorerSilo(){
+  if (siloNiv !== 0) return null;
+  const net = coutAmelioration([SILOS[0].prix, SILOS[1].prix], 0, 1);
+  if (coins < net) return null;
+  coins -= net; siloNiv = 1;
+  montreSilo(1); applyUpgrades(); save();
+  return net;
 }
 
 // ---------- le parc : des pièces, pas des postes ----------
@@ -817,7 +826,7 @@ function save(){
   try {
     localStorage.setItem(SKEY, JSON.stringify({
       v:1, coins, stock, totalT, harvests, lv, owned, cropI, stage, day, dayT,
-      vierge, silos:silosOwned, idSeq,
+      vierge, silo:siloNiv, idSeq,
       // le parc, pièce par pièce : où chacune se trouve, et ce qu'elle porte
       engins: engins.map(v => ({ id:v.pid, k:v.kind, n:v.niv, b:v.bec, o:v.outil,
                 x:+v.pos.x.toFixed(2), z:+v.pos.z.toFixed(2), a:+v.heading.toFixed(3),
@@ -837,7 +846,10 @@ function restore(){
   coins = +d.coins || 0; stock = +d.stock || 0;
   totalT = +d.totalT || 0; harvests = +d.harvests || 0;
   UPGRADES.forEach(u => { lv[u.id] = Math.max(0, Math.min(u.max, +d.lv?.[u.id] || 0)); });
-  SILOS.forEach(S => { if (d.silos && d.silos[S.id]){ silosOwned[S.id] = true; montreSilo(S.id); } });
+  // ancienne sauvegarde : deux silos indépendants — on garde le plus grand des deux
+  siloNiv = d.silo !== undefined ? Math.max(-1, Math.min(1, +d.silo))
+          : (d.silos ? (d.silos.grand ? 1 : d.silos.petit ? 0 : -1) : -1);
+  if (siloNiv >= 0) montreSilo(siloNiv);
   vierge = d.vierge === undefined ? (+d.harvests || 0) === 0 && (+d.stage || 0) === 0 : !!d.vierge;
   // Une sauvegarde d'avant l'achat des engins avait toute la flotte, à un niveau unique :
   // on la lui rend telle quelle plutôt que de la déshabiller sans prévenir.

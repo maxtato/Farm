@@ -16,8 +16,8 @@ const D=__dirname+'/sorties/';
  // la boutique sur une partie vierge : un seul article par famille
  console.log('boutique vierge :', await p.evaluate(()=>{
    openPanel('parc');
-   const l=[...document.querySelectorAll('#body .card b')].map(e=>e.textContent);
-   return l;
+   return [...document.querySelectorAll('#body .card')].map(c =>
+     c.querySelector('b').textContent + ' | ' + c.querySelector('button').textContent);
  }));
  await p.waitForTimeout(700);
  await p.screenshot({path:D+'achats-boutique.png'});
@@ -26,7 +26,7 @@ const D=__dirname+'/sorties/';
    coins=200000;
    acheterPorteur('tracteur',0);
    ['sol','semis','engrais','benne'].forEach(t=>acheterOutil(t,0));
-   acheterPorteur('moiss',0); acheterPorteur('pulve',0);
+   acheterPorteur('moiss',0); acheterPorteur('pulve',0); acheterSilo();
    camLook.set(GATE.x-6,1,YARD+18); zoom=.78; PITCH=42*Math.PI/180; YAW=.3;
    applyPitch(); applyCamera();
    return { engins:engins.map(v=>({k:v.kind, roues:v.g.userData.wheels.length,
@@ -36,5 +36,16 @@ const D=__dirname+'/sorties/';
  await p.waitForTimeout(4200);
  await p.screenshot({path:D+'achats-cour.png'});
  console.log('-> achats-cour.png');
+ console.log('boutique après achats :', await p.evaluate(()=>{
+   openPanel('parc');
+   return [...document.querySelectorAll('#body .card')].map(c =>
+     c.querySelector('b').textContent + ' | ' + c.querySelector('button').textContent);
+ }));
+ await p.waitForTimeout(800);
+ await p.screenshot({path:D+'achats-parc.png'});
+ console.log('silo amélioré :', await p.evaluate(()=>{
+   const r=ameliorerSilo();
+   return { paye:r, niveau:siloNiv, depots:DEPOTS.length, prime:primeSilos() };
+ }));
  await b.close(); srv.close();
 })();
