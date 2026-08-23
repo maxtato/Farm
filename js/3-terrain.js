@@ -132,10 +132,13 @@ function herbeY(x, z){
   return (Math.sin(x*.13+z*.09)*.5 + Math.sin(x*.31-z*.24)*.28) * .14 * k;
 }
 (function ground(){
+  // Le pré porte maintenant toute la campagne, pas seulement l'aire de jeu : la carte fait
+  // 540 m de côté et il faut de l'herbe au-delà de ses routes de ceinture.
+  const SOL = 1120;
   const t = herbeTex();
-  t.repeat.set(400/HERBE_M, 400/HERBE_M);
+  t.repeat.set(SOL/HERBE_M, SOL/HERBE_M);
   t.center.set(.5,.5); t.rotation = Math.PI/4.2;
-  const geo = new THREE.PlaneGeometry(400,400,90,90);
+  const geo = new THREE.PlaneGeometry(SOL,SOL,168,168);
   const pos = geo.attributes.position;
   for(let i=0;i<pos.count;i++) pos.setZ(i, herbeY(pos.getX(i), -pos.getY(i)));
   pos.needsUpdate = true; geo.computeVertexNormals();
@@ -533,14 +536,5 @@ function addObst(x,z,r){ OBST.push({ x, z, r }); }
   addObst(SILO.x, SILO.z, 2.3);
   addObst(SILO.x+2.5, SILO.z, 1.1);
 })();
-for(let i=0;i<40;i++){
-  const s = .8+Math.random()*.6, side = i%2?1:-1;
-  const x = side*(P/2+4+Math.random()*16);
-  // La cour reste dégagée : les bâtiments s'y installent, et un arbre planté au milieu
-  // du hameau ou dans un silo passerait mal. Ce qui tombe là est renvoyé plein sud.
-  let z = Z0-10+Math.random()*(P+34);
-  if (z > Z0+P+1) z = Z0 - 10 - Math.random()*16;
-  cyl(.32,.44,1.7*s,6, C.trunk, x,.85*s,z);
-  cyl(0,2*s,3.4*s,7, C.leaf, x,3*s,z).rotation.y = Math.random()*3;
-  addObst(x, z, .7 + s*.5);
-}
+// Les arbres ne sont plus semés au hasard autour de la parcelle : c'est la campagne
+// engendrée qui les pose, dans ses bois et ses prairies. Voir js/3c-carte.js.
