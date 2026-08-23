@@ -107,7 +107,17 @@ function followPath(v, dt){
   // plaque l'engin dessus. On l'abandonne, un par un, jusqu'à en retrouver un atteignable.
   v.teteT = avance ? 0 : (v.teteT || 0) + dt;
   if (v.head < v.path.length - 1 && v.teteT > 2){
-    v.head++; v.sauts = (v.sauts || 0) + 1; avance = true; v.teteT = 0;
+    // Mais la tête peut aussi cesser d'avancer sans le moindre obstacle : l'engin tourne
+    // autour d'un point qu'il n'arrive pas à cueillir, et il finit toujours par l'avoir.
+    // Mesuré : en champ libre ce seul compteur lâchait trois points, exactement ce qu'on
+    // ne veut pas. On pose donc la question littéralement, en tirant un rayon vers le point
+    // de tête : y a-t-il quelque chose entre lui et nous ? En champ libre le rayon passe,
+    // et le point reste tenu — c'est tout l'objet de la demande.
+    const dx = v.path[v.head].x - v.pos.x, dz = v.path[v.head].z - v.pos.z;
+    const dh = Math.hypot(dx, dz);
+    if (degage(v, Math.atan2(dx, dz), dh) < dh - 1){
+      v.head++; v.sauts = (v.sauts || 0) + 1; avance = true; v.teteT = 0;
+    }
   }
   v.detour = Math.max(0, (v.detour || 0) - dt);
   if (v.head < v.path.length - 1 && v.detour > 0){
