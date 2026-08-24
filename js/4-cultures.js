@@ -240,7 +240,11 @@ const SILLON = .46;                                     // un sillon tous les 46
                 specular:new THREE.Color(0,0,0) }), .3, true),
       Math.max(1, t.list.length));
     m.position.set(t.cx, 0, t.cz);
-    m.castShadow = true; m.receiveShadow = true;
+    // Une motte de vingt centimètres ne porte pas d'ombre qu'on distingue, mais elle
+    // coûte un dessin de plus dans la passe d'ombre. Le tronc de vue de l'ombre vient de
+    // tripler pour allonger les ombres des bâtiments : tout ce qui n'a rien à y faire doit
+    // en sortir, sans quoi le style se paie en images perdues.
+    m.castShadow = false; m.receiveShadow = true;
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     m.renderOrder = -6;
     scene.add(m); t.mesh = m;

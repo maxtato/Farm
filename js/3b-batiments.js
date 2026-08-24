@@ -281,8 +281,53 @@ function siloGrand(){
 
 // Pose un bâtiment : on l'oriente, on l'installe, et on relève ses disques d'obstacle
 // dans le même mouvement. `obst` est donné en repère bâtiment — décalage latéral, rayon.
+// Un bâtiment était fait de cinquante à cent maillages — un par planche, par fenêtre, par
+// pan de toit — chacun avec son matériau. Seize bâtiments valaient huit cent cinquante-trois
+// objets à dessiner, et depuis que les ombres se sont allongées, à dessiner deux fois : le
+// tronc de vue de l'ombre les attrape tous. On les refond en un seul maillage, la couleur de
+// chaque pièce passant dans les sommets. Seize objets au lieu de huit cent cinquante-trois,
+// pour exactement la même image.
+function fondre(g){
+  const morceaux = [];
+  g.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(g.matrixWorld).invert();
+  const M = new THREE.Matrix4();
+  g.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh || !o.geometry.attributes.position) return;
+    M.multiplyMatrices(inv, o.matrixWorld);
+    let q = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    q.applyMatrix4(M);
+    if (!q.attributes.normal) q.computeVertexNormals();
+    const n = q.attributes.position.count, c = o.material.color || new THREE.Color(1,1,1);
+    const col = new Float32Array(n*3);
+    for(let i=0;i<n;i++){ col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b; }
+    q.setAttribute('color', new THREE.BufferAttribute(col,3));
+    morceaux.push(q);
+  });
+  if (morceaux.length < 2) return null;
+  const total = morceaux.reduce((t,q)=>t+q.attributes.position.count, 0);
+  const pos = new Float32Array(total*3), nor = new Float32Array(total*3), col = new Float32Array(total*3);
+  let k = 0;
+  morceaux.forEach(q => {
+    pos.set(q.attributes.position.array, k*3);
+    nor.set(q.attributes.normal.array,   k*3);
+    col.set(q.attributes.color.array,    k*3);
+    k += q.attributes.position.count;
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('normal',   new THREE.BufferAttribute(nor,3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(col,3));
+  const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors:true }));
+  m.castShadow = m.receiveShadow = true;
+  return m;
+}
 function poserBatiment(f, x, z, ang){
-  const g = f();
+  const brut = f();
+  const fondu = fondre(brut);
+  const g = new THREE.Group();
+  if (fondu){ g.add(fondu); g.userData.obst = brut.userData.obst; libere(brut); }
+  else { g.add(brut); g.userData.obst = brut.userData.obst; }
   g.position.set(x, 0, z); g.rotation.y = ang || 0;
   g.traverse(o => { if (o.isMesh){ o.castShadow = true; o.receiveShadow = true; } });
   scene.add(g);
