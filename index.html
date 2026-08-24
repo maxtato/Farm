@@ -40,23 +40,6 @@
   #app { position:absolute; inset:0; }
   canvas { display:block; }
 
-  /* ---------- la trame : une impression posée sur la scène ---------- */
-  /* Le terrain est lu comme une carte imprimée, pas comme un décor : des à-plats
-     recouverts d'une trame de points fine et régulière, à la sérigraphie.
-     Trois choix qui font tout l'effet :
-     — elle est en repère ÉCRAN, jamais collée au sol. Elle ne bouge pas quand on zoome
-       ni quand la caméra tourne : c'est l'image qui est imprimée, pas le monde.
-     — deux grilles carrées de 4 px décalées d'une demi-case : les points s'alignent en
-       diagonales, comme une trame d'imprimeur inclinée à 45°, et non en damier.
-     — un vert très sombre plutôt que du noir, à seize pour cent : la couleur du dessous
-       reste lisible, on la fonce sans la salir.
-     Une couche statique, composée une fois : rien à redessiner à chaque image. */
-  #trame { position:absolute; inset:0; z-index:1; pointer-events:none;
-           background-image:
-             radial-gradient(circle at 50% 50%, rgba(28,42,18,.16) .95px, rgba(0,0,0,0) 1.05px),
-             radial-gradient(circle at 50% 50%, rgba(28,42,18,.16) .95px, rgba(0,0,0,0) 1.05px);
-           background-size: 4px 4px, 4px 4px;
-           background-position: 0 0, 2px 2px; }
 
   #top, #bot { flex:0 0 auto; position:relative; z-index:2;
                background:linear-gradient(180deg, var(--barkL), var(--bark)); }
@@ -320,7 +303,7 @@
     <div id="contract"></div>
   </header>
 
-  <div id="stage"><div id="app"></div><div id="trame"></div></div>
+  <div id="stage"><div id="app"></div></div>
 
   <footer id="bot">
     <div id="mainrow">

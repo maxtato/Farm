@@ -672,6 +672,83 @@ const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
     g.userData.quoi = 'arbre'; scene.add(g);
     addObst(x, z, n > 1 ? 6 : 1.1);            // un bosquet se contourne d'un bloc
   });
+  // ---------- les mouchetures ----------
+  // La texture du sol dans la référence n'est ni un bruit ni une trame de points : ce sont
+  // de petits rectangles pleins, à bords nets, d'un ton voisin de la surface qui les porte.
+  // Du gravier, des reprises d'enrobé, des éclats — des formes solides, jamais un grain.
+  // On les sème surface par surface, chacune à sa densité : serré sur les chemins et la
+  // cour, où le passage marque, clairsemé sur les champs, rare dans l'herbe. Les jeter au
+  // hasard sur toute la carte les diluait sur les grandes parcelles et n'en laissait aucune
+  // là où elles se voient. Le tout est fondu en un seul objet : treize mille rectangles,
+  // un appel de dessin.
+  (function mouchetures(){
+    const R2 = alea(9137);
+    // Un ton franchement plus clair et un franchement plus sombre que la surface : à huit
+    // pour cent d'écart les mouchetures se confondaient avec elle, c'est vers vingt qu'elles
+    // se lisent comme des formes posées.
+    const TONS = { champ:['#c2a057','#835f26'], route:['#f8ecd0','#c6a76c'],
+                   herbe:['#9bd152','#68972c'], sable:['#faf0da','#cbb281'] };
+    const HAUT = { champ:.072, route:.084, herbe:.018, sable:.088 };
+    const pos = [], col = [], c = new THREE.Color();
+    function poser(x, z, quoi, grand){
+      const L = (grand ? 1.0 : .7) + R2()*(grand ? 2.4 : 1.5);
+      const W = .32 + R2()*(grand ? .95 : .6), a = R2()*6.283;
+      const sn = Math.sin(a)*L/2, cs = Math.cos(a)*L/2;
+      const px = Math.cos(a)*W/2, pz = -Math.sin(a)*W/2, y = HAUT[quoi];
+      const A = [x-cs-px, y, z+sn-pz], B = [x+cs-px, y, z-sn-pz],
+            C = [x+cs+px, y, z-sn+pz], D = [x-cs+px, y, z+sn+pz];
+      [A,B,C, A,C,D].forEach(q => pos.push(q[0], q[1], q[2]));
+      c.set(TONS[quoi][R2() < .55 ? 0 : 1]);
+      for(let i=0;i<6;i++) col.push(c.r, c.g, c.b);
+    }
+    // les chemins : on longe leur axe et on sème de part et d'autre
+    routes.forEach(r => {
+      const q = r.pts, n = q.length, fin = r.ferme ? n : n-1;
+      for(let i=0;i<fin;i++){
+        const a = q[i], b = q[(i+1)%n];
+        const dx = b[0]-a[0], dz = b[1]-a[1], L = Math.hypot(dx,dz);
+        const pas = Math.max(1, Math.round(L/2.2));
+        for(let k=0;k<pas;k++){
+          const t = (k+R2())/pas, ux = dx/L, uz = dz/L;
+          const e = (R2()-.5)*6.4;                      // largeur roulée du chemin
+          poser(a[0]+dx*t - uz*e, a[1]+dz*t + ux*e, 'route', false);
+        }
+      }
+    });
+    // la cour de sable et les placettes
+    SABLES.forEach(S => {
+      const b = bbox(S), n = Math.round(b.w*b.d/7);
+      for(let k=0;k<n;k++){
+        const x = b.cx + (R2()-.5)*b.w, z = b.cz + (R2()-.5)*b.d;
+        if (dedansPoly(S, x, z)) poser(x, z, 'sable', R2() < .3);
+      }
+    });
+    // les champs, clairsemés
+    parcelles.forEach(P2 => {
+      const b = bbox(P2), n = Math.round(b.w*b.d/26);
+      for(let k=0;k<n;k++){
+        const x = b.cx + (R2()-.5)*b.w, z = b.cz + (R2()-.5)*b.d;
+        if (dedansPoly(P2, x, z)) poser(x, z, 'champ', false);
+      }
+    });
+    // l'herbe : rare, c'est une prairie et non une chaussée
+    const T = CARTE.taille/2;
+    for(let k=0;k<1400;k++){
+      const x = (R2()-.5)*2*T, z = (R2()-.5)*2*T;
+      if (parcelles.some(P2 => dedansPoly(P2, x, z))) continue;
+      if (SABLES.some(S => dedansPoly(S, x, z))) continue;
+      poser(x, z, 'herbe', false);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+    g.setAttribute('color',    new THREE.Float32BufferAttribute(col,3));
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors:true }));
+    m.receiveShadow = true; m.renderOrder = -9;
+    m.userData.quoi = 'moucheture';
+    m.userData.n = pos.length/18;
+    scene.add(m);
+  })();
   // ---------- le champ que l'on cultive ----------
   // Le plus proche du hangar parmi ceux d'une taille jouable : ni un mouchoir de poche, ni
   // un champ de six mille mètres carrés qu'on mettrait une journée à labourer. C'est une
