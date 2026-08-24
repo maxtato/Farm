@@ -15,9 +15,11 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   if (had && stage > 0) primeField(stage);   // on reprend la parcelle telle que l'étape la suppose
   // Toute la flotte est là dès le lancement, rangée sur la cour à côté du hangar. On ne la
   // découvre plus au fur et à mesure : les cinq engins attendent, on prend celui qu'on veut.
-  // Première partie : la parcelle n'a jamais été touchée — c'est une friche, avec ses
-  // repousses sèches, pas le chaume d'une moisson qu'on n'a pas faite.
-  if (!had){ for(let k=0;k<plants.length;k++) plants[k].r = 2; redrawPlants(); }
+  // Première partie : la parcelle n'a jamais été touchée. La règle de ce qu'elle porte
+  // alors n'appartient qu'à `primeField` — elle était recopiée ici, et cette copie a
+  // continué à semer cinq mille repousses sèches longtemps après que l'originale eut cessé
+  // de le faire. Une règle à deux endroits n'en est plus une.
+  if (!had) primeField(0);
   startStage();                              // ni remise à nu ni semence : c'est l'affaire du cycle
   // On conduit l'engin du chantier s'il existe, sinon le premier du parc ; et si le parc
   // est vide, le bouton du bas mène droit à la boutique.
@@ -248,7 +250,10 @@ let saveT = 0, lastCoins = -1, lastLvl = 0;
   // saute, tout l'éclairage change d'un coup : on l'y amène en douceur.
   sunAt.x += (camLook.x - sunAt.x)*Math.min(1, raw*1.6);
   sunAt.z += (camLook.z - sunAt.z)*Math.min(1, raw*1.6);
-  sun.position.set(sunAt.x+12, 32, sunAt.z+18);
+  // Soleil bas — vingt-huit degrés au-dessus de l'horizon — pour des ombres longues et
+  // orientées, la signature du style visé. À trente-deux mètres de haut pour vingt et un de
+  // côté, l'ancienne position donnait des ombres plus courtes que les objets eux-mêmes.
+  sun.position.set(sunAt.x+46, 28, sunAt.z+62);
   sun.target.position.set(sunAt.x, 0, sunAt.z); sun.target.updateMatrixWorld();
 
   const shownCoins = Math.floor(coins);

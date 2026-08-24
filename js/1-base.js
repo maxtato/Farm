@@ -49,7 +49,11 @@ function camPan(dx, dz){
 function setYaw(a){ YAW = a; applyPitch(); }
 const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.enabled = true;
+// Ombres à bord net plutôt que fondu : dans un décor en à-plats, une ombre floue se lit
+// comme une salissure ; une ombre franche se lit comme une forme, et c'est elle qui donne
+// le volume maintenant qu'aucune texture ne s'en charge.
+renderer.shadowMap.type = THREE.PCFShadowMap;
 app.appendChild(renderer.domElement);
 let zoom = 1.25;                        // facteur de rapprochement, piloté à deux doigts
 function applyCamera(){
@@ -109,12 +113,16 @@ stageEl.addEventListener('wheel', e => {       // à la souris, la molette fait 
   e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.12 : 1/1.12));
 }, { passive:false });
 
-const hemi = new THREE.HemisphereLight('#ffffff','#4e8a34',.88);   // lumière plate comme la réf
+const hemi = new THREE.HemisphereLight('#ffffff','#4e8a34',.52);   // remplissage bas : l'ombre doit porter
 scene.add(hemi);
 const sun = new THREE.DirectionalLight('#fff6de',.5);
 const sunAt = new THREE.Vector3(0,0,0);      // le point que le soleil suit, en douceur
 sun.castShadow = true; sun.shadow.mapSize.set(1024,1024);
-Object.assign(sun.shadow.camera,{left:-30,right:30,top:30,bottom:-30,near:1,far:110});
+// Le soleil est bas : les ombres s'allongent sur près de deux fois la hauteur des objets,
+// et il leur faut donc de la place. Le tronc de vue passe de soixante mètres de côté à
+// cent quarante — sinon les ombres se coupent net à l'entrée du champ.
+Object.assign(sun.shadow.camera,{left:-70,right:70,top:70,bottom:-70,near:1,far:260});
+sun.shadow.bias = -0.0012;
 scene.add(sun, sun.target);
 
 // ---------- matériaux ----------
@@ -134,8 +142,15 @@ const GOU_FN = `
   }`;
 // monde : le motif est fixé au terrain, il ne glisse pas quand la caméra bouge.
 // objet : le motif est peint sur la pièce, il la suit — c'est ce qu'il faut pour un engin.
+// Le grain de papier passe au quart de sa force. Il était le relief du décor : un voile de
+// matière qui donnait du corps aux surfaces. Le style visé n'en veut pas — il dessine des
+// à-plats francs et confie le relief aux ombres — et la trame d'impression posée sur l'écran
+// fait désormais ce travail-là, en une seule fois pour toute l'image au lieu d'un bruit
+// recalculé dans chaque matériau. À pleine force, il couvrait la terre d'un tissage de
+// mouchetures qu'on prenait pour des mottes.
+const GRAIN_K = .25;
 function gouache(m, force, monde, vif){
-  const a = (force === undefined ? 1 : force).toFixed(3);
+  const a = ((force === undefined ? 1 : force)*GRAIN_K).toFixed(3);
   const sat = (vif === undefined ? 1 : vif).toFixed(3);
   const src = monde
     ? `#ifdef USE_INSTANCING

@@ -614,7 +614,7 @@ const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
     (coupe ? coupe.moities : [B.pts]).forEach(m => champ(contourParcelle(m)));
     if (coupe){
       const bv = ruban(coupe.chemin, 8.4, '#9db354', .045, false); if (bv) scene.add(bv);
-      const md = ruban(coupe.chemin, 5.6, '#c9b184', .078, false); if (md) scene.add(md);
+      const md = ruban(coupe.chemin, 5.6, '#e6d2a6', .078, false); if (md) scene.add(md);
       routes.push({ pts:coupe.chemin, ferme:false });
     }
   });
@@ -622,12 +622,12 @@ const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
   blocs.forEach(B => {
     const pts = lisser(densifier(B.pts, 3), 2, true);
     const bd = ruban(pts, 8.4, '#9db354', .04, true); if (bd){ bd.userData.quoi='route'; scene.add(bd); }
-    const md = ruban(pts, 5.6, '#c9b184', .07, true); if (md){ md.userData.quoi='route'; scene.add(md); }
+    const md = ruban(pts, 5.6, '#e6d2a6', .07, true); if (md){ md.userData.quoi='route'; scene.add(md); }
     routes.push({ pts, ferme:true });
   });
   // ---------- le sable : la cour du corps de ferme, puis les placettes ----------
   // Posé après la terre et sous les bâtiments : c'est le sol qu'ils ont toujours eu.
-  const SABLE = gouache(new THREE.MeshLambertMaterial({ color:'#c9b184', side:THREE.DoubleSide }), .25, true);
+  const SABLE = gouache(new THREE.MeshLambertMaterial({ color:'#e6d2a6', side:THREE.DoubleSide }), .25, true);
   {
     const contour = lisser(densifier(decaler(FERME.pts, 2.0), 7), 2, true);
     SABLES.push(contour);

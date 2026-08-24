@@ -828,15 +828,19 @@ function contractDeliver(cropId, t){
 const DAYLEN = 300;                                   // 5 minutes de jeu par journée
 let day = 1, dayT = .34;                              // 0 = minuit, .5 = midi
 // La nuit reste lisible : c'est un clair de lune bleu, pas un écran noir.
+// Dans un décor sans texture, c'est l'ombre qui donne le relief. Le remplissage baisse et
+// la clé monte : à midi, 0,52 d'hémisphérique contre 0,95 de soleil, là où c'était 0,88
+// contre 0,50. L'écart entre une face au soleil et une face à l'ombre triple, et les ombres
+// portées deviennent des formes franches au lieu d'un voile.
 const SKY = [
-  { t:0,   sky:'#2c4272', hs:'#9fb0dd', hg:'#3b5236', hi:.72, si:.26, sc:'#b6c6f2', nuit:1 },
-  { t:.23, sky:'#42598a', hs:'#a9b6d8', hg:'#41573a', hi:.74, si:.28, sc:'#c0cdf0', nuit:.85 },
-  { t:.31, sky:'#7d9c50', hs:'#ffd3a4', hg:'#4d6a30', hi:.78, si:.38, sc:'#ffbe83', nuit:.25 },
-  { t:.5,  sky:'#54a52e', hs:'#ffffff', hg:'#4e8a34', hi:.88, si:.50, sc:'#fff6de', nuit:0 },
-  { t:.68, sky:'#5da03a', hs:'#ffeccd', hg:'#4e7c31', hi:.84, si:.46, sc:'#ffdda9', nuit:0 },
-  { t:.78, sky:'#a68350', hs:'#ffd0aa', hg:'#556031', hi:.78, si:.36, sc:'#ff9f5e', nuit:.45 },
-  { t:.87, sky:'#4a5c88', hs:'#a2aecf', hg:'#3a4c30', hi:.74, si:.28, sc:'#b6c3ec', nuit:.95 },
-  { t:1,   sky:'#2c4272', hs:'#9fb0dd', hg:'#3b5236', hi:.72, si:.26, sc:'#b6c6f2', nuit:1 }
+  { t:0,   sky:'#2c4272', hs:'#9fb0dd', hg:'#3b5236', hi:.50, si:.30, sc:'#b6c6f2', nuit:1 },
+  { t:.23, sky:'#42598a', hs:'#a9b6d8', hg:'#41573a', hi:.51, si:.33, sc:'#c0cdf0', nuit:.85 },
+  { t:.31, sky:'#7d9c50', hs:'#ffd3a4', hg:'#4d6a30', hi:.50, si:.72, sc:'#ffbe83', nuit:.25 },
+  { t:.5,  sky:'#54a52e', hs:'#ffffff', hg:'#4e8a34', hi:.52, si:.95, sc:'#fff6de', nuit:0 },
+  { t:.68, sky:'#5da03a', hs:'#ffeccd', hg:'#4e7c31', hi:.51, si:.88, sc:'#ffdda9', nuit:0 },
+  { t:.78, sky:'#a68350', hs:'#ffd0aa', hg:'#556031', hi:.50, si:.70, sc:'#ff9f5e', nuit:.45 },
+  { t:.87, sky:'#4a5c88', hs:'#a2aecf', hg:'#3a4c30', hi:.51, si:.33, sc:'#b6c3ec', nuit:.95 },
+  { t:1,   sky:'#2c4272', hs:'#9fb0dd', hg:'#3b5236', hi:.50, si:.30, sc:'#b6c6f2', nuit:1 }
 ];
 const WEATHER = {
   clear: { n:'Dégagé',  emo:'☀️', dim:1,   wind:.10, rain:0, mud:1 },
@@ -1002,9 +1006,11 @@ function primeField(st){
   const layer = st === 0 ? (vierge ? -1 : 3) : [0,0,1,2,2][st];
   fillCells(state);
   if (layer >= 0) paintParcel(layer);
-  // La friche porte ses repousses sèches, le chaume sa paille de moisson ; une terre
-  // travaillée, elle, est nue.
-  const sec = state === 0 ? 2 : state === 4 ? 1 : 0;
+  // La friche ne porte plus ses repousses sèches. Cinq mille touffes en volume posées sur un
+  // à-plat, c'est exactement la texture que ce style refuse : de loin elles se lisaient comme
+  // un bruit, et la trame d'impression s'y noyait. La friche se dit par sa couleur.
+  // Le chaume garde sa paille : elle, on vient de la faire, et on veut la voir.
+  const sec = state === 4 ? 1 : 0;
   for(let k=0;k<plants.length;k++){ plants[k].g = g0; plants[k].r = sec; }
   redrawPlants();
 }

@@ -202,7 +202,11 @@ chunks.forEach(c => {
 // sur la friche, grosses et fraîches derrière la déchaumeuse — rangées le long des sillons —
 // cassées menu une fois le lit de semence rappuyé, et assombries quand on mouille.
 // Quatre tuiles de côté seulement : le sol est bas en triangles, mieux vaut peu d'appels.
-const MN = 4, MH = P/MN, MSP = .58;                     // trois mottes au mètre carré
+// Une motte tous les deux mètres soixante, contre une tous les cinquante-huit centimètres :
+// vingt fois moins. À l'ancienne densité, six mille mottes recouvraient entièrement la
+// parcelle et le sol n'était plus un à-plat mais un gravier — le style visé pose des objets
+// distincts sur un sol strictement plat, jamais un semis de grain en volume.
+const MN = 4, MH = P/MN, MSP = 2.6;
 const mottes = [], mtiles = [];
 for(let j=0;j<MN;j++) for(let i=0;i<MN;i++)
   mtiles.push({ cx:X0+(i+.5)*MH, cz:Z0+(j+.5)*MH, list:[] });

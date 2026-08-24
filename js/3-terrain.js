@@ -103,39 +103,19 @@ function fillCells(s2){
 }
 
 // ---------- l'herbe ----------
-// Le revêtement du prototype, à son échelle : une tuile de quatre mètres à cent vingt-huit
-// pixels le mètre. Bandes de tonte, taches de densité, brins courbés de vingt à trente-cinq
-// centimètres et quelques fleurs — le tout dans une seule image. Le sol ondule doucement
-// par-dessous, et de vraies touffes en volume viennent s'y poser.
+// Deux tons de fauche, et rien d'autre. Le style visé dessine des à-plats et confie le
+// relief aux ombres, jamais au grain : un pré couvert de mille cinq cents brins peints n'est
+// plus un à-plat, et la trame d'impression s'y noie au lieu de s'y lire. La tuile passe de
+// cinq cent douze pixels à soixante-quatre — il n'y a plus rien à y détailler.
 const HERBE_M = 4;                                     // mètres couverts par une tuile
+const HERBE = { pre:'#86bb3f', fauche:'#7aae37' };
 function herbeTex(){
-  const px = 512;
+  const px = 64;
   const c = document.createElement('canvas'); c.width = c.height = px;
   const x = c.getContext('2d');
-  x.fillStyle = '#5cb033'; x.fillRect(0,0,px,px);
-  x.fillStyle = '#68be3a';
-  for(let i=0;i<px;i+=px/4.6) x.fillRect(i,0,px/9.2,px);           // bandes de tonte
-  for(let i=0;i<90;i++){                                          // variations de densité
-    const a = Math.random()*px, b = Math.random()*px, r = px*(.02+Math.random()*.06);
-    const g = x.createRadialGradient(a,b,0,a,b,r);
-    g.addColorStop(0, Math.random()>.5 ? 'rgba(112,196,64,.30)' : 'rgba(58,120,32,.26)');
-    g.addColorStop(1, 'rgba(0,0,0,0)');
-    x.fillStyle = g; x.beginPath(); x.arc(a,b,r,0,6.3); x.fill();
-  }
-  x.lineCap = 'round';
-  for(let i=0;i<1500;i++){                                        // brins, 20 à 35 cm au sol
-    const a = Math.random()*px, b = Math.random()*px;
-    x.strokeStyle = Math.random()>.5 ? 'rgba(146,222,90,.6)' : 'rgba(52,112,28,.42)';
-    x.lineWidth = px/150;
-    x.beginPath(); x.moveTo(a,b);
-    x.quadraticCurveTo(a+(Math.random()-.5)*px/34, b-px/38,
-                       a+(Math.random()-.5)*px/22, b-px/22-Math.random()*px/22);
-    x.stroke();
-  }
-  for(let i=0;i<125;i++){                                         // fleurs
-    x.fillStyle = ['#f3f0c8','#f5e58a','#ffffff'][(Math.random()*3)|0];
-    x.beginPath(); x.arc(Math.random()*px, Math.random()*px, px/160, 0, 6.3); x.fill();
-  }
+  x.fillStyle = HERBE.pre; x.fillRect(0,0,px,px);
+  x.fillStyle = HERBE.fauche;
+  for(let i=0;i<px;i+=px/4) x.fillRect(i,0,px/8,px);               // bandes de fauche, franches
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   if (renderer.capabilities) t.anisotropy = renderer.capabilities.getMaxAnisotropy();
@@ -202,38 +182,19 @@ function parcelY(x, z){
 // paille, du plus clair au plus mat, sans aucun trait sombre.
 // Pas de bandes de rouleau non plus : sur une surface aussi large leur couture se lisait
 // d'un bout à l'autre du champ.
-const CUT_TONS = ['#f6e59d', '#e6d089', '#cdb271', '#b39c64'];
-function drawCut(x, R){
-  x.fillStyle='#ab9862'; x.fillRect(0,0,TS,TS);
-  speck(x,R,110,['rgba(214,199,150,.34)','rgba(186,170,118,.3)'],2.5,7);
-  for(let i=0;i<260;i++){
-    const px=R()*TS, py=R()*TS, a=R()*6.28, L=10+R()*20, w=3.6+R()*3;
-    straw(x,R,px,py,a,L,w,CUT_TONS[(R()*CUT_TONS.length)|0]);
-  }
-}
-// La friche : le champ tel qu'on l'achète, jamais retourné. C'est le sol de fond de la
-// parcelle, celui qu'on voit au tout premier lancement. Terre grise et sèche, mottes
-// tassées jetées sans ordre, repousses courtes en tous sens — rien n'y est aligné, et
-// c'est justement ce qui la distingue du chaume que laisse la moissonneuse, lui peigné
-// en rangs. Tout ce qui vient après — labour, semis, engrais, chaume — se pose par-dessus.
-const FRICHE_TONS = ['#9c9558', '#7f8a44', '#8d8a4e'];
-function drawFriche(x, R){
-  x.fillStyle = '#8b7c52'; x.fillRect(0,0,TS,TS);
-  for(let i=0;i<170;i++){                        // mottes tassées, deux gris de terre
-    const px=R()*TS, py=R()*TS, r=5.5+R()*13;    // 6 à 21 cm au sol, sur une tuile de 2,9 m
-    blob(x,px+r*.3,py+r*.32,r,'rgba(52,44,24,.34)');
-    blob(x,px,py,r*.88, R()>.5 ? '#94855c' : '#7a6a45');
-    blob(x,px-r*.28,py-r*.3,r*.32,'rgba(214,203,166,.26)');
-  }
-  speck(x,R,130,['rgba(64,56,32,.32)','rgba(168,158,110,.3)'],2.4,7);
-  for(let i=0;i<220;i++){                        // repousses sèches, courtes, désordonnées
-    const px=R()*TS, py=R()*TS, a=R()*6.28, L=10+R()*16, w=2.6+R()*2.2;
-    straw(x,R,px,py,a,L,w,FRICHE_TONS[(R()*FRICHE_TONS.length)|0]);
-  }
-}
+// Les sols : une couleur franche par état, sans motif. C'est la couleur seule qui dit où
+// l'on en est du chantier — friche, labour, semis, chaume — et elle le dit mieux qu'un
+// dessin de mottes qu'on ne distingue plus dès qu'on prend de la hauteur.
+// Quatre couleurs qui doivent se distinguer d'un coup d'œil, et se distinguer aussi du
+// sable des chemins (#c9b184) : sans texture, c'est le seul repère qui reste.
+const SOLS = { friche:'#a8813e', labour:'#6f4d2b', chaume:'#e2cd85' };
+const aplat = (x, col) => { x.fillStyle = col; x.fillRect(0,0,TS,TS); };
+function drawCut(x){ aplat(x, SOLS.chaume); }
+// La friche : le champ tel qu'on l'achète, jamais retourné.
+function drawFriche(x){ aplat(x, SOLS.friche); }
 function soilTex(){
   const [c,x] = cv();
-  drawFriche(x, rng(714203));
+  drawFriche(x);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
@@ -347,35 +308,15 @@ const SWATH = (function(){
     if (renderer.capabilities) t.anisotropy = renderer.capabilities.getMaxAnisotropy();
     return t;
   }
-  // La terre travaillée : des mottes jetées au hasard, de toutes les tailles, sans une seule
-  // ligne ni une seule bande — c'est l'alignement qui faisait le quadrillage.
-  function texLabour(){
-    const [c,x] = cv(), R = rng(601844);
-    x.fillStyle = '#755934'; x.fillRect(0,0,TS,TS);
-    for(let i=0;i<210;i++){                       // grosses mottes, avec leur ombre portée
-      const px=R()*TS, py=R()*TS, r=3.4+R()*9.6;
-      blob(x,px+r*.32,py+r*.34,r,'rgba(46,32,16,.44)');
-      blob(x,px,py,r*.86, R()>.5 ? '#a3814e' : '#8d6f42');
-      blob(x,px-r*.26,py-r*.3,r*.34,'rgba(228,208,164,.34)');
-    }
-    speck(x,R,150,['rgba(58,42,23,.4)','rgba(176,148,96,.34)'],2.2,6.6);
-    return finish(c);
-  }
-  // Les points de semence, seuls, sur fond transparent : semés au hasard comme la paille.
-  // Ce qui tombe au sol doit valoir ce qui sort du semoir — il en pleut beaucoup, la terre
-  // doit en être criblée. Quatre fois plus de grains qu'avant, et un peu plus petits pour
-  // que ça reste une pluie de points et pas une nappe blanche : la terre passe encore entre.
+  function texLabour(){ const [c,x] = cv(); aplat(x, SOLS.labour); return finish(c); }
+  // Le semis : un voile clair sur la terre labourée, pas une pluie de points. Vu d'en haut,
+  // six cent vingt grains peints se lisaient comme un bruit, jamais comme des graines.
   function texGrains(){
-    const [c,x] = cv(), R = rng(884411);
-    for(let i=0;i<620;i++){
-      const gx=R()*TS, gy=R()*TS, r=2.9+R()*2.7;
-      blob(x,gx+.9,gy+1.0,r,'rgba(74,54,26,.22)');
-      blob(x,gx,gy,r,'#f6ecd2');
-      blob(x,gx-r*.3,gy-r*.32,r*.46,'#fffaf0');
-    }
+    const [c,x] = cv();
+    x.fillStyle = 'rgba(244,231,196,.62)'; x.fillRect(0,0,TS,TS);
     return finish(c);
   }
-  function texChaume(){ const [c,x] = cv(); drawCut(x, rng(1028679)); return finish(c); }
+  function texChaume(){ const [c,x] = cv(); drawCut(x); return finish(c); }
 
   const LAB = texLabour(), CHAUME = texChaume(), GRAINS = texGrains();
   // Un échantillon tous les 25 cm de parcours d'outil : 20 000 ne couvraient que cinq
