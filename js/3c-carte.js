@@ -324,6 +324,46 @@ function distBordSigne(P, x, z){
         x < (P[j][0]-P[i][0])*(z-P[i][1])/(P[j][1]-P[i][1]) + P[i][0]) dedans = !dedans;
   return dedans ? d : -d;
 }
+// L'ancienne parcelle avait un bord découpé, jamais droit : une somme d'ondulations de la
+// grande à la petite, qui donnait à la terre l'air d'avoir été gagnée sur l'herbe plutôt
+// que tracée à la règle. Les contours sortis des carrés marchants, eux, sont lisses et
+// linéaires. On leur rend cette découpe.
+// La fonction est en repère sol, pas en abscisse curviligne : deux champs qui se touchent
+// ondulent donc de la même façon le long de leur bord commun, et le motif ne se répète pas
+// d'une parcelle à l'autre.
+// L'ancien carré faisait quarante-quatre mètres et se regardait de près : ±0,60 m y
+// suffisaient. Les parcelles de la carte font soixante à cent quarante mètres et se voient
+// de loin — à cette échelle, soixante centimètres tiennent dans un pixel et le bord paraît
+// tiré à la règle. On garde donc les harmoniques serrées de l'ancien bord et on leur ajoute
+// deux respirations longues, de soixante-dix et cinquante mètres, qui font vraiment
+// serpenter la limite. Amplitude ±1,73 m au total : la terre s'arrête à 7,6 m de l'axe des
+// routes, il reste plus d'un mètre et demi d'herbe même au plus fort de l'ondulation.
+function crenele(x, z){
+  return Math.sin(x*.075 + z*.041)*.80
+       + Math.sin(z*.130 - x*.088)*.46
+       + Math.sin(x*.29  + z*.11)*.24
+       + Math.sin(z*.73  - x*.19)*.13
+       + Math.sin((x+z)*1.61)*.065
+       + Math.sin(x*3.37 - z*2.9)*.032;
+}
+// Chaque sommet est poussé le long de la normale au contour. Il faut d'abord un point tous
+// les soixante centimètres : sur des côtés de trente mètres, déplacer les seuls sommets
+// existants ne donnerait que deux ou trois cassures au lieu d'un bord dentelé.
+function decouper(pts){
+  const d = densifierPas(pts, .6), n = d.length;
+  if (n < 6) return pts;
+  const out = [];
+  for(let i=0;i<n;i++){
+    const a = d[(i-1+n)%n], b = d[(i+1)%n];
+    const tx = b[0]-a[0], tz = b[1]-a[1], L = Math.hypot(tx,tz) || 1;
+    const nx = tz/L, nz = -tx/L;                  // normale sortante : contour en sens direct
+    const w = crenele(d[i][0], d[i][1]);
+    out.push([ d[i][0] + nx*w, d[i][1] + nz*w ]);
+  }
+  // Dans un angle serré, deux sommets poussés vers l'intérieur peuvent se rejoindre : on
+  // écarte les points confondus, sinon la triangulation part en vrille.
+  return nettoyer(out, .12);
+}
 function contourParcelle(bord){
   let x0=1e9, x1=-1e9, z0=1e9, z1=-1e9;
   bord.forEach(p => { x0=Math.min(x0,p[0]); x1=Math.max(x1,p[0]); z0=Math.min(z0,p[1]); z1=Math.max(z1,p[1]); });
@@ -382,7 +422,10 @@ function contourParcelle(bord){
     }
     if (boucle.length >= 8) boucles.push(boucle);
   });
-  return boucles.map(b => lisser(simplifier(nettoyer(b, .6), .25), 1, true))
+  // On lisse et on simplifie comme avant — c'est ce qui enlève l'escalier des carrés
+  // marchants — puis on redonne au bord sa découpe. Dans cet ordre : créneler d'abord se
+  // ferait effacer par le lissage.
+  return boucles.map(b => decouper(lisser(simplifier(nettoyer(b, .6), .25), 1, true)))
                 .filter(b => b.length >= 3);
 }
 function alea(seed){ return function(){ seed |= 0; seed = seed + 0x6D2B79F5 | 0;
@@ -559,9 +602,8 @@ const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
       const m = new THREE.Mesh(g, TERRE);
       m.position.y = .06; m.receiveShadow = true; m.renderOrder = -11; scene.add(m);
       parcelles.push(pts);
-      [pts].concat(trous.map(t => boucles[t])).forEach(c => {
-        const bd = ruban(c, .7, '#8a7343', .12, true); if (bd) scene.add(bd);
-      });
+      // Plus de liseré brun autour de la terre : on passe de l'herbe à la terre d'un coup,
+      // et c'est la découpe du bord qui fait la transition, pas un trait de contour.
     });
   }
   blocs.forEach(B => {

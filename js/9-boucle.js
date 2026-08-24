@@ -332,7 +332,7 @@ window.__FARM_DEBUG = () => ({
   })(),
   trav:(function(){ const o={}; engins.forEach(v => { o[v.pid] = +v.trav.toFixed(2); }); return o; })(),
   grains:+GRAIN.value.toFixed(3),
-  ruban:SWATH.pose(),
+  ruban:SWATH.pose(), rubanPlein:SWATH.plein,
   sauts:(function(){ const v = pilote(); return v ? (v.sauts||0) : 0; })(),
   // depuis combien de secondes de jeu la tête du tracé n'a pas bougé : c'est ce compteur
   // qui décide d'abandonner un point devenu inatteignable, il doit être lisible au banc

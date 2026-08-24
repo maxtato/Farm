@@ -276,14 +276,50 @@ function calerChamp(poly){
                       z0=Math.min(z0,p[1]); z1=Math.max(z1,p[1]); });
   P = Math.max(x1-x0, z1-z0) + 6;                      // grille carrée : trois mètres de marge
   X0 = (x0+x1)/2 - P/2; Z0 = (z0+z1)/2 - P/2; CS = P/NS;
+  // Remplissage par balayage : une ligne de cellules à la fois, on relève les croisements
+  // du contour et on remplit entre eux. Mesurer au lieu de cela la distance exacte de
+  // chaque cellule à chaque sommet coûtait le produit des deux — supportable sur un
+  // rectangle de quatre sommets, plus du tout depuis que le bord est découpé et en compte
+  // cinq cents.
+  const dedans = new Uint8Array(NS*NS), xs = [];
+  for(let j=0;j<NS;j++){
+    const z = Z0 + (j+.5)*CS;
+    xs.length = 0;
+    for(let k=0,l=poly.length-1;k<poly.length;l=k++){
+      const a = poly[l], b = poly[k];
+      if ((a[1] > z) !== (b[1] > z)) xs.push(a[0] + (b[0]-a[0])*(z-a[1])/(b[1]-a[1]));
+    }
+    xs.sort((p,q) => p-q);
+    for(let s=0;s+1<xs.length;s+=2){
+      let i0 = Math.ceil((xs[s]-X0)/CS - .5), i1 = Math.floor((xs[s+1]-X0)/CS - .5);
+      if (i0 < 0) i0 = 0;
+      if (i1 > NS-1) i1 = NS-1;
+      for(let i=i0;i<=i1;i++) dedans[j*NS+i] = 1;
+    }
+  }
+  // Distance au bord par chanfrein 3-4, deux passes : le coût ne dépend plus que de la
+  // grille. Positive dedans, négative dehors.
+  const LOIN = 1e6, A = new Float32Array(NS*NS), B = new Float32Array(NS*NS);
+  for(let k=0;k<NS*NS;k++){ A[k] = dedans[k] ? LOIN : 0; B[k] = dedans[k] ? 0 : LOIN; }
+  const chanfrein = D => {
+    const lu = (i,j) => (i<0||j<0||i>=NS||j>=NS) ? LOIN : D[j*NS+i];
+    for(let j=0;j<NS;j++) for(let i=0;i<NS;i++){
+      const k = j*NS+i;
+      D[k] = Math.min(D[k], lu(i-1,j)+3, lu(i,j-1)+3, lu(i-1,j-1)+4, lu(i+1,j-1)+4);
+    }
+    for(let j=NS-1;j>=0;j--) for(let i=NS-1;i>=0;i--){
+      const k = j*NS+i;
+      D[k] = Math.min(D[k], lu(i+1,j)+3, lu(i,j+1)+3, lu(i+1,j+1)+4, lu(i-1,j+1)+4);
+    }
+  };
+  chanfrein(A); chanfrein(B);
   const px = MASQ_TEX.image.data;
   NIN = 0;
-  for(let j=0;j<NS;j++) for(let i=0;i<NS;i++){
-    const k = j*NS+i, d = distBordSigne(poly, X0 + (i+.5)*CS, Z0 + (j+.5)*CS);
-    MASQ[k] = d;
-    const v = d > 0 ? 255 : 0;
+  for(let k=0;k<NS*NS;k++){
+    MASQ[k] = (A[k] - B[k]) * CS/3;
+    const v = dedans[k] ? 255 : 0;
     px[k*4] = px[k*4+1] = px[k*4+2] = v; px[k*4+3] = 255;
-    if (d > 0) NIN++;
+    if (dedans[k]) NIN++;
   }
   MASQ_TEX.needsUpdate = true;
   CLIP.orig.value.set(X0, Z0); CLIP.cote.value = P;
@@ -341,7 +377,12 @@ const SWATH = (function(){
   function texChaume(){ const [c,x] = cv(); drawCut(x, rng(1028679)); return finish(c); }
 
   const LAB = texLabour(), CHAUME = texChaume(), GRAINS = texGrains();
-  const MAXS = 20000, TILE = 2.9;         // 1 motif = 2,9 m au sol, échelle constante
+  // Un échantillon tous les 25 cm de parcours d'outil : 20 000 ne couvraient que cinq
+  // kilomètres, tous engins et toute la durée d'une étape confondus. Passé ce nombre le
+  // ruban cessait de s'allonger sans rien dire, et le champ gardait sa friche là où l'outil
+  // était pourtant passé. Le champ du jeu fait quarante fois la surface de l'ancien carré
+  // une fois comptés les allers-retours à la cour ; on triple, et surtout on le dit.
+  const MAXS = 60000, TILE = 2.9;         // 1 motif = 2,9 m au sol, échelle constante
   const pos = new Float32Array(MAXS*6), nor = new Float32Array(MAXS*6);
   const uv  = new Float32Array(MAXS*4), lay = new Float32Array(MAXS*2);
   for(let k=0;k<MAXS*2;k++){ nor[k*3]=0; nor[k*3+1]=1; nor[k*3+2]=0; }
@@ -389,7 +430,10 @@ const SWATH = (function(){
     // `chaine` : à qui appartient le point. Deux engins qui travaillent en même temps ne
     // doivent pas voir leurs échantillons cousus l'un à l'autre.
     add(etat, x, z, ang, w, link, chaine){
-      if (n >= MAXS) return;
+      if (n >= MAXS){
+        if (!SWATH.plein){ SWATH.plein = true; console.warn('ruban saturé :', MAXS, 'échantillons'); }
+        return;
+      }
       const suite = link && fil === (chaine === undefined ? etat : chaine + ':' + etat);
       const c = Math.cos(ang), si = Math.sin(ang);
       fil = (chaine === undefined ? etat : chaine + ':' + etat);
@@ -420,7 +464,8 @@ const SWATH = (function(){
       geo.attributes.uv.needsUpdate = true;
       geo.attributes.aEtat.needsUpdate = true;
     },
-    reset(){ n = 0; tri = 0; fil = null; geo.setDrawRange(0,0); },
+    reset(){ n = 0; tri = 0; fil = null; SWATH.plein = false; geo.setDrawRange(0,0); },
+    plein: false,                          // le ruban a-t-il saturé ? sinon on ne le saurait pas
     pose(){ return n; }                    // combien d'échantillons déposés, pour les essais
   };
 })();

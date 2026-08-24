@@ -60,6 +60,34 @@ const D=__dirname+'/sorties/', LOG=D+'labour.log';
    await p.waitForTimeout(1000);
  }
  await p.screenshot({path:D+'labour.png'}); dit('-> labour.png');
+ // Le pourcentage ne dit pas OÙ ça manque. Un plan en texte du champ, une case pour huit
+ // cellules : « . » travaillé, « # » resté en friche, « ~ » hors du champ. Un bord, une
+ // rayure ou une tache ne se diagnostiquent pas de la même façon.
+ dit(await p.evaluate(()=>{
+   const K = 8, M = Math.ceil(NS/K), L = [];
+   for(let J=0;J<M;J++){
+     let ligne = '';
+     for(let I=0;I<M;I++){
+       let dedans = 0, fait = 0;
+       for(let j=J*K;j<Math.min(NS,(J+1)*K);j++) for(let i=I*K;i<Math.min(NS,(I+1)*K);i++){
+         const k = j*NS+i;
+         if (MASQ[k] > 0){ dedans++; if (cell[k] === 1) fait++; }
+       }
+       ligne += !dedans ? '~' : fait === dedans ? '.' : fait > dedans*.5 ? ':' : '#';
+     }
+     L.push(ligne);
+   }
+   // et le compte des cellules restées en friche, par distance au bord
+   const reste = [0,0,0,0];
+   for(let k=0;k<NS*NS;k++) if (MASQ[k] > 0 && cell[k] !== 1){
+     const d = MASQ[k];
+     reste[d < 1 ? 0 : d < 2 ? 1 : d < 4 ? 2 : 3]++;
+   }
+   return 'plan du champ (. tout labouré  : partiel  # rien  ~ hors champ)\n' + L.join('\n')
+        + '\ncellules restées en friche par distance au bord :'
+        + ' <1m ' + reste[0] + ' | 1-2m ' + reste[1] + ' | 2-4m ' + reste[2] + ' | >4m ' + reste[3]
+        + '\nruban : ' + SWATH.pose() + ' échantillons, saturé : ' + SWATH.plein;
+ }));
  dit('fin :', d);
  dit(d && d.fait >= 92 ? 'OK : le champ est labouré à ' + d.fait + ' %'
                        : 'ÉCHEC : ' + (d?d.fait:'?') + ' % seulement');
