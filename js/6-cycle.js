@@ -240,6 +240,32 @@ function driveTo(v, target, dt, stop, large, outil){
 // colonne s'arrête là où la terre s'arrête : on cherche par balayage le premier et le
 // dernier point de la colonne qui tombent dedans, et on vise trois mètres au-delà pour que
 // l'outil sorte franchement du bord. Une colonne qui ne rencontre rien est sautée.
+// La tournière : un tour du champ avant les rangs. Les rangs sont des bandes droites, et
+// le long d'un bord oblique l'engin coupe fatalement l'angle en fin de rang — il restait
+// une lisière intacte tout autour, jusqu'à quatre mètres par endroits, alors que les rangs
+// couvrent bien cent pour cent de la terre sur le papier. La perte était dans la conduite,
+// pas dans le tracé. C'est d'ailleurs par là que commence le vrai travail d'un champ.
+function tourniere(W){
+  if (!POLY || POLY.length < 8) return [];
+  // Le contour du champ est découpé, donc très dense : on le ramène d'abord à ses sommets
+  // utiles — inutile de faire suivre une dentelle au décimètre à un tracteur — puis on le
+  // rééchantillonne tous les cinq mètres. Simplifier seul ne laissait que huit sommets pour
+  // cent soixante mètres de tour : l'engin aurait coupé le bord en cordes de dix-neuf
+  // mètres, c'est-à-dire refait exactement ce qu'on cherche à éviter.
+  const b = densifierPas(simplifier(POLY, .9), 5), n = b.length, brut = [];
+  for(let i=0;i<n;i++){
+    const a = b[(i-1+n)%n], c = b[(i+1)%n], q = b[i];
+    const tx = c[0]-a[0], tz = c[1]-a[1], L = Math.hypot(tx,tz) || 1;
+    const x = q[0] - (tz/L)*W*.5, z = q[1] + (tx/L)*W*.5;   // normale rentrante
+    // Dans un angle rentrant, le décalage peut sortir du champ : on ne garde que ce qui
+    // tombe vraiment sur la terre.
+    if (parcelInset(x, z) > W*.28) brut.push([x, z]);
+  }
+  if (brut.length < 4) return [];
+  const out = brut.map(q => new THREE.Vector3(q[0], 0, q[1]));
+  out.push(out[0].clone());                              // on referme le tour
+  return out;
+}
 function lanesFor(W){
   const L = [], cols = Math.max(1, Math.ceil(P/W)), PAS = 1;
   for(let i=0;i<cols;i++){
@@ -255,12 +281,20 @@ function lanesFor(W){
           if (z0 === null || z < z0) z0 = z;
           if (z1 === null || z > z1) z1 = z;
         }
-    if (z0 === null || z1 - z0 < W*.5) continue;
+    // On ne saute une colonne que si elle ne rencontre aucune terre. Elle était aussi
+    // écartée quand le champ y tenait sur moins d'une demi-largeur d'outil — or sur une
+    // parcelle qui se termine en pointe, les colonnes extrêmes sont précisément de fines
+    // langues de terre. Elles n'étaient jamais labourées, et rien ne pouvait plus les
+    // atteindre : deux colonnes sur dix perdues, treize mètres de terre inaccessibles au
+    // pilote automatique le long du bord ouest.
+    if (z0 === null) continue;
     const a = z0 - 3, b = z1 + 3;
     L.push(new THREE.Vector3(x,0, i%2 ? b : a));
     L.push(new THREE.Vector3(x,0, i%2 ? a : b));
   }
-  return L.length ? L : [new THREE.Vector3(X0+P/2,0,Z0), new THREE.Vector3(X0+P/2,0,Z0+P)];
+  const T = tourniere(W);
+  const tout = T.concat(L);
+  return tout.length ? tout : [new THREE.Vector3(X0+P/2,0,Z0), new THREE.Vector3(X0+P/2,0,Z0+P)];
 }
 const _tp = new THREE.Vector3(), _tq = new THREE.Quaternion(), _tsc = new THREE.Vector3(),
       _te = new THREE.Euler(), _spout = new THREE.Vector3(), _bin = new THREE.Vector3();
