@@ -167,7 +167,8 @@ function herbeY(x, z){
   for(let i=0;i<pos.count;i++) pos.setZ(i, herbeY(pos.getX(i), -pos.getY(i)));
   pos.needsUpdate = true; geo.computeVertexNormals();
   const g = new THREE.Mesh(geo, gouache(new THREE.MeshLambertMaterial({map:t}), .4, true));
-  g.rotation.x = -Math.PI/2; g.receiveShadow = true; g.renderOrder = -13; scene.add(g);
+  g.rotation.x = -Math.PI/2; g.receiveShadow = true; g.renderOrder = -13;
+  g.userData.quoi = 'herbe'; scene.add(g);
 })();
 // ---------- le champ de travail : une parcelle de la carte, pas une dalle posée dessus ----
 // Il n'y a plus de bloc de terre en surépaisseur, plus de bord crénelé fabriqué, plus de

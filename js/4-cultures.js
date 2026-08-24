@@ -177,9 +177,11 @@ geoStraw.boundingSphere = new THREE.Sphere(new THREE.Vector3(0,.2,0), CH*.75 + 1
 chunks.forEach(c => {
   c.young = new THREE.InstancedMesh(cropGeo(CROPS[0])._y, windMat(), Math.max(1,c.list.length));
   c.ripe  = new THREE.InstancedMesh(cropGeo(CROPS[0])._r, windMat(), Math.max(1,c.list.length));
+  c.young.userData.quoi = 'culture'; c.ripe.userData.quoi = 'culture';
   c.straw = new THREE.InstancedMesh(geoStraw,
     gouache(new THREE.MeshLambertMaterial({ vertexColors:true }), .3, true), Math.max(1,c.list.length));
   c.straw.position.set(c.cx,0,c.cz); c.straw.receiveShadow = true;
+  c.straw.userData.quoi = 'paille';
   c.straw.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   // La teinte par instance doit exister AVANT la première compilation : créée après coup,
   // three garde le programme d'origine, sans l'attribut, et la couleur reste ignorée.

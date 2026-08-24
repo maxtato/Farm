@@ -600,7 +600,8 @@ const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
       for(let k=0;k<p.count;k++){ uv[k*2] = p.getX(k)/2.9; uv[k*2+1] = p.getZ(k)/2.9; }
       g.setAttribute('uv', new THREE.BufferAttribute(uv,2));
       const m = new THREE.Mesh(g, TERRE);
-      m.position.y = .06; m.receiveShadow = true; m.renderOrder = -11; scene.add(m);
+      m.position.y = .06; m.receiveShadow = true; m.renderOrder = -11;
+      m.userData.quoi = 'champ'; scene.add(m);
       parcelles.push(pts);
       // Plus de liseré brun autour de la terre : on passe de l'herbe à la terre d'un coup,
       // et c'est la découpe du bord qui fait la transition, pas un trait de contour.
@@ -620,8 +621,8 @@ const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
   // ---------- routes : le contour de chaque îlot ----------
   blocs.forEach(B => {
     const pts = lisser(densifier(B.pts, 3), 2, true);
-    const bd = ruban(pts, 8.4, '#9db354', .04, true); if (bd) scene.add(bd);
-    const md = ruban(pts, 5.6, '#c9b184', .07, true); if (md) scene.add(md);
+    const bd = ruban(pts, 8.4, '#9db354', .04, true); if (bd){ bd.userData.quoi='route'; scene.add(bd); }
+    const md = ruban(pts, 5.6, '#c9b184', .07, true); if (md){ md.userData.quoi='route'; scene.add(md); }
     routes.push({ pts, ferme:true });
   });
   // ---------- le sable : la cour du corps de ferme, puis les placettes ----------
@@ -631,13 +632,15 @@ const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
     const contour = lisser(densifier(decaler(FERME.pts, 2.0), 7), 2, true);
     SABLES.push(contour);
     const m = new THREE.Mesh(surface(contour), SABLE);
-    m.position.y = .075; m.receiveShadow = true; m.renderOrder = -10; scene.add(m);
+    m.position.y = .075; m.receiveShadow = true; m.renderOrder = -10;
+    m.userData.quoi = 'sable'; scene.add(m);
   }
   PLACETTES.forEach(pl => {
     const pts = lisser(densifier(pl.coins, 5), 2, true);
     SABLES.push(pts);
     const m = new THREE.Mesh(surface(pts), SABLE);
-    m.position.y = .069; m.receiveShadow = true; m.renderOrder = -10; scene.add(m);
+    m.position.y = .069; m.receiveShadow = true; m.renderOrder = -10;
+    m.userData.quoi = 'sable'; scene.add(m);
     // liseré vert sur les seuls côtés intérieurs : ceux qui longent la route se fondent
     const bv = ruban(lisser(densifierPas(pl.dehors, 3), 2, false), 2.6, '#9db354', .045, false);
     if (bv) scene.add(bv);
@@ -650,6 +653,7 @@ const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
   BATIMENTS.forEach(([f, x, z, ry, sc]) => {
     const b = BATS[f]; if (!b) return;
     const g = poserBatiment(b, x, z, ry);
+    g.userData.quoi = 'batiment';
     if (sc && sc !== 1) g.scale.setScalar(sc);
   });
   ARBRES.forEach(([e, n, x, z, ry, sc]) => {
@@ -665,7 +669,7 @@ const carre = (x, z, r) => [[x-r,z-r],[x+r,z-r],[x+r,z+r],[x-r,z+r]];
     g.position.set(x, 0, z); g.rotation.y = ry || 0;
     if (sc && sc !== 1) g.scale.setScalar(sc);
     g.traverse(o => { if(o.isMesh){ o.castShadow = true; o.receiveShadow = true; } });
-    scene.add(g);
+    g.userData.quoi = 'arbre'; scene.add(g);
     addObst(x, z, n > 1 ? 6 : 1.1);            // un bosquet se contourne d'un bloc
   });
   // ---------- le champ que l'on cultive ----------
