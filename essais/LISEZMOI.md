@@ -16,6 +16,7 @@ Chromium, et on interroge la sonde `window.__FARM_DEBUG()` du jeu.
     node essais/sols.js           # chacun sur son sol : sable, terre, herbe
     node essais/labour.js         # un chantier entier : quelle part du champ est faite
     node essais/poids.js          # d'où vient la charge : appels, triangles, famille par famille
+    node essais/trame.js          # la trame d'impression, avec et sans, de près et de loin
     node essais/plan.js           # plan en texte : libre / route / champ / obstacle
     node essais/calage.js         # où poser la parcelle et la cour sans mordre sur la carte
 
